@@ -78,20 +78,21 @@
 <body class="min-h-screen pb-24 flex flex-col max-w-md mx-auto relative">
 
   <!-- Top Header -->
-  <header class="sticky top-0 z-30 bg-cheki-surface/95 backdrop-blur px-3 py-2.5 border-b-2 border-cheki-dark flex items-center justify-between">
-    <div class="flex items-center gap-2.5">
-      <div class="w-10 h-10 rounded-full bg-cheki-accent neo-btn flex items-center justify-center text-xl cursor-pointer" onclick="openBackupModal()" title="備份與還原">📸</div>
-      <div>
+  <header class="sticky top-0 z-30 bg-cheki-surface/95 backdrop-blur px-3 py-2.5 border-b-2 border-cheki-dark flex items-center justify-between gap-1">
+    <div class="flex items-center gap-2 min-w-0">
+      <div class="w-10 h-10 rounded-full bg-cheki-accent neo-btn flex items-center justify-center text-xl shrink-0 cursor-pointer" onclick="openBackupModal()" title="備份與還原">📸</div>
+      <div class="min-w-0">
         <div class="flex items-center gap-1.5">
-          <h1 class="font-black text-base tracking-tight">ChekiPocket</h1>
-          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-400">本機永久存</span>
+          <h1 class="font-black text-base tracking-tight truncate">ChekiPocket</h1>
+          <span onclick="openBackupModal()" class="cursor-pointer text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-400 shrink-0">本機永久存</span>
         </div>
-        <p id="headerStats" class="text-[11px] text-zinc-600 font-bold">總計 0 張 · ★ 0 張最愛 · 1 個相簿</p>
+        <p id="headerStats" class="text-[11px] text-zinc-600 font-bold truncate">總計 0 張 · ★ 0 張最愛 · 3 個相簿</p>
       </div>
     </div>
-    <div class="flex items-center gap-2">
-      <button onclick="toggleSearchBar()" class="w-10 h-10 rounded-2xl bg-white neo-btn flex items-center justify-center text-lg">🔍</button>
-      <button onclick="openAddModal()" class="px-3.5 py-2 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-btn flex items-center gap-1">✨ 新增</button>
+    <div class="flex items-center gap-1.5 shrink-0">
+      <button onclick="openBackupModal()" class="w-9 h-9 rounded-2xl bg-amber-100 neo-btn flex items-center justify-center text-base" title="備份與還原">📦</button>
+      <button onclick="toggleSearchBar()" class="w-9 h-9 rounded-2xl bg-white neo-btn flex items-center justify-center text-base" title="搜尋">🔍</button>
+      <button onclick="openAddModal()" class="px-3 py-2 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-btn flex items-center gap-1">✨ 新增</button>
     </div>
   </header>
 
@@ -99,7 +100,7 @@
   <div id="searchBar" class="hidden px-3 py-2 bg-pink-50 border-b-2 border-cheki-dark">
     <div class="flex gap-2">
       <input id="searchInput" type="text" placeholder="搜尋成員名稱、活動、備註..." oninput="renderCurrentTab()" class="w-full px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-sm font-bold focus:outline-none">
-      <button onclick="clearSearch()" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-bold">清除</button>
+      <button onclick="clearSearch()" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-bold shrink-0">清除</button>
     </div>
   </div>
 
@@ -107,19 +108,44 @@
   <main class="flex-1 p-3">
 
     <!-- TAB 1: ALBUMS (相簿) -->
-    <section id="tab-albums" class="hidden space-y-3">
+    <section id="tab-albums" class="hidden space-y-4">
       <div class="flex justify-between items-center">
         <h2 class="font-black text-lg">📚 我的相簿分類</h2>
         <button onclick="createNewAlbum()" class="px-3 py-1.5 rounded-xl bg-amber-200 neo-btn text-xs font-black">+ 新增相簿</button>
       </div>
       <div id="albumsGrid" class="grid grid-cols-2 gap-3"></div>
+
+      <!-- 專屬備份與還原區塊 -->
+      <div class="neo-box bg-white rounded-2xl p-3.5 space-y-2.5 mt-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-xl">📦</span>
+            <div>
+              <h3 class="font-black text-sm">資料備份與還原</h3>
+              <p class="text-[11px] text-zinc-500 font-bold">匯出 JSON 備份檔，換手機或轉平台隨時還原</p>
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <button onclick="exportAllData()" class="py-2.5 px-3 rounded-xl bg-emerald-300 neo-btn font-black text-xs flex items-center justify-center gap-1">
+            ⬇️ 匯出備份檔
+          </button>
+          <label class="py-2.5 px-3 rounded-xl bg-amber-200 neo-btn font-black text-xs flex items-center justify-center gap-1 cursor-pointer text-center">
+            ⬆️ 匯入還原
+            <input type="file" accept=".json" class="hidden" onchange="importAllData(event)">
+          </label>
+        </div>
+      </div>
     </section>
 
-    <!-- TAB 2: BINDER (卡冊) -->
+    <!-- TAB 2: BINDER (卡冊 - 已修復按鈕重疊問題) -->
     <section id="tab-binder" class="hidden space-y-3">
-      <div class="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar pb-1">
-        <div id="albumFilterPills" class="flex gap-1.5"></div>
-        <button onclick="toggleFavFilter()" id="favFilterBtn" class="px-3 py-1 rounded-full bg-white neo-btn text-xs font-bold shrink-0">★ 最愛</button>
+      <div class="flex items-center gap-2 w-full">
+        <!-- 左側相簿分類獨立橫向滾動，絕不與右側最愛按鈕重疊 -->
+        <div id="albumFilterPills" class="flex-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 pr-1"></div>
+        <!-- 分隔線與固定在右側的最愛按鈕 -->
+        <div class="h-5 w-[2px] bg-zinc-300 shrink-0"></div>
+        <button onclick="toggleFavFilter()" id="favFilterBtn" class="px-3 py-1.5 rounded-full bg-white neo-btn text-xs font-black shrink-0">★ 最愛</button>
       </div>
       <div id="binderGrid" class="grid grid-cols-2 gap-3"></div>
     </section>
@@ -151,8 +177,8 @@
 
       <!-- Selected Card Info Bar -->
       <div class="neo-box bg-pink-100/90 rounded-2xl px-3 py-2 flex items-center justify-between gap-2">
-        <span id="deskSelectedName" class="font-black text-sm truncate max-w-[110px]">點擊相片操作</span>
-        <span class="px-2.5 py-0.5 rounded-full bg-white border border-cheki-dark text-[11px] font-bold text-zinc-700 shrink-0">💡 點擊相片直接翻面 / 雙指縮放旋轉</span>
+        <span id="deskSelectedName" class="font-black text-sm truncate max-w-[100px]">點擊相片操作</span>
+        <span class="px-2.5 py-0.5 rounded-full bg-white border border-cheki-dark text-[11px] font-bold text-zinc-700 shrink-0">💡 點擊相片翻面 / 雙指縮放</span>
         <button onclick="flipSelectedDeskCard()" class="px-3 py-1 rounded-full bg-white neo-btn text-xs font-black flex items-center gap-1 shrink-0">🔄 翻面</button>
       </div>
 
@@ -212,7 +238,7 @@
     <button onclick="exportInspectImage()" class="w-full py-3 rounded-2xl bg-cheki-accent text-white font-black text-sm neo-box">📥 匯出相片</button>
   </div>
 
-  <!-- ADD / EDIT MODAL (z-[60] 確保在最上層) -->
+  <!-- ADD / EDIT MODAL -->
   <div id="editCardModal" class="hidden fixed inset-0 z-[60] bg-black/75 flex items-center justify-center p-3 overflow-y-auto">
     <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-4 space-y-3 max-h-[92vh] overflow-y-auto">
       <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
@@ -220,7 +246,7 @@
         <button onclick="closeEditModal()" class="w-8 h-8 rounded-full bg-white neo-btn font-black">✕</button>
       </div>
 
-      <!-- Upload & Crop Section -->
+      <!-- Upload & Rotate Section -->
       <div class="space-y-2">
         <div class="flex gap-2">
           <label class="flex-1 py-2.5 rounded-xl bg-pink-200 neo-btn text-center font-black text-xs cursor-pointer">
@@ -275,18 +301,22 @@
     </div>
   </div>
 
-  <!-- BACKUP / RESTORE MODAL -->
+  <!-- BACKUP / RESTORE MODAL (備份與還原視窗) -->
   <div id="backupModal" class="hidden fixed inset-0 z-[70] bg-black/75 flex items-center justify-center p-4">
-    <div class="bg-white w-full max-w-sm rounded-3xl neo-box p-4 space-y-3">
+    <div class="bg-white w-full max-w-sm rounded-3xl neo-box p-4 space-y-3.5">
       <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
         <h3 class="font-black text-base">📦 資料備份與還原</h3>
         <button onclick="closeBackupModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black">✕</button>
       </div>
-      <p class="text-xs text-zinc-600 font-bold leading-relaxed">所有拍立得均儲存在你的手機瀏覽器內。你可以隨時匯出備份檔，或在不同平台/新手機匯入還原。</p>
-      <button onclick="exportAllData()" class="w-full py-2.5 rounded-xl bg-emerald-300 neo-btn font-black text-xs">⬇️ 匯出完整備份檔 (.json)</button>
-      <label class="block w-full py-2.5 rounded-xl bg-amber-200 neo-btn font-black text-xs text-center cursor-pointer">
-        ⬆️ 匯入備份檔還原
-        <input type="file" accept=".json" class="hidden" onchange="importAllData(event)">
+      <div class="bg-pink-50 border border-pink-200 rounded-xl p-2.5 text-xs text-zinc-700 font-bold leading-relaxed">
+        💡 目前共有 <span id="backupCountText" class="text-cheki-accent font-black">0</span> 張拍立得。建議定期匯出備份檔保存於手機或雲端，換機或轉移網址時可一鍵還原！
+      </div>
+      <button onclick="exportAllData()" class="w-full py-3 rounded-xl bg-emerald-300 neo-btn font-black text-xs flex items-center justify-center gap-1.5">
+        ⬇️ 匯出完整備份檔 (.json)
+      </button>
+      <label class="block w-full py-3 rounded-xl bg-amber-200 neo-btn font-black text-xs text-center cursor-pointer">
+        ⬆️ 選取備份檔匯入還原 (.json)
+        <input type="file" accept=".json,application/json" class="hidden" onchange="importAllData(event)">
       </label>
     </div>
   </div>
@@ -334,7 +364,9 @@
         const albumReq = tx.objectStore('meta').get('albums');
         tx.oncomplete = () => {
           cards = (cardReq.result || []).sort((a, b) => b.createdAt - a.createdAt);
-          if (albumReq.result && albumReq.result.value) albums = albumReq.result.value;
+          if (albumReq.result && Array.isArray(albumReq.result.value) && albumReq.result.value.length > 0) {
+            albums = albumReq.result.value;
+          }
           updateHeaderStats();
           renderCurrentTab();
           resolve();
@@ -359,13 +391,18 @@
     }
 
     function saveAlbumsToDB() {
-      const tx = db.transaction('meta', 'readwrite');
-      tx.objectStore('meta').put({ key: 'albums', value: albums });
+      return new Promise((resolve) => {
+        const tx = db.transaction('meta', 'readwrite');
+        tx.objectStore('meta').put({ key: 'albums', value: albums });
+        tx.oncomplete = resolve;
+      });
     }
 
     function updateHeaderStats() {
       const favCount = cards.filter(c => c.fav).length;
       document.getElementById('headerStats').textContent = `總計 ${cards.length} 張 · ★ ${favCount} 張最愛 · ${albums.length} 個相簿`;
+      const backupCountEl = document.getElementById('backupCountText');
+      if (backupCountEl) backupCountEl.textContent = cards.length;
     }
 
     // --- Tab Switching ---
@@ -435,9 +472,9 @@
           <div class="h-36 rounded-xl bg-pink-50 flex items-center justify-center overflow-hidden mb-2">
             ${cover ? `<img src="${cover}" class="max-h-full max-w-full object-contain">` : `<span class="text-3xl">📁</span>`}
           </div>
-          <div class="flex justify-between items-center">
+          <div class="flex justify-between items-center gap-1">
             <span class="font-black text-sm truncate">${alb}</span>
-            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-pink-100">${albCards.length} 張</span>
+            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-pink-100 shrink-0">${albCards.length} 張</span>
           </div>
         `;
         grid.appendChild(div);
@@ -461,21 +498,21 @@
       ['ALL', ...albums].forEach(alb => {
         const btn = document.createElement('button');
         const active = selectedAlbumFilter === alb;
-        btn.className = `px-3 py-1 rounded-full text-xs font-black neo-btn shrink-0 ${active ? 'bg-cheki-accent text-white' : 'bg-white'}`;
+        btn.className = `px-3 py-1.5 rounded-full text-xs font-black neo-btn shrink-0 ${active ? 'bg-cheki-accent text-white' : 'bg-white'}`;
         btn.textContent = alb === 'ALL' ? '全部相片' : alb;
         btn.onclick = () => { selectedAlbumFilter = alb; renderBinder(); };
         pills.appendChild(btn);
       });
 
       const favBtn = document.getElementById('favFilterBtn');
-      favBtn.className = `px-3 py-1 rounded-full text-xs font-black neo-btn shrink-0 ${favOnlyFilter ? 'bg-amber-300' : 'bg-white'}`;
+      favBtn.className = `px-3 py-1.5 rounded-full text-xs font-black neo-btn shrink-0 ${favOnlyFilter ? 'bg-amber-300' : 'bg-white'}`;
 
       const grid = document.getElementById('binderGrid');
       grid.innerHTML = '';
       const list = getFilteredCards();
 
       if (list.length === 0) {
-        grid.innerHTML = `<div class="col-span-2 text-center py-12 text-zinc-400 font-bold text-sm">尚無拍立得，點擊右上角「✨ 新增」上傳吧！</div>`;
+        grid.innerHTML = `<div class="col-span-2 text-center py-12 text-zinc-400 font-bold text-sm">尚無拍立得，點擊右上角「✨ 新增」或「📦 備份」匯入吧！</div>`;
         return;
       }
 
@@ -559,7 +596,7 @@
       });
     }
 
-    // --- TAB 4: DESK (桌布：單擊直接翻面 + 自由拖曳 + 雙指縮放旋轉) ---
+    // --- TAB 4: DESK (單擊直接翻面 + 自由拖曳 + 雙指縮放旋轉) ---
     function renderDesk() {
       const canvas = document.getElementById('deskCanvas');
       canvas.innerHTML = '';
@@ -615,7 +652,6 @@
       let initialLeft = 0, initialTop = 0;
       let movedDistance = 0;
 
-      // 雙指縮放與旋轉狀態
       let isPinching = false;
       let startDist = 0;
       let startAngle = 0;
@@ -654,7 +690,7 @@
         isDragging = false;
         try { el.releasePointerCapture(e.pointerId); } catch (_) {}
 
-        // 若手指移動距離小於 6px，視為「單擊（Tap）」，直接翻轉 Cheki 正背面！
+        // 單擊（移動距離 < 6px）直接翻轉 Cheki 正背面
         if (movedDistance < 6 && !isPinching) {
           card.deskFlipped = !card.deskFlipped;
           const inner = el.querySelector('.desk-flip-inner');
@@ -663,7 +699,6 @@
         saveCardToDB(card);
       });
 
-      // Touch マルチタッチ (雙指縮放與旋轉)
       el.addEventListener('touchstart', (e) => {
         if (e.touches.length === 2) {
           isPinching = true;
@@ -963,18 +998,29 @@
       renderCurrentTab();
     }
 
-    // --- BACKUP & RESTORE ---
-    function openBackupModal() { document.getElementById('backupModal').classList.remove('hidden'); }
-    function closeBackupModal() { document.getElementById('backupModal').classList.add('hidden'); }
+    // --- BACKUP & RESTORE (兼容舊版與新版備份格式) ---
+    function openBackupModal() {
+      updateHeaderStats();
+      document.getElementById('backupModal').classList.remove('hidden');
+    }
+
+    function closeBackupModal() {
+      document.getElementById('backupModal').classList.add('hidden');
+    }
 
     function exportAllData() {
-      const data = JSON.stringify({ cards, albums, exportedAt: new Date().toISOString() });
+      const data = JSON.stringify({
+        cards,
+        albums,
+        exportedAt: new Date().toISOString()
+      });
       const blob = new Blob([data], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `ChekiPocket_Backup_${new Date().toISOString().slice(0,10)}.json`;
       a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
     function importAllData(e) {
@@ -984,18 +1030,48 @@
       reader.onload = async (ev) => {
         try {
           const parsed = JSON.parse(ev.target.result);
-          if (Array.isArray(parsed.cards)) {
-            for (const c of parsed.cards) await saveCardToDB(c);
+          const importedCards = Array.isArray(parsed) ? parsed : (parsed.cards || parsed.chekis || []);
+          const importedAlbums = Array.isArray(parsed.albums) ? parsed.albums : [];
+
+          for (const alb of importedAlbums) {
+            if (alb && !albums.includes(alb)) albums.push(alb);
           }
-          if (Array.isArray(parsed.albums)) {
-            albums = parsed.albums;
-            saveAlbumsToDB();
+
+          let count = 0;
+          for (const raw of importedCards) {
+            const normalized = {
+              id: raw.id || (Date.now() + Math.floor(Math.random() * 100000)),
+              createdAt: raw.createdAt || Date.now(),
+              member: raw.member || raw.idol || raw.name || '遠藤まりん',
+              date: raw.date || new Date().toISOString().split('T')[0],
+              album: raw.album || albums[0],
+              note: raw.note || raw.memo || '',
+              image: raw.image || raw.img || raw.dataUrl || '',
+              backColor: raw.backColor || '#60A5FA',
+              fav: Boolean(raw.fav || raw.favorite),
+              deskX: typeof raw.deskX === 'number' ? raw.deskX : 45 + (count * 35) % 150,
+              deskY: typeof raw.deskY === 'number' ? raw.deskY : 45 + (count * 45) % 170,
+              deskRot: typeof raw.deskRot === 'number' ? raw.deskRot : (count % 2 === 0 ? 5 : -5),
+              deskScale: raw.deskScale || 1,
+              deskZ: raw.deskZ || (count + 1),
+              deskFlipped: Boolean(raw.deskFlipped)
+            };
+            if (normalized.album && !albums.includes(normalized.album)) {
+              albums.push(normalized.album);
+            }
+            if (normalized.image) {
+              await saveCardToDB(normalized);
+              count++;
+            }
           }
+
+          await saveAlbumsToDB();
           await loadDataFromDB();
           closeBackupModal();
-          alert('✅ 備份資料已成功還原！');
+          e.target.value = '';
+          alert(`✅ 成功匯入還原 ${count} 張拍立得！`);
         } catch (err) {
-          alert('備份檔案格式不正確！');
+          alert('❌ 備份檔案格式不正確，請確認選取的是 .json 備份檔！');
         }
       };
       reader.readAsText(file);
