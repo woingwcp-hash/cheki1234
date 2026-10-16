@@ -1,0 +1,1757 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#FFF1F2">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>ChekiPocket - 拍立得卡冊</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Inter:wght@400;500;600;700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Zen Maru Gothic', 'Inter', 'sans-serif'],
+            marker: ['Caveat', 'Zen Maru Gothic', 'cursive'],
+          },
+          colors: {
+            cheki: {
+              paper: '#FFFDF9',
+              dark: '#272228',
+              surface: '#FFF7F9',
+              accent: '#FF5C8A',
+              border: '#F4D4DC'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * {
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      box-sizing: border-box;
+    }
+    input, textarea {
+      user-select: text;
+    }
+    
+    body {
+      background-color: #FFF5F7;
+      color: #2D2327;
+      font-family: 'Zen Maru Gothic', 'Inter', sans-serif;
+    }
+
+    .cartoon-border {
+      border: 3px solid #2D2327;
+      box-shadow: 4px 4px 0px #2D2327;
+      border-radius: 1.25rem;
+    }
+
+    .cartoon-btn {
+      border: 2.5px solid #2D2327;
+      box-shadow: 3px 3px 0px #2D2327;
+      border-radius: 1rem;
+      transition: all 0.1s ease;
+    }
+    .cartoon-btn:active {
+      transform: translate(2px, 2px);
+      box-shadow: 1px 1px 0px #2D2327;
+    }
+
+    .perspective-1000 {
+      perspective: 1000px;
+    }
+    .preserve-3d {
+      transform-style: preserve-3d;
+      transition: transform 0.4s ease;
+    }
+    .is-flipped {
+      transform: rotateY(180deg);
+    }
+    .backface-hidden {
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+    .rotate-y-180 {
+      transform: rotateY(180deg);
+    }
+
+    .cheki-cartoon-shadow {
+      box-shadow: 6px 8px 20px -3px rgba(45, 35, 39, 0.25), 2px 3px 6px rgba(45, 35, 39, 0.15);
+      border: 2.5px solid #2D2327;
+    }
+
+    /* Cute Desk Mats */
+    .desk-walnut {
+      background-color: #3B2416;
+      background-image: radial-gradient(#4E301F 15%, transparent 16%), radial-gradient(#2A1A0F 15%, transparent 16%);
+      background-size: 60px 60px;
+      background-position: 0 0, 30px 30px;
+    }
+    .desk-gingham {
+      background-color: #FFE4E8;
+      background-image: linear-gradient(90deg, rgba(255, 92, 138, 0.2) 50%, transparent 50%), linear-gradient(rgba(255, 92, 138, 0.2) 50%, transparent 50%);
+      background-size: 32px 32px;
+    }
+    .desk-pastel {
+      background-color: #E8F4F8;
+      background-image: radial-gradient(#C4E0EC 2px, transparent 2px);
+      background-size: 24px 24px;
+    }
+    .desk-yellow {
+      background-color: #FFFBE6;
+      background-image: radial-gradient(#FCEFB4 2px, transparent 2px);
+      background-size: 24px 24px;
+    }
+
+    .desk-card {
+      position: absolute;
+      touch-action: none;
+      cursor: grab;
+      user-select: none;
+      transform-origin: center center;
+    }
+    .desk-card.is-dragging {
+      cursor: grabbing !important;
+      z-index: 9999 !important;
+    }
+    .desk-card.is-selected {
+      outline: 4px dashed #FF5C8A;
+      outline-offset: 6px;
+      border-radius: 12px;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between antialiased selection:bg-pink-300 selection:text-pink-900">
+
+  <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b-3 border-[#2D2327] px-4 py-3 flex items-center justify-between shadow-sm">
+    <div class="flex items-center space-x-2.5">
+      <div class="w-9 h-9 rounded-2xl bg-[#FF5C8A] border-2 border-[#2D2327] shadow-[2px_2px_0px_#2D2327] flex items-center justify-center text-white font-bold">
+        📸
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="text-sm font-black tracking-tight text-[#2D2327]">ChekiPocket</h1>
+          <span class="text-[9px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded-full font-bold">本機永久存</span>
+        </div>
+        <p class="text-[10px] text-zinc-500 font-medium" id="globalStatsSubtitle">載入中...</p>
+      </div>
+    </div>
+    
+    <div class="flex items-center space-x-2">
+      <button onclick="toggleSearchSection()" class="relative p-2 cartoon-btn bg-white text-[#2D2327] hover:bg-pink-50 active:scale-95 transition" title="搜尋與篩選">
+        🔍
+        <span id="searchActiveBadge" class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#FF5C8A] rounded-full border border-black hidden"></span>
+      </button>
+      <button onclick="openScanModal()" class="px-3.5 py-1.5 bg-[#FF5C8A] hover:bg-[#ff4074] active:scale-95 text-white text-xs font-black cartoon-btn flex items-center space-x-1 shadow-sm">
+        <span>✨ 新增</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="searchSection" class="hidden bg-white border-b-2 border-[#2D2327] px-4 py-3 space-y-2.5">
+    <div class="relative">
+      <input type="text" id="searchInput" placeholder="搜尋偶像名字、活動、標籤..." oninput="handleSearchInput(this.value)" class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl pl-9 pr-3 py-2 text-xs text-[#2D2327] placeholder-zinc-400 focus:outline-none focus:bg-white transition font-medium">
+      <span class="absolute left-3 top-2 text-xs">🔍</span>
+    </div>
+
+    <!-- Dynamic Idol Chips -->
+    <div id="idolChipsContainer" class="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5">
+      <button onclick="handleIdolFilter('all', this)" class="idol-chip text-[11px] px-3 py-1 rounded-full font-bold bg-[#FF5C8A] text-white border-2 border-[#2D2327] shadow-[2px_2px_0px_#2D2327] transition flex-shrink-0" data-idol="all">全部偶像</button>
+    </div>
+
+    <div class="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5 border-t border-pink-100 pt-2">
+      <button onclick="handleFormatFilter('all', this)" class="filter-chip active text-[11px] px-3 py-1 rounded-full font-bold bg-[#FF5C8A] text-white border-2 border-[#2D2327] shadow-[2px_2px_0px_#2D2327] transition flex-shrink-0" data-filter="all">全部</button>
+      <button onclick="handleFormatFilter('fav', this)" class="filter-chip text-[11px] px-3 py-1 rounded-full font-bold bg-white text-[#2D2327] border-2 border-[#2D2327] hover:bg-pink-50 transition flex-shrink-0" data-filter="fav">★ 最愛</button>
+      <button onclick="handleFormatFilter('hasBack', this)" class="filter-chip text-[11px] px-3 py-1 rounded-full font-bold bg-white text-[#2D2327] border-2 border-[#2D2327] hover:bg-pink-50 transition flex-shrink-0" data-filter="hasBack">✍️ 筆記</button>
+      <button onclick="handleFormatFilter('mini', this)" class="filter-chip text-[11px] px-3 py-1 rounded-full font-bold bg-white text-[#2D2327] border-2 border-[#2D2327] hover:bg-pink-50 transition flex-shrink-0" data-filter="mini">直向</button>
+      <button onclick="handleFormatFilter('wide', this)" class="filter-chip text-[11px] px-3 py-1 rounded-full font-bold bg-white text-[#2D2327] border-2 border-[#2D2327] hover:bg-pink-50 transition flex-shrink-0" data-filter="wide">橫向</button>
+    </div>
+  </div>
+
+  <main class="flex-1 max-w-md mx-auto w-full px-3 py-4">
+    <div id="albumsViewContainer" class="space-y-4 pb-24">
+      <div class="bg-white border-2 border-[#2D2327] rounded-2xl p-3.5 shadow-[4px_4px_0px_#2D2327] flex items-center justify-between">
+        <div>
+          <div class="text-[11px] text-zinc-500 font-bold">📁 相簿資料夾</div>
+          <div class="text-sm font-black text-[#2D2327]"><span id="totalAlbumCount">0</span> 個相簿 · <span id="totalAlbumChekiCount">0</span> 張珍藏</div>
+        </div>
+        <div class="flex items-center space-x-1.5">
+          <button onclick="showStatsModal()" class="px-2.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-[#2D2327] text-xs font-black cartoon-btn border-2 border-[#2D2327]" title="統計與成就">📊 成就</button>
+          <button onclick="showBackupModal()" class="px-2.5 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-[#2D2327] text-xs font-black cartoon-btn border-2 border-[#2D2327]" title="備份與還原">💾 備份</button>
+          <button onclick="openAlbumModal()" class="px-3 py-1.5 bg-pink-100 hover:bg-pink-200 text-[#2D2327] text-xs font-black cartoon-btn border-2 border-[#2D2327] flex items-center space-x-1">
+            <span>+ 新增相簿</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="albumsGrid" class="grid grid-cols-2 gap-3.5"></div>
+    </div>
+
+    <div id="binderViewContainer" class="hidden space-y-3 pb-24">
+      <div id="albumHeaderBar" class="hidden items-center justify-between bg-white border-2 border-[#2D2327] px-3 py-2.5 rounded-2xl shadow-[3px_3px_0px_#2D2327]">
+        <div class="flex items-center space-x-2 truncate">
+          <button onclick="switchViewMode('albums')" class="p-1 text-[#FF5C8A] font-bold hover:scale-110">
+            ◀ 返回
+          </button>
+          <span class="text-xs font-black text-[#2D2327] truncate" id="currentAlbumTitleLabel">相簿名稱</span>
+        </div>
+        <div class="flex items-center space-x-1.5">
+          <button onclick="openEditAlbumModal()" class="px-2.5 py-1 bg-white text-zinc-700 text-xs font-bold cartoon-btn">編輯</button>
+        </div>
+      </div>
+
+      <div id="chekiGrid" class="grid grid-cols-2 gap-3.5"></div>
+    </div>
+
+    <div id="calendarViewContainer" class="hidden space-y-4 pb-24">
+      <div class="bg-white border-2 border-[#2D2327] rounded-2xl p-3.5 shadow-[4px_4px_0px_#2D2327] flex items-center justify-between">
+        <div>
+          <div class="text-[11px] text-zinc-500 font-bold">📅 日曆時光軸</div>
+          <div class="text-sm font-black text-[#2D2327]">按拍攝日期檢視所有珍藏</div>
+        </div>
+        <div class="text-xs font-black bg-pink-100 px-3 py-1.5 rounded-xl border-2 border-[#2D2327]">
+          <span id="calendarTotalDates">0</span> 個日期
+        </div>
+      </div>
+
+      <div id="calendarTimelineList" class="space-y-4"></div>
+    </div>
+
+    <div id="tableViewContainer" class="hidden flex-col pb-24">
+      <div class="bg-white border-2 border-[#2D2327] rounded-2xl p-2.5 mb-3 shadow-[4px_4px_0px_#2D2327] flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+        <div class="flex items-center space-x-1.5 flex-shrink-0">
+          <button onclick="reshuffleDeskCards()" class="px-2.5 py-1.5 bg-[#FF5C8A] text-white text-xs font-black cartoon-btn">🎲 隨機灑落</button>
+          <button onclick="arrangeDeskNeat()" class="px-2.5 py-1.5 bg-white text-[#2D2327] text-xs font-black cartoon-btn">🗂️ 整齊排列</button>
+          <button onclick="openDeskBgModal()" class="px-2.5 py-1.5 bg-pink-100 text-[#2D2327] text-xs font-black cartoon-btn">🎨 換桌布</button>
+        </div>
+        <div class="flex items-center space-x-1 pl-2 border-l-2 border-[#2D2327] flex-shrink-0">
+          <div class="flex items-center space-x-1 bg-pink-50 px-2 py-1 rounded-xl border-2 border-[#2D2327]">
+            <button onclick="adjustWorkspaceScale(-0.2)" class="text-xs font-bold px-1">🔍-</button>
+            <span id="workspaceScaleLabel" class="text-[10px] text-[#FF5C8A] font-mono font-black">1.0x</span>
+            <button onclick="adjustWorkspaceScale(0.2)" class="text-xs font-bold px-1">🔍+</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="deskSelectedCardBar" class="hidden bg-pink-100 border-2 border-[#2D2327] rounded-2xl p-2 mb-2 flex items-center justify-between text-xs text-[#2D2327] shadow-[2px_2px_0px_#2D2327]">
+        <span id="selectedCardNameLabel" class="font-black truncate max-w-[100px]">已選取</span>
+        <div class="flex items-center space-x-1">
+          <span class="text-[10px] text-zinc-600 bg-white px-2 py-0.5 rounded-full border border-[#2D2327]">💡 雙指可捏合縮放/旋轉</span>
+          <button onclick="flipSelectedDeskCard()" class="px-2.5 py-1 bg-white text-[#FF5C8A] font-black cartoon-btn">🔄 翻面</button>
+        </div>
+      </div>
+
+      <div class="relative w-full rounded-2xl overflow-hidden border-3 border-[#2D2327] shadow-[6px_6px_0px_#2D2327]">
+        <div id="deskCanvas" class="desk-walnut relative w-full h-[680px] overflow-hidden rounded-2xl select-none transition-all duration-300">
+          <div id="deskCardContainer" class="w-[180%] h-[180%] relative z-10 origin-top-left transition-transform duration-100"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="emptyState" class="hidden flex-col items-center justify-center py-16 px-4 text-center">
+      <div class="w-16 h-16 rounded-3xl bg-white border-3 border-[#2D2327] shadow-[4px_4px_0px_#2D2327] flex items-center justify-center mb-3 text-2xl">
+        🧸
+      </div>
+      <h3 class="text-sm font-black text-[#2D2327] mb-1">相簿中還沒有 Cheki</h3>
+      <p class="text-xs text-zinc-500 mb-4">點擊下方按鈕新增你的第一張拍立得！</p>
+      <button onclick="openScanModal()" class="px-4 py-2 bg-[#FF5C8A] text-white text-xs font-black cartoon-btn shadow-sm">✨ 立即新增</button>
+    </div>
+  </main>
+
+  <nav class="fixed bottom-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-xl border-t-3 border-[#2D2327] px-4 py-2 shadow-lg">
+    <div class="max-w-md mx-auto flex items-center justify-around">
+      <button id="navAlbumsBtn" onclick="switchViewMode('albums')" class="flex flex-col items-center text-[#FF5C8A] transition py-1">
+        <span class="text-xl">📚</span>
+        <span class="text-[10px] mt-0.5 font-black">相簿</span>
+      </button>
+      <button id="navBinderBtn" onclick="switchViewMode('binder')" class="flex flex-col items-center text-zinc-400 transition py-1">
+        <span class="text-xl">🎴</span>
+        <span class="text-[10px] mt-0.5 font-black">卡冊</span>
+      </button>
+      <button onclick="openScanModal()" class="-mt-6 w-13 h-13 rounded-3xl bg-[#FF5C8A] text-white flex items-center justify-center shadow-[3px_3px_0px_#2D2327] border-3 border-[#2D2327] text-2xl active:scale-95 transition">
+        ➕
+      </button>
+      <button id="navCalendarBtn" onclick="switchViewMode('calendar')" class="flex flex-col items-center text-zinc-400 transition py-1">
+        <span class="text-xl">📅</span>
+        <span class="text-[10px] mt-0.5 font-black">日曆</span>
+      </button>
+      <button id="navTableBtn" onclick="switchViewMode('table')" class="flex flex-col items-center text-zinc-400 transition py-1">
+        <span class="text-xl">🪵</span>
+        <span class="text-[10px] mt-0.5 font-black">桌布</span>
+      </button>
+    </div>
+  </nav>
+
+  <div id="scanModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden flex-col justify-between overflow-y-auto">
+    <div class="bg-white px-4 py-3 border-b-3 border-[#2D2327] flex items-center justify-between">
+      <button onclick="closeScanModal()" class="text-zinc-600 font-bold text-xs">取消</button>
+      <h2 class="text-xs font-black text-[#2D2327]">✨ 新增拍立得</h2>
+      <button onclick="saveCurrentCheki()" class="bg-[#FF5C8A] text-white text-xs font-black px-3.5 py-1 rounded-xl cartoon-btn">儲存</button>
+    </div>
+    <div class="p-4 space-y-3 max-w-md mx-auto w-full bg-pink-50">
+      
+      <!-- Anti-glare notice -->
+      <div class="bg-amber-100 border-2 border-[#2D2327] rounded-xl p-2.5 text-[11px] text-amber-900 font-bold flex items-start space-x-2 shadow-[2px_2px_0px_#2D2327]">
+        <span class="text-base">💡</span>
+        <div>
+          <p class="font-black">拍攝與去反光小貼士：</p>
+          <p class="text-[10px] text-amber-800">建議明亮處傾斜手機拍攝避開反光。點擊「自由裁切」修邊，並可自由切換直向/橫向框及調節畫質色彩！</p>
+        </div>
+      </div>
+
+      <div class="relative bg-white rounded-2xl border-3 border-[#2D2327] shadow-[4px_4px_0px_#2D2327] overflow-hidden flex flex-col items-center justify-center min-h-[220px] p-3">
+        <canvas id="cropCanvas" class="hidden max-h-[35vh] object-contain rounded-xl transition-all"></canvas>
+        <div id="uploadPrompt" class="flex flex-col items-center text-center p-4 space-y-3">
+          <div class="text-4xl">📸</div>
+          <div class="flex flex-col sm:flex-row gap-2.5 w-full justify-center">
+            <label class="cursor-pointer px-4 py-2.5 bg-[#FF5C8A] text-white text-xs font-black cartoon-btn flex items-center justify-center space-x-1">
+              <span>📸 現場拍照 (相機)</span>
+              <input type="file" id="cameraPicker" accept="image/*" capture="environment" class="hidden" onchange="handleFileSelect(event)">
+            </label>
+            <label class="cursor-pointer px-4 py-2.5 bg-white text-[#2D2327] text-xs font-black cartoon-btn flex items-center justify-center space-x-1 border-2 border-[#2D2327]">
+              <span>🖼️ 從手機相簿選擇</span>
+              <input type="file" id="filePicker" accept="image/*" class="hidden" onchange="handleFileSelect(event)">
+            </label>
+          </div>
+        </div>
+
+        <!-- Image Edit Controls & Orientation Switcher -->
+        <div id="imageEditControls" class="hidden w-full mt-3 space-y-3 pt-2 border-t-2 border-pink-100">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center bg-zinc-100 p-1 rounded-xl border-2 border-[#2D2327]">
+              <button type="button" id="tabPortrait" onclick="setScanOrientation(false)" class="px-3 py-1 rounded-lg text-xs font-black bg-white text-[#FF5C8A] border border-[#2D2327] shadow-sm">📱 直向框</button>
+              <button type="button" id="tabLandscape" onclick="setScanOrientation(true)" class="px-3 py-1 rounded-lg text-xs font-black text-zinc-600">🖼️ 橫向框</button>
+            </div>
+            <div class="flex space-x-1.5">
+              <button type="button" onclick="openCropTool()" class="px-2.5 py-1 bg-emerald-300 text-[#2D2327] text-xs font-bold rounded-xl border-2 border-[#2D2327]">✂️ 裁切</button>
+              <button type="button" onclick="rotatePreviewImage()" class="px-2.5 py-1 bg-amber-300 text-[#2D2327] text-xs font-bold rounded-xl border-2 border-[#2D2327]">🔄 旋轉</button>
+            </div>
+          </div>
+
+          <!-- Quality Adjustments Sliders -->
+          <div class="bg-pink-50/80 border-2 border-[#2D2327] rounded-xl p-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-black text-[#2D2327]">🎨 相片畫質與色彩調節</span>
+              <button type="button" onclick="resetImageFilters()" class="text-[10px] text-zinc-500 font-bold hover:underline">重設</button>
+            </div>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px] font-bold text-zinc-700">
+              <div>
+                <div class="flex justify-between mb-0.5"><span>對比度</span><span id="valContrast">100%</span></div>
+                <input type="range" min="50" max="150" value="100" id="sliderContrast" oninput="updateImageFilters()" class="w-full accent-[#FF5C8A]">
+              </div>
+              <div>
+                <div class="flex justify-between mb-0.5"><span>亮度</span><span id="valBrightness">100%</span></div>
+                <input type="range" min="50" max="150" value="100" id="sliderBrightness" oninput="updateImageFilters()" class="w-full accent-[#FF5C8A]">
+              </div>
+              <div>
+                <div class="flex justify-between mb-0.5"><span>飽和度</span><span id="valSaturation">100%</span></div>
+                <input type="range" min="0" max="200" value="100" id="sliderSaturation" oninput="updateImageFilters()" class="w-full accent-[#FF5C8A]">
+              </div>
+              <div>
+                <div class="flex justify-between mb-0.5"><span>色溫(冷暖)</span><span id="valWarmth">0</span></div>
+                <input type="range" min="-50" max="50" value="0" id="sliderWarmth" oninput="updateImageFilters()" class="w-full accent-[#FF5C8A]">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="space-y-2.5 bg-white p-3.5 rounded-2xl border-3 border-[#2D2327] shadow-[4px_4px_0px_#2D2327]">
+        <div>
+          <label class="block text-[11px] font-black text-zinc-600 mb-1">📁 放入相簿</label>
+          <select id="inputAlbumSelect" class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl px-2.5 py-2 text-xs text-[#2D2327] font-bold focus:outline-none"><option value="default">預設相簿</option></select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-black text-zinc-600 mb-1">🏷️ 偶像/對象名稱 *</label>
+          <input type="text" id="inputPerson" placeholder="例如：Sakuya" class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl px-2.5 py-2 text-xs text-[#2D2327] font-bold focus:outline-none">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="block text-[11px] font-black text-zinc-600 mb-1">📅 日期</label><input type="date" id="inputDate" class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl px-2.5 py-2 text-xs text-[#2D2327] font-bold"></div>
+          <div><label class="block text-[11px] font-black text-zinc-600 mb-1">🎉 場合/活動</label><input type="text" id="inputEvent" placeholder="1st Live" class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl px-2.5 py-2 text-xs text-[#2D2327] font-bold"></div>
+        </div>
+        <div><label class="block text-[11px] font-black text-zinc-600 mb-1">✍️ 背面筆記</label><textarea id="inputNotes" rows="2" placeholder="紀錄背面寫了甚麼..." class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl px-2.5 py-2 text-xs text-[#2D2327] font-bold"></textarea></div>
+        <label class="flex items-center space-x-2 pt-1 cursor-pointer"><input type="checkbox" id="inputFav" class="w-4 h-4 rounded border-2 border-[#2D2327] text-[#FF5C8A]"><span class="text-xs font-black text-zinc-700">★ 加入最愛珍藏</span></label>
+      </div>
+    </div>
+  </div>
+
+  <div id="albumModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-white border-3 border-[#2D2327] rounded-3xl max-w-sm w-full p-4 space-y-3 shadow-[6px_6px_0px_#2D2327]">
+      <div class="flex items-center justify-between border-b-2 border-zinc-200 pb-2">
+        <h3 id="albumModalTitle" class="text-xs font-black text-[#2D2327]">✨ 新增相簿</h3>
+        <button onclick="closeAlbumModal()" class="text-zinc-500 font-bold text-xs">✕</button>
+      </div>
+      <input type="text" id="albumNameInput" placeholder="相簿名稱（例如：Sakuya 專屬）" class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl px-3 py-2 text-xs text-[#2D2327] font-bold">
+      <input type="text" id="albumDescInput" placeholder="描述（選填）" class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl px-3 py-2 text-xs text-[#2D2327] font-bold">
+      <div class="flex space-x-2 pt-1">
+        <button onclick="saveAlbumData()" class="flex-1 py-2 bg-[#FF5C8A] text-white font-black text-xs cartoon-btn">儲存</button>
+        <button onclick="closeAlbumModal()" class="py-2 px-3 bg-white text-zinc-600 font-bold text-xs cartoon-btn">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Card Modal with z-[60] to sit above inspectModal cleanly -->
+  <div id="editCardModal" class="fixed inset-0 z-[60] bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-white border-3 border-[#2D2327] rounded-3xl max-w-sm w-full p-4 space-y-3 shadow-[6px_6px_0px_#2D2327]">
+      <div class="flex items-center justify-between border-b-2 border-zinc-200 pb-2">
+        <h3 class="text-xs font-black text-[#2D2327]">✏️ 編輯 Cheki 內容</h3>
+        <button onclick="closeEditCardModal()" class="text-zinc-500 font-bold text-xs">✕</button>
+      </div>
+      <div>
+        <label class="block text-[11px] font-black text-zinc-600 mb-1">📁 所屬相簿</label>
+        <select id="editCardAlbumSelect" class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl px-2.5 py-2 text-xs text-[#2D2327] font-bold focus:outline-none"></select>
+      </div>
+      <div>
+        <label class="block text-[11px] font-black text-zinc-600 mb-1">🏷️ 偶像/對象名稱 *</label>
+        <input type="text" id="editCardPerson" class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl px-2.5 py-2 text-xs text-[#2D2327] font-bold focus:outline-none">
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div><label class="block text-[11px] font-black text-zinc-600 mb-1">📅 日期</label><input type="date" id="editCardDate" class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl px-2.5 py-2 text-xs text-[#2D2327] font-bold"></div>
+        <div><label class="block text-[11px] font-black text-zinc-600 mb-1">🎉 場合/活動</label><input type="text" id="editCardEvent" class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl px-2.5 py-2 text-xs text-[#2D2327] font-bold"></div>
+      </div>
+      <div><label class="block text-[11px] font-black text-zinc-600 mb-1">✍️ 背面筆記</label><textarea id="editCardNotes" rows="2" class="w-full bg-pink-50/50 border-2 border-[#2D2327] rounded-xl px-2.5 py-2 text-xs text-[#2D2327] font-bold"></textarea></div>
+      <div class="flex space-x-2 pt-1">
+        <button onclick="saveEditedCardData()" class="flex-1 py-2 bg-[#FF5C8A] text-white font-black text-xs cartoon-btn">確認修改</button>
+        <button onclick="closeEditCardModal()" class="py-2 px-3 bg-white text-zinc-600 font-bold text-xs cartoon-btn">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cropModal" class="fixed inset-0 z-50 bg-black/90 hidden flex-col justify-between">
+    <div class="bg-white px-4 py-3 border-b-3 border-[#2D2327] flex items-center justify-between">
+      <button type="button" onclick="closeCropTool()" class="text-zinc-600 font-bold text-xs">取消</button>
+      <div class="text-xs font-black text-[#2D2327]">✂️ 自由裁切修邊</div>
+      <button type="button" onclick="applyCropResult()" class="bg-emerald-400 text-[#2D2327] text-xs font-black px-3.5 py-1 rounded-xl border-2 border-[#2D2327]">完成</button>
+    </div>
+    <div class="flex-1 relative flex items-center justify-center p-2 overflow-hidden bg-zinc-950" id="cropStageContainer" style="touch-action: none;">
+      <div class="relative inline-block max-w-full max-h-full" id="cropWrapper">
+        <img id="cropTargetImage" class="max-w-full max-h-[60vh] object-contain" style="display: block;">
+        <div id="cropBox" class="absolute border-3 border-emerald-400 bg-emerald-500/15 shadow-[0_0_0_9999px_rgba(0,0,0,0.75)] cursor-move" style="top: 10%; left: 10%; width: 80%; height: 80%;">
+          <div class="absolute -top-2 -left-2 w-5 h-5 bg-emerald-400 border-2 border-black cursor-nwse-resize" data-handle="tl"></div>
+          <div class="absolute -top-2 -right-2 w-5 h-5 bg-emerald-400 border-2 border-black cursor-nesw-resize" data-handle="tr"></div>
+          <div class="absolute -bottom-2 -left-2 w-5 h-5 bg-emerald-400 border-2 border-black cursor-nesw-resize" data-handle="bl"></div>
+          <div class="absolute -bottom-2 -right-2 w-5 h-5 bg-emerald-400 border-2 border-black cursor-nwse-resize" data-handle="nwse-resize" data-handle="br"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="inspectModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden flex-col justify-between overflow-y-auto">
+    <div class="bg-white px-4 py-3 border-b-3 border-[#2D2327] flex items-center justify-between">
+      <button onclick="closeInspectModal()" class="text-zinc-700 font-bold text-xs">✕ 關閉</button>
+      <div id="inspectTitle" class="text-xs font-black text-[#2D2327]">詳情</div>
+      <div class="flex items-center space-x-1.5">
+        <button onclick="openEditCardModal()" class="px-2 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-lg border border-[#2D2327]" title="編輯內容">✏️</button>
+        <button onclick="openMoveCardAlbumModal()" class="px-2 py-1 bg-pink-100 text-[#2D2327] text-xs font-bold rounded-lg border border-[#2D2327]" title="換相簿">📁</button>
+        <button onclick="toggleCurrentCardFav()" id="inspectFavBtn" class="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-lg border border-[#2D2327]">★</button>
+        <button onclick="deleteCurrentCard()" class="px-2 py-1 bg-rose-100 text-rose-600 text-xs font-bold rounded-lg border border-[#2D2327]">🗑️</button>
+      </div>
+    </div>
+    <div class="flex-1 flex flex-col items-center justify-center p-4">
+      <div id="inspectPerspectiveContainer" class="perspective-1000 w-full max-w-[300px]">
+        <div id="flippableCard" onclick="flipCardAnimation()" class="preserve-3d relative w-full cursor-pointer rounded-xl">
+          <div class="backface-hidden flex flex-col items-center">
+            <div id="inspectPhotoContainer" class="w-full rounded-xl overflow-hidden relative flex items-center justify-center cheki-cartoon-shadow bg-transparent">
+              <img id="inspectFrontImg" src="" class="w-full h-auto max-h-[65vh] object-contain block">
+            </div>
+            <div class="mt-3 px-3 py-1 bg-white/90 backdrop-blur-sm rounded-full border-2 border-[#2D2327] shadow-[2px_2px_0px_#2D2327]">
+              <p id="inspectCaptionHandwriting" class="font-sans text-xs font-black text-[#2D2327] truncate"></p>
+            </div>
+          </div>
+          <div class="backface-hidden rotate-y-180 absolute inset-0 bg-[#FFF7EE] text-[#2D2327] p-4 rounded-xl border-3 border-[#2D2327] cheki-cartoon-shadow flex flex-col justify-between">
+            <span class="text-[10px] font-mono text-zinc-500 font-bold">★ BACK NOTE</span>
+            <p id="inspectBackNote" class="font-marker text-lg text-[#2D2327] whitespace-pre-wrap leading-relaxed text-center"></p>
+            <span class="text-[10px] text-zinc-500 text-right font-bold">ChekiPocket</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="p-3 bg-white border-t-3 border-[#2D2327]">
+      <button onclick="downloadCardImage()" class="w-full py-2.5 bg-[#FF5C8A] text-white text-xs font-black cartoon-btn">📥 匯出相片</button>
+    </div>
+  </div>
+
+  <div id="statsModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-white border-3 border-[#2D2327] rounded-3xl max-w-sm w-full p-4 space-y-3 shadow-[6px_6px_0px_#2D2327] max-h-[85vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b-2 border-zinc-200 pb-2">
+        <h3 class="text-xs font-black text-[#2D2327]">🏆 收藏統計與成就解鎖</h3>
+        <button onclick="closeStatsModal()" class="text-zinc-500 font-bold text-xs">✕</button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2.5">
+        <div class="bg-pink-50 border-2 border-[#2D2327] rounded-2xl p-3 text-center">
+          <div class="text-lg font-black text-[#FF5C8A]" id="statsTotalCount">0</div>
+          <div class="text-[10px] font-bold text-zinc-600 mt-0.5">總收藏張數</div>
+        </div>
+        <div class="bg-amber-50 border-2 border-[#2D2327] rounded-2xl p-3 text-center">
+          <div class="text-lg font-black text-amber-600" id="statsFavCount">0</div>
+          <div class="text-[10px] font-bold text-zinc-600 mt-0.5">最愛珍藏數</div>
+        </div>
+        <div class="bg-emerald-50 border-2 border-[#2D2327] rounded-2xl p-3 text-center">
+          <div class="text-lg font-black text-emerald-600" id="statsAlbumCount">0</div>
+          <div class="text-[10px] font-bold text-zinc-600 mt-0.5">專屬相簿數</div>
+        </div>
+        <div class="bg-indigo-50 border-2 border-[#2D2327] rounded-2xl p-3 text-center">
+          <div class="text-lg font-black text-indigo-600" id="statsPersonCount">0</div>
+          <div class="text-[10px] font-bold text-zinc-600 mt-0.5">收錄對象數</div>
+        </div>
+      </div>
+
+      <div class="bg-white border-2 border-[#2D2327] rounded-2xl p-3 space-y-2">
+        <div class="text-xs font-black text-[#2D2327]">💖 偶像收藏排行榜 (Top 5)</div>
+        <div id="statsRankingList" class="space-y-1.5"></div>
+      </div>
+
+      <div class="bg-white border-2 border-[#2D2327] rounded-2xl p-3 space-y-2.5">
+        <div class="text-xs font-black text-[#2D2327]">🏅 成就解鎖進度</div>
+        <div id="statsAchievementsList" class="space-y-2"></div>
+      </div>
+
+      <button onclick="closeStatsModal()" class="w-full py-2.5 bg-[#FF5C8A] text-white font-black text-xs cartoon-btn">關閉</button>
+    </div>
+  </div>
+
+  <div id="backupModal" class="fixed inset-0 z-50 bg-black/80 hidden items-center justify-center p-4">
+    <div class="bg-white border-3 border-[#2D2327] rounded-3xl max-w-sm w-full p-4 space-y-3 shadow-[6px_6px_0px_#2D2327]">
+      <div class="flex items-center justify-between border-b-2 border-zinc-200 pb-2">
+        <h3 class="text-xs font-black text-[#2D2327]">💾 備份與換機轉移</h3>
+        <button onclick="closeBackupModal()" class="text-zinc-500 font-bold text-xs">✕</button>
+      </div>
+      <button onclick="downloadBackupFile()" class="w-full py-2.5 bg-[#FF5C8A] text-white font-black text-xs cartoon-btn">📥 下載備份檔 (.cheki)</button>
+      <div class="relative border-3 border-dashed border-[#2D2327] rounded-2xl p-3 text-center bg-pink-50">
+        <input type="file" id="transferFileInput" accept=".cheki,.json" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="handleTransferFileSelect(event)">
+        <p class="text-xs font-black text-[#2D2327]">📂 點擊選取備份檔還原相簿</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="deskBgModal" class="fixed inset-0 z-50 bg-black/80 hidden items-center justify-center p-4">
+    <div class="bg-white border-3 border-[#2D2327] rounded-3xl max-w-sm w-full p-4 space-y-3 shadow-[6px_6px_0px_#2D2327]">
+      <div class="flex items-center justify-between border-b-2 border-zinc-200 pb-2">
+        <h3 class="text-xs font-black text-[#2D2327]">🎨 更換散落桌布背景</h3>
+        <button onclick="closeDeskBgModal()" class="text-zinc-500 font-bold text-xs">✕</button>
+      </div>
+      <div class="grid grid-cols-2 gap-2.5">
+        <div onclick="selectPresetDeskTheme('desk-walnut')" class="cursor-pointer border-2 border-[#2D2327] p-2 rounded-xl bg-pink-50 hover:bg-pink-100 transition"><div class="desk-walnut h-10 rounded-lg border border-[#2D2327]"></div><p class="text-[11px] font-black text-[#2D2327] mt-1 text-center">經典胡桃木</p></div>
+        <div onclick="selectPresetDeskTheme('desk-gingham')" class="cursor-pointer border-2 border-[#2D2327] p-2 rounded-xl bg-pink-50 hover:bg-pink-100 transition"><div class="desk-gingham h-10 rounded-lg border border-[#2D2327]"></div><p class="text-[11px] font-black text-[#2D2327] mt-1 text-center">粉紅格紋</p></div>
+        <div onclick="selectPresetDeskTheme('desk-pastel')" class="cursor-pointer border-2 border-[#2D2327] p-2 rounded-xl bg-pink-50 hover:bg-pink-100 transition"><div class="desk-pastel h-10 rounded-lg border border-[#2D2327]"></div><p class="text-[11px] font-black text-[#2D2327] mt-1 text-center">粉藍波點</p></div>
+        <div onclick="selectPresetDeskTheme('desk-yellow')" class="cursor-pointer border-2 border-[#2D2327] p-2 rounded-xl bg-pink-50 hover:bg-pink-100 transition"><div class="desk-yellow h-10 rounded-lg border border-[#2D2327]"></div><p class="text-[11px] font-black text-[#2D2327] mt-1 text-center">奶油黃格</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-[#2D2327] text-white border-2 border-[#2D2327] font-black text-xs px-4 py-2.5 rounded-2xl shadow-[4px_4px_0px_#FF5C8A] opacity-0 pointer-events-none transition-all duration-300">
+    <span id="toastMsg">通知</span>
+  </div>
+
+  <script>
+    const DB_NAME = 'ChekiPocket_CartoonDB_v10';
+    const DB_VERSION = 1;
+    let dbInstance = null;
+
+    function initIndexedDB() {
+      return new Promise((resolve, reject) => {
+        if (dbInstance) return resolve(dbInstance);
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = e => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('cards')) db.createObjectStore('cards', { keyPath: 'id' });
+          if (!db.objectStoreNames.contains('albums')) db.createObjectStore('albums', { keyPath: 'id' });
+          if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'key' });
+        };
+        req.onsuccess = e => { dbInstance = e.target.result; resolve(dbInstance); };
+        req.onerror = e => reject(e.target.error);
+      });
+    }
+
+    async function dbGetAllCards() {
+      const db = await initIndexedDB();
+      return new Promise(res => {
+        const tx = db.transaction('cards', 'readonly');
+        const req = tx.objectStore('cards').getAll();
+        req.onsuccess = () => res(req.result || []);
+        req.onerror = () => res([]);
+      });
+    }
+    async function dbSaveCard(card) {
+      const db = await initIndexedDB();
+      return new Promise((res) => {
+        const tx = db.transaction('cards', 'readwrite');
+        tx.objectStore('cards').put(card);
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => res(false);
+      });
+    }
+    async function dbDeleteCard(id) {
+      const db = await initIndexedDB();
+      return new Promise((res) => {
+        const tx = db.transaction('cards', 'readwrite');
+        tx.objectStore('cards').delete(id);
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => res(false);
+      });
+    }
+    async function dbSaveAllCards(cards) {
+      const db = await initIndexedDB();
+      return new Promise((res) => {
+        const tx = db.transaction('cards', 'readwrite');
+        const store = tx.objectStore('cards');
+        store.clear();
+        cards.forEach(c => store.put(c));
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => res(false);
+      });
+    }
+    async function dbGetAllAlbums() {
+      const db = await initIndexedDB();
+      return new Promise(res => {
+        const tx = db.transaction('albums', 'readonly');
+        const req = tx.objectStore('albums').getAll();
+        req.onsuccess = () => res(req.result || []);
+        req.onerror = () => res([]);
+      });
+    }
+    async function dbSaveAlbum(album) {
+      const db = await initIndexedDB();
+      return new Promise((res) => {
+        const tx = db.transaction('albums', 'readwrite');
+        tx.objectStore('albums').put(album);
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => res(false);
+      });
+    }
+    async function dbSaveAllAlbums(albums) {
+      const db = await initIndexedDB();
+      return new Promise((res) => {
+        const tx = db.transaction('albums', 'readwrite');
+        const store = tx.objectStore('albums');
+        store.clear();
+        albums.forEach(a => store.put(a));
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => res(false);
+      });
+    }
+    async function dbGetSetting(key, def = null) {
+      const db = await initIndexedDB();
+      return new Promise(res => {
+        const tx = db.transaction('settings', 'readonly');
+        const req = tx.objectStore('settings').get(key);
+        req.onsuccess = () => res(req.result ? req.result.value : def);
+        req.onerror = () => res(def);
+      });
+    }
+    async function dbSetSetting(key, val) {
+      const db = await initIndexedDB();
+      return new Promise(res => {
+        const tx = db.transaction('settings', 'readwrite');
+        tx.objectStore('settings').put({ key, value: val });
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => res(false);
+      });
+    }
+
+    function isCardLandscape(card) {
+      if (card.isLandscape !== undefined) return Boolean(card.isLandscape);
+      return card.format === 'wide';
+    }
+
+    let chekiList = [];
+    let albumList = [];
+    let currentViewMode = 'albums';
+    let activeAlbumId = 'all';
+    let currentFormatFilter = 'all';
+    let currentIdolFilter = 'all';
+    let searchQuery = '';
+    let inspectedCardId = null;
+    let currentDeskTheme = 'desk-walnut';
+    let deskCardPositions = {};
+    let highestZIndex = 10;
+    let selectedDeskCardId = null;
+    let deskWorkspaceScale = 1.0;
+
+    function updateGlobalStats() {
+      const total = chekiList.length;
+      const favs = chekiList.filter(c => c.isFavorite).length;
+      const sub = document.getElementById('globalStatsSubtitle');
+      if (sub) sub.textContent = `總計 ${total} 張 · ★ ${favs} 張最愛 · ${albumList.length} 個相簿`;
+      updateSearchActiveBadge();
+    }
+
+    function updateSearchActiveBadge() {
+      const badge = document.getElementById('searchActiveBadge');
+      if (!badge) return;
+      if (searchQuery || currentFormatFilter !== 'all' || currentIdolFilter !== 'all') {
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+
+    function toggleSearchSection() {
+      const s = document.getElementById('searchSection');
+      s.classList.toggle('hidden');
+      if (!s.classList.contains('hidden')) {
+        renderIdolChips();
+      }
+    }
+
+    function renderIdolChips() {
+      const container = document.getElementById('idolChipsContainer');
+      if (!container) return;
+      
+      const idols = [...new Set(chekiList.map(c => c.person).filter(Boolean))];
+      
+      let html = `<button onclick="handleIdolFilter('all', this)" class="idol-chip text-[11px] px-3 py-1 rounded-full font-bold ${currentIdolFilter === 'all' ? 'bg-[#FF5C8A] text-white shadow-[2px_2px_0px_#2D2327]' : 'bg-white text-[#2D2327] hover:bg-pink-50'} border-2 border-[#2D2327] transition flex-shrink-0" data-idol="all">全部偶像</button>`;
+      
+      idols.forEach(name => {
+        const active = currentIdolFilter === name;
+        html += `<button onclick="handleIdolFilter('${name}', this)" class="idol-chip text-[11px] px-3 py-1 rounded-full font-bold ${active ? 'bg-[#FF5C8A] text-white shadow-[2px_2px_0px_#2D2327]' : 'bg-white text-[#2D2327] hover:bg-pink-50'} border-2 border-[#2D2327] transition flex-shrink-0" data-idol="${name}">${name}</button>`;
+      });
+      container.innerHTML = html;
+    }
+
+    function handleSearchInput(val) {
+      searchQuery = val.trim();
+      renderGrid();
+      if (currentViewMode === 'calendar') renderCalendarView();
+      updateSearchActiveBadge();
+    }
+
+    function handleIdolFilter(idolName, btnEl) {
+      currentIdolFilter = idolName;
+      renderIdolChips();
+      renderGrid();
+      if (currentViewMode === 'calendar') renderCalendarView();
+      updateSearchActiveBadge();
+    }
+
+    function handleFormatFilter(filterVal, btnEl) {
+      currentFormatFilter = filterVal;
+      document.querySelectorAll('.filter-chip').forEach(b => {
+        b.className = 'filter-chip text-[11px] px-3 py-1 rounded-full font-bold bg-white text-[#2D2327] border-2 border-[#2D2327] hover:bg-pink-50 transition flex-shrink-0';
+      });
+      if (btnEl) btnEl.className = 'filter-chip active text-[11px] px-3 py-1 rounded-full font-bold bg-[#FF5C8A] text-white border-2 border-[#2D2327] shadow-[2px_2px_0px_#2D2327] transition flex-shrink-0';
+      renderGrid();
+      if (currentViewMode === 'calendar') renderCalendarView();
+      updateSearchActiveBadge();
+    }
+
+    function switchViewMode(mode, albumId = 'all') {
+      currentViewMode = mode;
+      activeAlbumId = albumId;
+
+      const albumsView = document.getElementById('albumsViewContainer');
+      const binderView = document.getElementById('binderViewContainer');
+      const calendarView = document.getElementById('calendarViewContainer');
+      const tableView = document.getElementById('tableViewContainer');
+      const albumHeaderBar = document.getElementById('albumHeaderBar');
+
+      const navAlbums = document.getElementById('navAlbumsBtn');
+      const navBinder = document.getElementById('navBinderBtn');
+      const navCalendar = document.getElementById('navCalendarBtn');
+      const navTable = document.getElementById('navTableBtn');
+
+      [navAlbums, navBinder, navCalendar, navTable].forEach(n => {
+        if (n) n.className = 'flex flex-col items-center text-zinc-400 transition py-1';
+      });
+
+      if (mode === 'albums') {
+        albumsView.classList.remove('hidden');
+        binderView.classList.add('hidden');
+        calendarView.classList.add('hidden');
+        tableView.classList.add('hidden');
+        if (navAlbums) navAlbums.className = 'flex flex-col items-center text-[#FF5C8A] transition py-1';
+        renderAlbumsGrid();
+      } else if (mode === 'binder') {
+        albumsView.classList.add('hidden');
+        binderView.classList.remove('hidden');
+        calendarView.classList.add('hidden');
+        tableView.classList.add('hidden');
+        if (navBinder) navBinder.className = 'flex flex-col items-center text-[#FF5C8A] transition py-1';
+
+        if (albumId !== 'all') {
+          const alb = albumList.find(a => a.id === albumId);
+          albumHeaderBar.classList.remove('hidden');
+          albumHeaderBar.classList.add('flex');
+          document.getElementById('currentAlbumTitleLabel').textContent = alb ? alb.name : '相簿';
+        } else {
+          albumHeaderBar.classList.add('hidden');
+          albumHeaderBar.classList.remove('flex');
+        }
+        renderGrid();
+      } else if (mode === 'calendar') {
+        albumsView.classList.add('hidden');
+        binderView.classList.add('hidden');
+        calendarView.classList.remove('hidden');
+        tableView.classList.add('hidden');
+        if (navCalendar) navCalendar.className = 'flex flex-col items-center text-[#FF5C8A] transition py-1';
+        renderCalendarView();
+      } else if (mode === 'table') {
+        albumsView.classList.add('hidden');
+        binderView.classList.add('hidden');
+        calendarView.classList.add('hidden');
+        tableView.classList.remove('hidden');
+        tableView.classList.add('flex');
+        if (navTable) navTable.className = 'flex flex-col items-center text-[#FF5C8A] transition py-1';
+        requestAnimationFrame(() => renderDeskView());
+      }
+    }
+
+    function renderGrid() {
+      const grid = document.getElementById('chekiGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+      
+      let filtered = chekiList.filter(card => {
+        if (activeAlbumId !== 'all' && card.albumId !== activeAlbumId) return false;
+        if (currentIdolFilter !== 'all' && card.person !== currentIdolFilter) return false;
+        if (currentFormatFilter === 'fav' && !card.isFavorite) return false;
+        if (currentFormatFilter === 'hasBack' && (!card.notes || card.notes.trim() === '')) return false;
+        if (currentFormatFilter === 'mini' && isCardLandscape(card)) return false;
+        if (currentFormatFilter === 'wide' && !isCardLandscape(card)) return false;
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          const matchPerson = card.person && card.person.toLowerCase().includes(q);
+          const matchEvent = card.event && card.event.toLowerCase().includes(q);
+          const matchNotes = card.notes && card.notes.toLowerCase().includes(q);
+          if (!matchPerson && !matchEvent && !matchNotes) return false;
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        document.getElementById('emptyState').classList.remove('hidden');
+        document.getElementById('emptyState').classList.add('flex');
+        return;
+      } else {
+        document.getElementById('emptyState').classList.add('hidden');
+        document.getElementById('emptyState').classList.remove('flex');
+      }
+
+      filtered.forEach(card => {
+        const isLand = isCardLandscape(card);
+        const aspect = isLand ? 'aspect-[62/46]' : 'aspect-[46/62]';
+        const el = document.createElement('div');
+        el.className = 'bg-white border-3 border-[#2D2327] rounded-3xl p-2.5 shadow-[4px_4px_0px_#2D2327] cursor-pointer hover:translate-y-[-2px] transition flex flex-col justify-between';
+        el.onclick = () => openInspectModal(card.id);
+        el.innerHTML = `
+          <div class="flex items-center justify-between mb-1.5 px-1">
+            <span class="text-xs font-black text-[#2D2327] truncate max-w-[110px]">${card.person}</span>
+            <span class="text-[10px] text-zinc-500 font-bold">${card.date}</span>
+          </div>
+          <div class="w-full ${aspect} rounded-xl overflow-hidden relative flex items-center justify-center mb-1.5">
+            <img src="${card.frontImage}" class="w-full h-full object-contain rounded-lg drop-shadow-md">
+            ${card.isFavorite ? '<span class="absolute top-1.5 right-1.5 text-xs bg-amber-300 px-1.5 py-0.5 rounded-full border border-black font-bold shadow-sm">★</span>' : ''}
+          </div>
+          <div class="flex items-center justify-between text-[10px] text-zinc-500 font-bold px-1">
+            <span>🎉 ${card.event || '日常'}</span>
+            <span>${card.notes ? '✍️ 有筆記' : ''}</span>
+          </div>
+        `;
+        grid.appendChild(el);
+      });
+    }
+
+    function renderCalendarView() {
+      const container = document.getElementById('calendarTimelineList');
+      if (!container) return;
+      container.innerHTML = '';
+
+      let filtered = chekiList.filter(card => {
+        if (currentIdolFilter !== 'all' && card.person !== currentIdolFilter) return false;
+        if (currentFormatFilter === 'fav' && !card.isFavorite) return false;
+        if (currentFormatFilter === 'hasBack' && (!card.notes || card.notes.trim() === '')) return false;
+        if (currentFormatFilter === 'mini' && isCardLandscape(card)) return false;
+        if (currentFormatFilter === 'wide' && !isCardLandscape(card)) return false;
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          const matchPerson = card.person && card.person.toLowerCase().includes(q);
+          const matchEvent = card.event && card.event.toLowerCase().includes(q);
+          if (!matchPerson && !matchEvent) return false;
+        }
+        return true;
+      });
+
+      const dateMap = {};
+      filtered.forEach(card => {
+        const d = card.date || '未分類日期';
+        if (!dateMap[d]) dateMap[d] = [];
+        dateMap[d].push(card);
+      });
+
+      const sortedDates = Object.keys(dateMap).sort().reverse();
+      document.getElementById('calendarTotalDates').textContent = sortedDates.length;
+
+      if (sortedDates.length === 0) {
+        container.innerHTML = '<div class="text-center text-xs text-zinc-500 py-12 font-bold">沒有符合條件的日曆時光紀錄</div>';
+        return;
+      }
+
+      sortedDates.forEach(dateStr => {
+        const cards = dateMap[dateStr];
+        const groupEl = document.createElement('div');
+        groupEl.className = 'bg-white border-3 border-[#2D2327] rounded-3xl p-4 shadow-[4px_4px_0px_#2D2327] space-y-3';
+        
+        let html = `
+          <div class="flex items-center justify-between border-b-2 border-pink-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="text-base">📅</span>
+              <span class="text-xs font-black text-[#2D2327]">${dateStr}</span>
+            </div>
+            <span class="text-[10px] font-bold bg-pink-100 text-[#FF5C8A] px-2 py-0.5 rounded-full border border-[#2D2327]">${cards.length} 張</span>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+        `;
+
+        cards.forEach(card => {
+          const isLand = isCardLandscape(card);
+          const aspect = isLand ? 'aspect-[62/46]' : 'aspect-[46/62]';
+          html += `
+            <div onclick="openInspectModal('${card.id}')" class="bg-pink-50/50 border-2 border-[#2D2327] rounded-2xl p-2 cursor-pointer hover:bg-pink-100 transition">
+              <div class="text-[11px] font-black text-[#2D2327] truncate mb-1 px-0.5">${card.person}</div>
+              <div class="w-full ${aspect} rounded-xl overflow-hidden relative flex items-center justify-center">
+                <img src="${card.frontImage}" class="w-full h-full object-contain rounded-lg drop-shadow-sm">
+              </div>
+            </div>
+          `;
+        });
+
+        html += `</div>`;
+        groupEl.innerHTML = html;
+        container.appendChild(groupEl);
+      });
+    }
+
+    let scanState = { frontImage: null, isLandscape: false, contrast: 100, brightness: 100, saturation: 100, warmth: 0 };
+    
+    function openScanModal() {
+      scanState = { frontImage: null, isLandscape: false, contrast: 100, brightness: 100, saturation: 100, warmth: 0 };
+      document.getElementById('inputPerson').value = '';
+      document.getElementById('inputEvent').value = '';
+      document.getElementById('inputNotes').value = '';
+      document.getElementById('inputFav').checked = false;
+      document.getElementById('inputDate').value = new Date().toISOString().split('T')[0];
+      
+      resetImageFilters();
+      populateAlbumSelectOptions('inputAlbumSelect');
+      document.getElementById('cropCanvas').classList.add('hidden');
+      document.getElementById('imageEditControls').classList.add('hidden');
+      document.getElementById('uploadPrompt').classList.remove('hidden');
+      document.getElementById('scanModal').classList.remove('hidden');
+      document.getElementById('scanModal').classList.add('flex');
+    }
+    function closeScanModal() {
+      document.getElementById('scanModal').classList.add('hidden');
+      document.getElementById('scanModal').classList.remove('flex');
+    }
+
+    function setScanOrientation(isLand) {
+      scanState.isLandscape = isLand;
+      const tabP = document.getElementById('tabPortrait');
+      const tabL = document.getElementById('tabLandscape');
+      const canvas = document.getElementById('cropCanvas');
+
+      if (isLand) {
+        tabL.className = "px-3 py-1 rounded-lg text-xs font-black bg-white text-[#FF5C8A] border border-[#2D2327] shadow-sm";
+        tabP.className = "px-3 py-1 rounded-lg text-xs font-black text-zinc-600";
+        canvas.className = "block max-h-[28vh] aspect-[62/46] object-contain rounded-xl transition-all";
+      } else {
+        tabP.className = "px-3 py-1 rounded-lg text-xs font-black bg-white text-[#FF5C8A] border border-[#2D2327] shadow-sm";
+        tabL.className = "px-3 py-1 rounded-lg text-xs font-black text-zinc-600";
+        canvas.className = "block max-h-[35vh] aspect-[46/62] object-contain rounded-xl transition-all";
+      }
+    }
+
+    function updateImageFilters() {
+      scanState.contrast = parseInt(document.getElementById('sliderContrast').value);
+      scanState.brightness = parseInt(document.getElementById('sliderBrightness').value);
+      scanState.saturation = parseInt(document.getElementById('sliderSaturation').value);
+      scanState.warmth = parseInt(document.getElementById('sliderWarmth').value);
+
+      document.getElementById('valContrast').textContent = scanState.contrast + '%';
+      document.getElementById('valBrightness').textContent = scanState.brightness + '%';
+      document.getElementById('valSaturation').textContent = scanState.saturation + '%';
+      document.getElementById('valWarmth').textContent = scanState.warmth;
+
+      const canvas = document.getElementById('cropCanvas');
+      let sepiaVal = scanState.warmth > 0 ? scanState.warmth * 0.5 : 0;
+      let hueVal = scanState.warmth < 0 ? scanState.warmth * 0.8 : 0;
+      canvas.style.filter = `contrast(${scanState.contrast}%) brightness(${scanState.brightness}%) saturate(${scanState.saturation}%) sepia(${sepiaVal}%) hue-rotate(${hueVal}deg)`;
+    }
+
+    function resetImageFilters() {
+      document.getElementById('sliderContrast').value = 100;
+      document.getElementById('sliderBrightness').value = 100;
+      document.getElementById('sliderSaturation').value = 100;
+      document.getElementById('sliderWarmth').value = 0;
+      updateImageFilters();
+    }
+
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        scanState.frontImage = e.target.result;
+        const canvas = document.getElementById('cropCanvas');
+        const img = new Image();
+        img.onload = () => {
+          const isLand = img.width > img.height;
+          setScanOrientation(isLand);
+
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+
+          canvas.classList.remove('hidden');
+          document.getElementById('uploadPrompt').classList.add('hidden');
+          document.getElementById('imageEditControls').classList.remove('hidden');
+          resetImageFilters();
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+      event.target.value = '';
+    }
+
+    let cropperState = { naturalW: 0, naturalH: 0, displayW: 0, displayH: 0, boxX: 0, boxY: 0, boxW: 0, boxH: 0, activeHandle: null, dragStartX: 0, dragStartY: 0, startBoxX: 0, startBoxY: 0, startBoxW: 0, startBoxH: 0 };
+    function openCropTool() {
+      const url = scanState.frontImage;
+      if (!url) return showToast('請先選取相片');
+      const modal = document.getElementById('cropModal');
+      const imgEl = document.getElementById('cropTargetImage');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      imgEl.onload = () => {
+        cropperState.naturalW = imgEl.naturalWidth;
+        cropperState.naturalH = imgEl.naturalHeight;
+        cropperState.displayW = imgEl.clientWidth;
+        cropperState.displayH = imgEl.clientHeight;
+        cropperState.boxW = cropperState.displayW * 0.8;
+        cropperState.boxH = cropperState.displayH * 0.8;
+        cropperState.boxX = cropperState.displayW * 0.1;
+        cropperState.boxY = cropperState.displayH * 0.1;
+        updateCropBoxDOM();
+        initCropperPointerEvents();
+      };
+      imgEl.src = url;
+    }
+    function closeCropTool() {
+      document.getElementById('cropModal').classList.add('hidden');
+      document.getElementById('cropModal').classList.remove('flex');
+    }
+    function updateCropBoxDOM() {
+      const box = document.getElementById('cropBox');
+      if (!box) return;
+      box.style.left = `${cropperState.boxX}px`;
+      box.style.top = `${cropperState.boxY}px`;
+      box.style.width = `${cropperState.boxW}px`;
+      box.style.height = `${cropperState.boxH}px`;
+    }
+
+    let cropperEvt = false;
+    function initCropperPointerEvents() {
+      if (cropperEvt) return;
+      cropperEvt = true;
+      const stage = document.getElementById('cropStageContainer');
+      const box = document.getElementById('cropBox');
+
+      stage.addEventListener('pointerdown', e => {
+        const handle = e.target.getAttribute('data-handle');
+        cropperState.activeHandle = handle || 'move';
+        cropperState.dragStartX = e.clientX;
+        cropperState.dragStartY = e.clientY;
+        cropperState.startBoxX = cropperState.boxX;
+        cropperState.startBoxY = cropperState.boxY;
+        cropperState.startBoxW = cropperState.boxW;
+        cropperState.startBoxH = cropperState.boxH;
+        stage.setPointerCapture(e.pointerId);
+      });
+
+      stage.addEventListener('pointermove', e => {
+        if (!cropperState.activeHandle) return;
+        const dx = e.clientX - cropperState.dragStartX;
+        const dy = e.clientY - cropperState.dragStartY;
+
+        if (cropperState.activeHandle === 'move') {
+          cropperState.boxX = Math.max(0, Math.min(cropperState.startBoxX + dx, cropperState.displayW - cropperState.boxW));
+          cropperState.boxY = Math.max(0, Math.min(cropperState.startBoxY + dy, cropperState.displayH - cropperState.boxH));
+        } else if (cropperState.activeHandle === 'br') {
+          cropperState.boxW = Math.max(50, Math.min(cropperState.startBoxW + dx, cropperState.displayW - cropperState.boxX));
+          cropperState.boxH = Math.max(50, Math.min(cropperState.startBoxH + dy, cropperState.displayH - cropperState.boxY));
+        } else if (cropperState.activeHandle === 'bl') {
+          const newW = Math.max(50, cropperState.startBoxW - dx);
+          const newX = cropperState.startBoxX + (cropperState.startBoxW - newW);
+          if (newX >= 0) { cropperState.boxX = newX; cropperState.boxW = newW; }
+          cropperState.boxH = Math.max(50, Math.min(cropperState.startBoxH + dy, cropperState.displayH - cropperState.boxY));
+        } else if (cropperState.activeHandle === 'tr') {
+          cropperState.boxW = Math.max(50, Math.min(cropperState.startBoxW + dx, cropperState.displayW - cropperState.boxX));
+          const newH = Math.max(50, cropperState.startBoxH - dy);
+          const newY = cropperState.startBoxY + (cropperState.startBoxH - newH);
+          if (newY >= 0) { cropperState.boxY = newY; cropperState.boxH = newH; }
+        } else if (cropperState.activeHandle === 'tl') {
+          const newW = Math.max(50, cropperState.startBoxW - dx);
+          const newX = cropperState.startBoxX + (cropperState.startBoxW - newW);
+          if (newX >= 0) { cropperState.boxX = newX; cropperState.boxW = newW; }
+          const newH = Math.max(50, cropperState.startBoxH - dy);
+          const newY = cropperState.startBoxY + (cropperState.startBoxH - newH);
+          if (newY >= 0) { cropperState.boxY = newY; cropperState.boxH = newH; }
+        }
+        updateCropBoxDOM();
+      });
+
+      const end = e => { cropperState.activeHandle = null; try { stage.releasePointerCapture(e.pointerId); } catch(err){} };
+      stage.addEventListener('pointerup', end);
+    }
+
+    function applyCropResult() {
+      const imgEl = document.getElementById('cropTargetImage');
+      const scaleX = cropperState.naturalW / cropperState.displayW;
+      const scaleY = cropperState.naturalH / cropperState.displayH;
+      const sx = Math.round(cropperState.boxX * scaleX);
+      const sy = Math.round(cropperState.boxY * scaleY);
+      const sw = Math.round(cropperState.boxW * scaleX);
+      const sh = Math.round(cropperState.boxH * scaleY);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = sw; canvas.height = sh;
+      canvas.getContext('2d').drawImage(imgEl, sx, sy, sw, sh, 0, 0, sw, sh);
+      const croppedUrl = canvas.toDataURL('image/jpeg', 0.95);
+      scanState.frontImage = croppedUrl;
+      
+      const previewCanvas = document.getElementById('cropCanvas');
+      previewCanvas.classList.remove('hidden');
+      const img = new Image();
+      img.onload = () => {
+        previewCanvas.width = img.width; 
+        previewCanvas.height = img.height;
+        const pCtx = previewCanvas.getContext('2d');
+        pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+        pCtx.drawImage(img, 0, 0);
+        const isLand = img.width > img.height;
+        setScanOrientation(isLand);
+        updateImageFilters();
+      };
+      img.src = croppedUrl;
+      closeCropTool();
+      showToast('✂️ 自由裁切完成');
+    }
+
+    function rotatePreviewImage() {
+      const url = scanState.frontImage;
+      if (!url) return;
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = img.height; c.height = img.width;
+        const ctx = c.getContext('2d');
+        ctx.translate(c.width / 2, c.height / 2);
+        ctx.rotate(Math.PI / 2);
+        ctx.drawImage(img, -img.width / 2, -img.height / 2);
+        const rotUrl = c.toDataURL('image/jpeg', 0.95);
+        scanState.frontImage = rotUrl;
+        
+        const previewCanvas = document.getElementById('cropCanvas');
+        previewCanvas.classList.remove('hidden');
+        previewCanvas.width = c.width; 
+        previewCanvas.height = c.height;
+        const pCtx = previewCanvas.getContext('2d');
+        pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+        pCtx.drawImage(c, 0, 0);
+
+        const isLand = c.width > c.height;
+        setScanOrientation(isLand);
+        showToast('🔄 已旋轉 90°');
+      };
+      img.src = url;
+    }
+
+    async function saveCurrentCheki() {
+      const person = document.getElementById('inputPerson').value.trim();
+      if (!person) return showToast('請輸入對象名字');
+      if (!scanState.frontImage) return showToast('請選擇相片');
+
+      const finalCanvas = document.createElement('canvas');
+      const img = new Image();
+      img.src = scanState.frontImage;
+      await new Promise(r => { img.onload = r; img.onerror = r; });
+
+      finalCanvas.width = img.naturalWidth || img.width;
+      finalCanvas.height = img.naturalHeight || img.height;
+      const fCtx = finalCanvas.getContext('2d');
+      
+      let sepiaVal = scanState.warmth > 0 ? scanState.warmth * 0.5 : 0;
+      let hueVal = scanState.warmth < 0 ? scanState.warmth * 0.8 : 0;
+      fCtx.filter = `contrast(${scanState.contrast}%) brightness(${scanState.brightness}%) saturate(${scanState.saturation}%) sepia(${sepiaVal}%) hue-rotate(${hueVal}deg)`;
+      fCtx.drawImage(img, 0, 0);
+
+      const finalImageUrl = finalCanvas.toDataURL('image/jpeg', 0.95);
+
+      const newCard = {
+        id: 'cheki_' + Date.now(),
+        albumId: document.getElementById('inputAlbumSelect').value || 'default',
+        isLandscape: scanState.isLandscape,
+        person: person,
+        event: document.getElementById('inputEvent').value.trim() || '日常',
+        date: document.getElementById('inputDate').value || new Date().toISOString().split('T')[0],
+        notes: document.getElementById('inputNotes').value.trim(),
+        isFavorite: document.getElementById('inputFav').checked,
+        frontImage: finalImageUrl,
+        createdAt: Date.now()
+      };
+
+      chekiList.unshift(newCard);
+      await dbSaveCard(newCard);
+      renderGrid();
+      renderAlbumsGrid();
+      if (currentViewMode === 'calendar') renderCalendarView();
+      closeScanModal();
+      showToast('🎉 儲存成功！');
+    }
+
+    function openInspectModal(id) {
+      const card = chekiList.find(c => c.id === id);
+      if (!card) return;
+      inspectedCardId = id;
+      document.getElementById('inspectTitle').textContent = card.person;
+      const container = document.getElementById('inspectPhotoContainer');
+      container.className = 'w-full rounded-xl overflow-hidden relative flex items-center justify-center cheki-cartoon-shadow bg-transparent';
+      document.getElementById('inspectFrontImg').src = card.frontImage;
+      document.getElementById('inspectCaptionHandwriting').textContent = `${card.person} · ${card.date}`;
+      document.getElementById('inspectBackNote').textContent = card.notes || '（無背面筆記）';
+      document.getElementById('inspectModal').classList.remove('hidden');
+      document.getElementById('inspectModal').classList.add('flex');
+    }
+    function closeInspectModal() {
+      document.getElementById('inspectModal').classList.add('hidden');
+      document.getElementById('inspectModal').classList.remove('flex');
+    }
+    function flipCardAnimation() { document.getElementById('flippableCard').classList.toggle('is-flipped'); }
+    async function toggleCurrentCardFav() {
+      const card = chekiList.find(c => c.id === inspectedCardId);
+      if (!card) return;
+      card.isFavorite = !card.isFavorite;
+      await dbSaveCard(card);
+      openInspectModal(card.id);
+      renderGrid();
+      if (currentViewMode === 'calendar') renderCalendarView();
+      showToast(card.isFavorite ? '★ 已加入最愛' : '已從最愛移除');
+    }
+    async function deleteCurrentCard() {
+      chekiList = chekiList.filter(c => c.id !== inspectedCardId);
+      await dbDeleteCard(inspectedCardId);
+      closeInspectModal();
+      renderGrid();
+      renderAlbumsGrid();
+      if (currentViewMode === 'calendar') renderCalendarView();
+      showToast('已刪除');
+    }
+    function downloadCardImage() {
+      const card = chekiList.find(c => c.id === inspectedCardId);
+      if (!card) return;
+      const a = document.createElement('a');
+      a.download = `Cheki_${card.person}.jpg`;
+      a.href = card.frontImage;
+      a.click();
+    }
+    function openMoveCardAlbumModal() {
+      const card = chekiList.find(c => c.id === inspectedCardId);
+      if (!card) return;
+      const name = prompt(`請輸入目標相簿名稱 (預設相簿 或 ${albumList.map(a => a.name).join(', ')})`);
+      if (!name) return;
+      if (name === '預設相簿') { card.albumId = 'default'; }
+      else {
+        const found = albumList.find(a => a.name === name);
+        if (found) card.albumId = found.id; else return showToast('找不到相簿');
+      }
+      dbSaveCard(card);
+      closeInspectModal();
+      renderGrid();
+      showToast('📁 移動成功');
+    }
+
+    function openEditCardModal() {
+      const card = chekiList.find(c => c.id === inspectedCardId);
+      if (!card) return;
+      closeInspectModal();
+      populateAlbumSelectOptions('editCardAlbumSelect');
+      document.getElementById('editCardAlbumSelect').value = card.albumId || 'default';
+      document.getElementById('editCardPerson').value = card.person || '';
+      document.getElementById('editCardDate').value = card.date || new Date().toISOString().split('T')[0];
+      document.getElementById('editCardEvent').value = card.event || '';
+      document.getElementById('editCardNotes').value = card.notes || '';
+      document.getElementById('editCardModal').classList.remove('hidden');
+      document.getElementById('editCardModal').classList.add('flex');
+    }
+    function closeEditCardModal() {
+      document.getElementById('editCardModal').classList.add('hidden');
+      document.getElementById('editCardModal').classList.remove('flex');
+    }
+    async function saveEditedCardData() {
+      const card = chekiList.find(c => c.id === inspectedCardId);
+      if (!card) return;
+      const person = document.getElementById('editCardPerson').value.trim();
+      if (!person) return showToast('請輸入對象名字');
+
+      card.albumId = document.getElementById('editCardAlbumSelect').value;
+      card.person = person;
+      card.date = document.getElementById('editCardDate').value;
+      card.event = document.getElementById('editCardEvent').value.trim();
+      card.notes = document.getElementById('editCardNotes').value.trim();
+
+      await dbSaveCard(card);
+      closeEditCardModal();
+      
+      renderGrid();
+      renderAlbumsGrid();
+      if (currentViewMode === 'calendar') renderCalendarView();
+      showToast('✏️ 內容已成功更新！');
+    }
+
+    let editingAlbumId = null;
+    function openAlbumModal(albumId = null) {
+      editingAlbumId = albumId;
+      const titleEl = document.getElementById('albumModalTitle');
+      const nameInput = document.getElementById('albumNameInput');
+      const descInput = document.getElementById('albumDescInput');
+
+      if (albumId) {
+        const alb = albumList.find(a => a.id === albumId);
+        if (alb) {
+          titleEl.textContent = '✏️ 編輯相簿';
+          nameInput.value = alb.name || '';
+          descInput.value = alb.desc || '';
+        }
+      } else {
+        titleEl.textContent = '✨ 新增相簿';
+        nameInput.value = '';
+        descInput.value = '';
+      }
+
+      document.getElementById('albumModal').classList.remove('hidden');
+      document.getElementById('albumModal').classList.add('flex');
+    }
+    function openEditAlbumModal() {
+      if (activeAlbumId !== 'all') {
+        openAlbumModal(activeAlbumId);
+      }
+    }
+    function closeAlbumModal() {
+      document.getElementById('albumModal').classList.add('hidden');
+      document.getElementById('albumModal').classList.remove('flex');
+      editingAlbumId = null;
+    }
+    async function saveAlbumData() {
+      const name = document.getElementById('albumNameInput').value.trim();
+      const desc = document.getElementById('albumDescInput').value.trim();
+      if (!name) return showToast('請輸入相簿名稱');
+
+      if (editingAlbumId) {
+        const alb = albumList.find(a => a.id === editingAlbumId);
+        if (alb) {
+          alb.name = name;
+          alb.desc = desc;
+          await dbSaveAlbum(alb);
+          if (currentViewMode === 'binder' && activeAlbumId === editingAlbumId) {
+            document.getElementById('currentAlbumTitleLabel').textContent = name;
+          }
+        }
+      } else {
+        const newAlb = {
+          id: 'album_' + Date.now(),
+          name: name,
+          desc: desc,
+          createdAt: Date.now()
+        };
+        albumList.push(newAlb);
+        await dbSaveAlbum(newAlb);
+      }
+
+      closeAlbumModal();
+      renderAlbumsGrid();
+      showToast('📁 相簿已儲存');
+    }
+
+    function renderAlbumsGrid() {
+      const grid = document.getElementById('albumsGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+      document.getElementById('totalAlbumCount').textContent = albumList.length;
+      document.getElementById('totalAlbumChekiCount').textContent = chekiList.length;
+      updateGlobalStats();
+
+      const allCount = chekiList.length;
+      const allThumb = allCount > 0 ? chekiList[0].frontImage : 'https://placehold.co/200x260/FFF7F9/FF5C8A?text=All';
+      
+      const allEl = document.createElement('div');
+      allEl.className = 'bg-white border-3 border-[#2D2327] rounded-3xl p-3.5 cursor-pointer shadow-[4px_4px_0px_#2D2327] hover:translate-y-[-2px] transition';
+      allEl.onclick = () => switchViewMode('binder', 'all');
+      allEl.innerHTML = `
+        <div class="relative w-full aspect-[4/3] bg-pink-50 rounded-2xl overflow-hidden mb-2.5 border-2 border-[#2D2327]">
+          <img src="${allThumb}" class="w-full h-full object-cover">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-2.5">
+            <span class="text-xs font-black text-white">✨ ${allCount} 張</span>
+          </div>
+        </div>
+        <h4 class="text-xs font-black text-[#2D2327] truncate">全部收藏大合集</h4>
+      `;
+      grid.appendChild(allEl);
+
+      albumList.forEach(alb => {
+        const albumCards = chekiList.filter(c => c.albumId === alb.id);
+        const thumb = albumCards.length > 0 ? albumCards[0].frontImage : 'https://placehold.co/200x260/FFF7F9/FF5C8A?text=Empty';
+        const albEl = document.createElement('div');
+        albEl.className = 'bg-white border-3 border-[#2D2327] rounded-3xl p-3.5 cursor-pointer shadow-[4px_4px_0px_#2D2327] hover:translate-y-[-2px] transition';
+        albEl.onclick = () => switchViewMode('binder', alb.id);
+        albEl.innerHTML = `
+          <div class="relative w-full aspect-[4/3] bg-pink-50 rounded-2xl overflow-hidden mb-2.5 border-2 border-[#2D2327]">
+            <img src="${thumb}" class="w-full h-full object-cover">
+            <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-2.5">
+              <span class="text-xs font-black text-white">💖 ${albumCards.length} 張</span>
+            </div>
+          </div>
+          <h4 class="text-xs font-black text-[#2D2327] truncate">${alb.name}</h4>
+        `;
+        grid.appendChild(albEl);
+      });
+    }
+
+    function populateAlbumSelectOptions(selectId = 'inputAlbumSelect') {
+      const select = document.getElementById(selectId);
+      if (!select) return;
+      select.innerHTML = '<option value="default">預設相簿</option>';
+      albumList.forEach(alb => {
+        const opt = document.createElement('option');
+        opt.value = alb.id;
+        opt.textContent = alb.name;
+        select.appendChild(opt);
+      });
+    }
+
+    function renderDeskView() {
+      const container = document.getElementById('deskCardContainer');
+      if (!container) return;
+      container.innerHTML = '';
+
+      let filteredDeskCards = chekiList.filter(card => {
+        if (currentIdolFilter !== 'all' && card.person !== currentIdolFilter) return false;
+        return true;
+      });
+
+      filteredDeskCards.forEach((card, idx) => {
+        let pos = deskCardPositions[card.id];
+        if (!pos) {
+          const row = Math.floor(idx / 4);
+          const col = idx % 4;
+          pos = { x: 80 + col * 130 + (Math.random() * 30), y: 60 + row * 160 + (Math.random() * 30), r: (Math.random() * 30) - 15, scale: 1.0, flipped: false };
+          deskCardPositions[card.id] = pos;
+        }
+
+        const isLand = isCardLandscape(card);
+        const cardWidth = isLand ? 'w-[155px]' : 'w-[115px]';
+
+        const cardEl = document.createElement('div');
+        cardEl.className = `desk-card rounded-lg overflow-hidden cheki-cartoon-shadow ${cardWidth} ${card.id === selectedDeskCardId ? 'is-selected' : ''}`;
+        cardEl.style.left = `${pos.x}px`;
+        cardEl.style.top = `${pos.y}px`;
+        cardEl.style.transform = `rotate(${pos.r}deg) scale(${pos.scale})`;
+        cardEl.style.zIndex = pos.zIndex || (idx + 1);
+
+        // Directly display the scanned Cheki image without adding any artificial border or bottom text box
+        cardEl.innerHTML = `
+          <img src="${card.frontImage}" class="w-full h-auto block select-none pointer-events-none">
+        `;
+
+        let activePointers = new Map();
+        let initialDist = 0;
+        let initialAngle = 0;
+        let startR = pos.r;
+        let startScale = pos.scale;
+
+        cardEl.onpointerdown = e => {
+          e.stopPropagation();
+          selectedDeskCardId = card.id;
+          highestZIndex++;
+          pos.zIndex = highestZIndex;
+          cardEl.style.zIndex = highestZIndex;
+          document.querySelectorAll('.desk-card').forEach(c => c.classList.remove('is-selected'));
+          cardEl.classList.add('is-selected');
+          
+          const bar = document.getElementById('deskSelectedCardBar');
+          bar.classList.remove('hidden');
+          bar.classList.add('flex');
+          document.getElementById('selectedCardNameLabel').textContent = card.person;
+
+          activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          cardEl.setPointerCapture(e.pointerId);
+          cardEl.classList.add('is-dragging');
+        };
+
+        cardEl.onpointermove = e => {
+          if (!activePointers.has(e.pointerId)) return;
+          const prev = activePointers.get(e.pointerId);
+          const currentX = e.clientX;
+          const currentY = e.clientY;
+
+          if (activePointers.size === 1) {
+            const dx = (currentX - prev.x) / deskWorkspaceScale;
+            const dy = (currentY - prev.y) / deskWorkspaceScale;
+            pos.x += dx;
+            pos.y += dy;
+            cardEl.style.left = `${pos.x}px`;
+            cardEl.style.top = `${pos.y}px`;
+          } else if (activePointers.size >= 2) {
+            const pts = Array.from(activePointers.values());
+            const p1 = pts[0];
+            const p2 = pts[1];
+            const currentDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+            const currentAngle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+
+            if (initialDist === 0) {
+              initialDist = currentDist;
+              initialAngle = currentAngle;
+              startR = pos.r;
+              startScale = pos.scale;
+            } else {
+              const scaleFactor = currentDist / initialDist;
+              pos.scale = Math.max(0.5, Math.min(2.5, startScale * scaleFactor));
+              pos.r = startR + (currentAngle - initialAngle);
+              cardEl.style.transform = `rotate(${pos.r}deg) scale(${pos.scale})`;
+            }
+          }
+          activePointers.set(e.pointerId, { x: currentX, y: currentY });
+        };
+
+        const pointerUp = e => {
+          activePointers.delete(e.pointerId);
+          if (activePointers.size < 2) initialDist = 0;
+          try { cardEl.releasePointerCapture(e.pointerId); } catch(err){}
+          cardEl.classList.remove('is-dragging');
+          dbSetSetting('deskCardPositions', deskCardPositions);
+        };
+        cardEl.onpointerup = pointerUp;
+        cardEl.onpointercancel = pointerUp;
+
+        container.appendChild(cardEl);
+      });
+    }
+
+    function reshuffleDeskCards() {
+      chekiList.forEach((card, idx) => {
+        const row = Math.floor(idx / 4);
+        const col = idx % 4;
+        deskCardPositions[card.id] = {
+          x: 60 + col * 140 + (Math.random() * 40),
+          y: 40 + row * 180 + (Math.random() * 40),
+          r: (Math.random() * 40) - 20,
+          scale: 1.0
+        };
+      });
+      dbSetSetting('deskCardPositions', deskCardPositions);
+      renderDeskView();
+      showToast('🎲 桌面已重新灑落');
+    }
+
+    function arrangeDeskNeat() {
+      chekiList.forEach((card, idx) => {
+        const row = Math.floor(idx / 3);
+        const col = idx % 3;
+        deskCardPositions[card.id] = {
+          x: 80 + col * 150,
+          y: 60 + row * 190,
+          r: 0,
+          scale: 1.0
+        };
+      });
+      dbSetSetting('deskCardPositions', deskCardPositions);
+      renderDeskView();
+      showToast('🗂️ 桌面已整齊排列');
+    }
+
+    function adjustWorkspaceScale(delta) {
+      deskWorkspaceScale = Math.max(0.6, Math.min(1.8, deskWorkspaceScale + delta));
+      document.getElementById('workspaceScaleLabel').textContent = `${deskWorkspaceScale.toFixed(1)}x`;
+      document.getElementById('deskCardContainer').style.transform = `scale(${deskWorkspaceScale})`;
+    }
+
+    function flipSelectedDeskCard() {
+      if (!selectedDeskCardId) return;
+      const card = chekiList.find(c => c.id === selectedDeskCardId);
+      if (card) {
+        openInspectModal(card.id);
+      }
+    }
+
+    function showStatsModal() {
+      const total = chekiList.length;
+      const favs = chekiList.filter(c => c.isFavorite).length;
+      const albumsCount = albumList.length;
+      
+      const personMap = {};
+      chekiList.forEach(c => {
+        const p = c.person || '未命名';
+        personMap[p] = (personMap[p] || 0) + 1;
+      });
+      const topPersons = Object.entries(personMap).sort((a,b) => b[1] - a[1]).slice(0, 5);
+
+      document.getElementById('statsTotalCount').textContent = total;
+      document.getElementById('statsFavCount').textContent = favs;
+      document.getElementById('statsAlbumCount').textContent = albumsCount;
+      document.getElementById('statsPersonCount').textContent = Object.keys(personMap).length;
+
+      const rankingEl = document.getElementById('statsRankingList');
+      rankingEl.innerHTML = topPersons.length === 0 ? '<p class="text-[11px] text-zinc-400 font-bold">尚無收藏數據</p>' : '';
+      topPersons.forEach(([name, count], i) => {
+        rankingEl.innerHTML += `
+          <div class="flex items-center justify-between text-xs py-1 border-b border-pink-100 font-bold">
+            <span class="text-[#2D2327]">#${i+1} ${name}</span>
+            <span class="bg-pink-100 text-[#FF5C8A] px-2 py-0.5 rounded-full border border-[#2D2327] text-[10px]">${count} 張</span>
+          </div>
+        `;
+      });
+
+      const achievements = [
+        { id: 'first', title: '🐣 初試啼聲', desc: '成功收藏你的第一張 Cheki', unlocked: total >= 1 },
+        { id: 'fav5', title: '⭐ 愛心守護者', desc: '累積收藏 5 張最愛珍藏', unlocked: favs >= 5 },
+        { id: 'album3', title: '📚 相簿大師', desc: '建立 3 個或以上的專屬相簿', unlocked: albumsCount >= 3 },
+        { id: 'collector10', title: '📸 百搭收藏家', desc: '總收藏數達到 10 張', unlocked: total >= 10 },
+        { id: 'collector30', title: '👑 豪華大卡冊', desc: '總收藏數達到 30 張', unlocked: total >= 30 }
+      ];
+
+      const achEl = document.getElementById('statsAchievementsList');
+      achEl.innerHTML = '';
+      achievements.forEach(ach => {
+        achEl.innerHTML += `
+          <div class="flex items-center space-x-3 p-2.5 rounded-2xl border-2 ${ach.unlocked ? 'bg-amber-50 border-[#2D2327] shadow-[2px_2px_0px_#2D2327]' : 'bg-zinc-100 border-zinc-300 opacity-60'}">
+            <div class="text-2xl">${ach.unlocked ? '🏆' : '🔒'}</div>
+            <div class="flex-1">
+              <div class="text-xs font-black text-[#2D2327]">${ach.title}</div>
+              <div class="text-[10px] text-zinc-500 font-bold">${ach.desc}</div>
+            </div>
+            <div class="text-[10px] font-black px-2 py-1 rounded-full ${ach.unlocked ? 'bg-amber-300 text-amber-900 border border-[#2D2327]' : 'bg-zinc-200 text-zinc-500'}">
+              ${ach.unlocked ? '已解鎖' : '未解鎖'}
+            </div>
+          </div>
+        `;
+      });
+
+      document.getElementById('statsModal').classList.remove('hidden');
+      document.getElementById('statsModal').classList.add('flex');
+    }
+    function closeStatsModal() {
+      document.getElementById('statsModal').classList.add('hidden');
+      document.getElementById('statsModal').classList.remove('flex');
+    }
+
+    function showBackupModal() {
+      document.getElementById('backupModal').classList.remove('hidden');
+      document.getElementById('backupModal').classList.add('flex');
+    }
+    function closeBackupModal() {
+      document.getElementById('backupModal').classList.add('hidden');
+      document.getElementById('backupModal').classList.remove('flex');
+    }
+    function downloadBackupFile() {
+      const payload = { cards: chekiList, albums: albumList };
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload, null, 2));
+      const a = document.createElement('a');
+      a.href = dataStr;
+      a.download = `ChekiPocket_Backup_${new Date().toISOString().split('T')[0]}.cheki`;
+      a.click();
+      showToast('🎉 備份已下載');
+    }
+    function handleTransferFileSelect(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async evt => {
+        try {
+          const data = JSON.parse(evt.target.result);
+          if (data.cards) chekiList = data.cards;
+          if (data.albums) albumList = data.albums;
+          await dbSaveAllCards(chekiList);
+          await dbSaveAllAlbums(albumList);
+          renderAlbumsGrid();
+          renderGrid();
+          if (currentViewMode === 'calendar') renderCalendarView();
+          closeBackupModal();
+          showToast('🎉 還原成功！');
+        } catch(err) { showToast('⚠️ 格式錯誤'); }
+      };
+      reader.readAsText(file);
+    }
+
+    function openDeskBgModal() {
+      document.getElementById('deskBgModal').classList.remove('hidden');
+      document.getElementById('deskBgModal').classList.add('flex');
+    }
+    function closeDeskBgModal() {
+      document.getElementById('deskBgModal').classList.add('hidden');
+      document.getElementById('deskBgModal').classList.remove('flex');
+    }
+    async function selectPresetDeskTheme(t) {
+      currentDeskTheme = t;
+      const desk = document.getElementById('deskCanvas');
+      desk.className = `${t} relative w-full h-[680px] overflow-hidden rounded-2xl select-none transition-all duration-300`;
+      await dbSetSetting('currentDeskTheme', t);
+      closeDeskBgModal();
+      showToast('✨ 桌布已更換');
+    }
+
+    let toastTimeout = null;
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      document.getElementById('toastMsg').textContent = msg;
+      t.classList.remove('opacity-0', 'pointer-events-none');
+      t.classList.add('opacity-100');
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        t.classList.remove('opacity-100');
+        t.classList.add('opacity-0', 'pointer-events-none');
+      }, 2000);
+    }
+
+    window.onload = async function() {
+      try {
+        await initIndexedDB();
+        chekiList = await dbGetAllCards();
+        albumList = await dbGetAllAlbums();
+        if (chekiList.length === 0 && albumList.length === 0) {
+          albumList = [{ id: 'album_idol', name: '🌸 偶像珍藏', desc: '預設相簿', createdAt: Date.now() }];
+          await dbSaveAllAlbums(albumList);
+        }
+        currentDeskTheme = await dbGetSetting('currentDeskTheme', 'desk-walnut');
+        deskCardPositions = await dbGetSetting('deskCardPositions', {});
+        selectPresetDeskTheme(currentDeskTheme);
+        renderAlbumsGrid();
+        renderGrid();
+      } catch(e) {
+        renderAlbumsGrid();
+      }
+    };
+  </script>
+</body>
+</html>
