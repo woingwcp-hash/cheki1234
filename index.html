@@ -11,6 +11,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Inter:wght@400;500;600;700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+  <!-- Leaflet Interactive Map CSS & JS (免費開源地圖引擎，免 API Key) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     tailwind.config = {
       darkMode: 'class',
@@ -90,6 +93,7 @@
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     #liveDetectBox { transition: all 0.18s ease-out; }
     .crop-handle { touch-action: none; }
+    .leaflet-container { font-family: 'Zen Maru Gothic', sans-serif; z-index: 10; }
   </style>
 </head>
 <body class="min-h-screen pb-24 flex flex-col max-w-md mx-auto relative">
@@ -107,7 +111,7 @@
       </div>
     </div>
     <div class="flex items-center gap-1.5 shrink-0">
-      <button onclick="switchTab('stats')" class="w-9 h-9 rounded-2xl bg-blue-100 neo-btn flex items-center justify-center text-base" title="偶像Cheki統計">📊</button>
+      <button onclick="switchTab('stats')" class="w-9 h-9 rounded-2xl bg-blue-100 neo-btn flex items-center justify-center text-base" title="偶像Cheki統計與足跡地圖">📊</button>
       <button onclick="openBackupModal()" class="w-9 h-9 rounded-2xl bg-amber-100 neo-btn flex items-center justify-center text-base" title="備份與還原">📦</button>
       <button onclick="toggleSearchBar()" class="w-9 h-9 rounded-2xl bg-white neo-btn flex items-center justify-center text-base" title="搜尋">🔍</button>
       <button onclick="openAddModal()" class="px-3 py-2 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-btn flex items-center gap-1">✨ 新增</button>
@@ -117,7 +121,7 @@
   <!-- Search Bar -->
   <div id="searchBar" class="hidden px-3 py-2 bg-pink-50 border-b-2 border-cheki-dark">
     <div class="flex gap-2">
-      <input id="searchInput" type="text" placeholder="搜尋偶像名稱、活動、背面筆記..." oninput="renderCurrentTab()" class="w-full px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-sm font-bold focus:outline-none">
+      <input id="searchInput" type="text" placeholder="搜尋偶像名稱、地點、活動、背面筆記..." oninput="renderCurrentTab()" class="w-full px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-sm font-bold focus:outline-none">
       <button onclick="clearSearch()" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-bold shrink-0">清除</button>
     </div>
   </div>
@@ -131,7 +135,7 @@
       <div class="neo-box bg-white rounded-2xl p-3.5 space-y-2.5">
         <div class="flex justify-between items-center">
           <h3 class="font-black text-sm flex items-center gap-1.5">👑 偶像 Cheki 數量統計</h3>
-          <button onclick="switchTab('stats')" class="px-2.5 py-1 rounded-full bg-pink-100 border border-cheki-dark text-[11px] font-black text-cheki-accent">完整統計報告 ▶</button>
+          <button onclick="switchTab('stats')" class="px-2.5 py-1 rounded-full bg-pink-100 border border-cheki-dark text-[11px] font-black text-cheki-accent">完整統計與地圖 ▶</button>
         </div>
         <div id="albumsQuickIdolStats" class="space-y-2"></div>
       </div>
@@ -210,7 +214,7 @@
       <div id="calendarDayList" class="space-y-2"></div>
     </section>
 
-    <!-- TAB 4: STATS (偶像 Cheki 數量深度統計與應援成就系統) -->
+    <!-- TAB 4: STATS (偶像 Cheki 數量深度統計 + 🗺️ 應援足跡地圖 + 應援成就) -->
     <section id="tab-stats" class="hidden space-y-4">
       <div class="grid grid-cols-4 gap-2">
         <div class="neo-box bg-pink-100 rounded-2xl p-2.5 text-center">
@@ -226,13 +230,27 @@
           <p id="statTotalFavs" class="font-black text-xl text-amber-600 mt-0.5">0</p>
         </div>
         <div class="neo-box bg-emerald-100 rounded-2xl p-2.5 text-center">
-          <p class="text-[10px] font-bold text-zinc-600">相簿分類</p>
-          <p id="statTotalAlbums" class="font-black text-xl text-emerald-700 mt-0.5">0</p>
+          <p class="text-[10px] font-bold text-zinc-600">地圖足跡</p>
+          <p id="statTotalLocations" class="font-black text-xl text-emerald-700 mt-0.5">0</p>
         </div>
       </div>
 
       <!-- 主推 / 第一名偶像榮譽大卡 -->
       <div id="topOshiHighlightCard" class="hidden neo-box bg-gradient-to-br from-blue-50 via-pink-50 to-amber-50 rounded-2xl p-3.5"></div>
+
+      <!-- 🗺️ 應援足跡互動總覽地圖 (新增！) -->
+      <div class="neo-box bg-white rounded-2xl p-3.5 space-y-2.5">
+        <div class="flex items-center justify-between border-b-2 border-zinc-100 pb-2">
+          <div>
+            <h3 class="font-black text-base">🗺️ Cheki 應援足跡地圖</h3>
+            <p class="text-[11px] font-bold text-zinc-500">點擊地圖上的標記可預覽該地拍攝的 Cheki</p>
+          </div>
+          <button onclick="fitAllMarkersOnStatsMap()" class="px-2.5 py-1 rounded-xl bg-blue-100 neo-btn text-[11px] font-black shrink-0">🔍 顯示全部標記</button>
+        </div>
+        <div id="statsFootprintMap" class="w-full h-64 rounded-2xl border-2 border-cheki-dark overflow-hidden bg-blue-50"></div>
+        <!-- 場地拍攝數量排行 -->
+        <div id="locationStatsList" class="space-y-1.5 pt-1"></div>
+      </div>
 
       <!-- 各偶像 Cheki 數量詳細統計排行榜 -->
       <div class="neo-box bg-white rounded-2xl p-3.5 space-y-3">
@@ -295,7 +313,7 @@
     </button>
   </nav>
 
-  <!-- INSPECT MODAL (詳細檢視視窗 - 支援一鍵快速調動相簿) -->
+  <!-- INSPECT MODAL (詳細檢視視窗 - 支援查看地圖標示與一鍵調動相簿) -->
   <div id="inspectModal" oncontextmenu="return false;" class="hidden fixed inset-0 z-50 bg-black/90 flex flex-col justify-between p-4">
     <div class="flex items-center justify-between bg-white px-3 py-2 rounded-2xl neo-box">
       <button onclick="closeInspectModal()" class="font-black text-sm px-2 py-1">✕ 關閉</button>
@@ -309,19 +327,24 @@
     </div>
 
     <div class="flex-1 flex flex-col items-center justify-center my-3 overflow-hidden">
-      <div onclick="toggleInspectFlip()" class="perspective-1000 cursor-pointer flex items-center justify-center w-full max-h-[65vh]">
+      <div onclick="toggleInspectFlip()" class="perspective-1000 cursor-pointer flex items-center justify-center w-full max-h-[62vh]">
         <div id="inspectFlipInner" class="transform-style-3d relative flex items-center justify-center">
           <div class="backface-hidden flex items-center justify-center">
-            <img id="inspectImg" src="" draggable="false" class="max-h-[62vh] max-w-[85vw] object-contain rounded-lg shadow-2xl pointer-events-none">
+            <img id="inspectImg" src="" draggable="false" class="max-h-[60vh] max-w-[85vw] object-contain rounded-lg shadow-2xl pointer-events-none">
           </div>
           <div class="backface-hidden rotate-y-180 absolute inset-0 rounded-xl p-5 flex flex-col justify-between shadow-2xl border-2 border-white/40" id="inspectBackCard">
-            <div class="text-xs font-bold opacity-80" id="inspectBackDate"></div>
+            <div class="flex justify-between items-center text-xs font-bold opacity-85 gap-2">
+              <span id="inspectBackDate"></span>
+              <span id="inspectBackLocation" class="truncate"></span>
+            </div>
             <div class="font-marker text-xl font-black text-center whitespace-pre-wrap break-words my-auto" id="inspectBackNote"></div>
             <div class="text-right text-xs font-black opacity-90" id="inspectBackMember"></div>
           </div>
         </div>
       </div>
+      <!-- 所屬相簿與地圖位置徽章列 -->
       <div id="inspectAlbumsBadges" class="flex flex-wrap justify-center gap-1.5 mt-2.5"></div>
+      <div id="inspectLocationBadgeBox" class="mt-1.5"></div>
       <p class="text-white/70 text-xs font-bold mt-1.5">👆 點擊相片可 3D 翻面 ｜ 點上方「📁 調動」可隨意換相簿</p>
     </div>
 
@@ -369,7 +392,7 @@
     </div>
   </div>
 
-  <!-- ADD / EDIT MODAL -->
+  <!-- ADD / EDIT MODAL (新增 📍 互動地圖標示與場地搜尋功能) -->
   <div id="editCardModal" class="hidden fixed inset-0 z-[60] bg-black/75 flex items-center justify-center p-3 overflow-y-auto">
     <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-4 space-y-3 max-h-[92vh] overflow-y-auto">
       <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
@@ -422,7 +445,7 @@
       <div class="space-y-2.5">
         <div>
           <label class="text-xs font-black block mb-1">成員 / 偶像名稱 *（點選下方標籤可快速帶入並歸類統計）</label>
-          <input id="cardMemberInput" type="text" placeholder="例如：遠藤まりん" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold text-sm">
+          <input id="cardMemberInput" type="text" placeholder="例如：遠藤まりん" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold text-sm bg-white">
           <div id="quickMemberSuggestions" class="flex gap-1.5 overflow-x-auto no-scrollbar pt-1.5"></div>
         </div>
 
@@ -431,7 +454,35 @@
           <input id="cardDateInput" type="date" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold text-xs bg-white">
         </div>
 
-        <!-- 升級為可同時勾選多個相簿的標籤選擇器 -->
+        <!-- 📍 新增：拍攝地點與互動地圖標示區塊 -->
+        <div class="neo-box bg-blue-50/70 rounded-2xl p-2.5 space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-black flex items-center gap-1">📍 拍攝地點 / 地圖標示</label>
+            <div class="flex gap-1">
+              <button type="button" onclick="locateCurrentGPS()" class="px-2 py-0.5 rounded-lg bg-white border border-cheki-dark text-[10px] font-black">📡 目前定位</button>
+              <button type="button" onclick="toggleEditMapPicker()" id="toggleMapBtn" class="px-2 py-0.5 rounded-lg bg-blue-400 text-white border border-cheki-dark text-[10px] font-black">🗺️ 開啟地圖選點</button>
+            </div>
+          </div>
+
+          <div class="flex gap-1.5">
+            <input id="cardLocationInput" type="text" placeholder="輸入場地或城市（如：KANDA SQUARE HALL、福岡）" class="flex-1 px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark font-bold text-xs bg-white">
+            <button type="button" onclick="searchPlaceOnMap()" class="px-2.5 py-1.5 rounded-xl bg-amber-200 neo-btn text-[11px] font-black shrink-0">🔍 搜尋定位</button>
+          </div>
+
+          <!-- 常用場地一鍵快速標示按鈕 -->
+          <div id="quickVenuePills" class="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5"></div>
+
+          <!-- 互動小地圖容器 (點擊地圖即可插針標示) -->
+          <div id="editMapWrapper" class="hidden space-y-1.5 pt-1">
+            <div id="editPickerMap" class="w-full h-44 rounded-xl border-2 border-cheki-dark overflow-hidden bg-blue-100"></div>
+            <div class="flex items-center justify-between text-[10px] font-bold text-zinc-600 px-1">
+              <span id="editCoordsText">👆 直接點擊地圖任意位置即可放置標記大頭針</span>
+              <button type="button" onclick="clearEditLocationPin()" class="text-rose-600 font-black underline">清除座標</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 可同時勾選多個相簿的標籤選擇器 -->
         <div>
           <div class="flex justify-between items-center mb-1">
             <label class="text-xs font-black">所屬相簿（可自由點選多個相簿）</label>
@@ -442,7 +493,7 @@
 
         <div>
           <label class="text-xs font-black block mb-1">背面筆記 / 簽名備註 (點擊翻面時顯示)</label>
-          <textarea id="cardNoteInput" rows="2" placeholder="記錄當日對話、姿勢（例如 T pose）、活動名稱..." class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold text-xs"></textarea>
+          <textarea id="cardNoteInput" rows="2" placeholder="記錄當日對話、姿勢（例如 T pose）、活動名稱..." class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold text-xs bg-white"></textarea>
         </div>
 
         <div>
@@ -462,7 +513,7 @@
     </div>
   </div>
 
-  <!-- LIVE CAMERA SCANNER MODAL (即時動態自動尋邊與尺寸識別相機) -->
+  <!-- LIVE CAMERA SCANNER MODAL -->
   <div id="liveCameraModal" oncontextmenu="return false;" class="hidden fixed inset-0 z-[80] bg-black flex flex-col justify-between p-4">
     <div class="flex justify-between items-center text-white z-10 gap-1">
       <button onclick="closeLiveCameraScanner()" class="px-3 py-1.5 rounded-xl bg-zinc-800 border border-zinc-600 text-xs font-black shrink-0">✕ 關閉</button>
@@ -473,14 +524,12 @@
     <div id="liveVideoContainer" class="relative flex-1 my-3 rounded-2xl overflow-hidden flex items-center justify-center bg-zinc-950">
       <video id="cameraVideo" autoplay playsinline muted class="w-full h-full object-cover pointer-events-none"></video>
       
-      <!-- 參考虛線框 -->
       <div class="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
         <div class="w-60 aspect-[54/86] border border-dashed border-white/40 rounded-xl relative">
           <span class="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-white/80 whitespace-nowrap">將 Cheki 放在深色背景上可自動吸附邊緣</span>
         </div>
       </div>
 
-      <!-- AI 即時動態偵測到的 Cheki 綠色邊框與尺寸標籤 -->
       <div id="liveDetectBox" class="hidden absolute pointer-events-none border-[3px] border-emerald-400 rounded-lg shadow-[0_0_20px_rgba(52,211,153,0.6)]">
         <div class="absolute -top-6 left-0 bg-emerald-500 text-zinc-950 text-[10px] font-black px-2 py-0.5 rounded-md whitespace-nowrap shadow" id="liveDetectSizeLabel">
           🎯 標準 Mini (86×54mm)
@@ -505,7 +554,7 @@
     </div>
   </div>
 
-  <!-- FREE CROPPER MODAL (已封鎖長按彈窗 + 加大觸控區 + 支援框體平移) -->
+  <!-- FREE CROPPER MODAL -->
   <div id="cropperModal" oncontextmenu="return false;" class="hidden fixed inset-0 z-[90] bg-black/95 flex flex-col justify-between p-3.5 touch-none select-none">
     <div class="flex justify-between items-center text-white z-20">
       <button type="button" onclick="closeCropperModal()" class="px-3 py-1.5 rounded-xl bg-zinc-800 text-xs font-black">✕ 取消</button>
@@ -518,18 +567,14 @@
 
     <div id="cropWorkspace" oncontextmenu="return false;" class="relative flex-1 my-2 flex items-center justify-center overflow-hidden select-none touch-none">
       <div id="cropImgWrapper" oncontextmenu="return false;" class="relative inline-block select-none touch-none">
-        <!-- 圖片加上透明防觸控遮罩，徹底杜絕手機瀏覽器長按彈出 2Q==.bin 選單 -->
         <img id="cropTargetImg" src="" draggable="false" oncontextmenu="return false;" class="max-h-[62vh] max-w-[88vw] object-contain block pointer-events-none select-none">
         <div class="absolute inset-0 z-10 bg-transparent" oncontextmenu="return false;"></div>
 
-        <!-- 裁切框 (支援直接按住框內平移 + 拉動八個控制點) -->
         <div id="cropBox" data-handle="move" oncontextmenu="return false;" class="crop-handle absolute z-20 border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] cursor-move touch-none">
-          <!-- 四角控制點 (加大觸控感應區 w-9 h-9) -->
           <div data-handle="nw" class="crop-handle absolute -top-4 -left-4 w-9 h-9 flex items-center justify-center"><div class="w-6 h-6 bg-white border-2 border-cheki-accent rounded-full shadow-md"></div></div>
           <div data-handle="ne" class="crop-handle absolute -top-4 -right-4 w-9 h-9 flex items-center justify-center"><div class="w-6 h-6 bg-white border-2 border-cheki-accent rounded-full shadow-md"></div></div>
           <div data-handle="sw" class="crop-handle absolute -bottom-4 -left-4 w-9 h-9 flex items-center justify-center"><div class="w-6 h-6 bg-white border-2 border-cheki-accent rounded-full shadow-md"></div></div>
           <div data-handle="se" class="crop-handle absolute -bottom-4 -right-4 w-9 h-9 flex items-center justify-center"><div class="w-6 h-6 bg-white border-2 border-cheki-accent rounded-full shadow-md"></div></div>
-          <!-- 四邊中點控制條 (加大觸控感應區) -->
           <div data-handle="n" class="crop-handle absolute -top-4 left-1/2 -translate-x-1/2 w-12 h-8 flex items-center justify-center"><div class="w-8 h-3 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
           <div data-handle="s" class="crop-handle absolute -bottom-4 left-1/2 -translate-x-1/2 w-12 h-8 flex items-center justify-center"><div class="w-8 h-3 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
           <div data-handle="w" class="crop-handle absolute top-1/2 -translate-y-1/2 -left-4 w-8 h-12 flex items-center justify-center"><div class="w-3 h-8 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
@@ -538,7 +583,6 @@
       </div>
     </div>
 
-    <!-- 自動尋邊與標準拍立得尺寸快捷按鈕列 -->
     <div class="space-y-2 z-20">
       <div class="grid grid-cols-4 gap-1.5">
         <button type="button" onclick="runAutoDetectOnCropperImage()" class="py-2 px-1 rounded-xl bg-emerald-400 text-zinc-950 font-black text-[11px] flex flex-col items-center justify-center">
@@ -583,7 +627,7 @@
   </div>
 
   <script>
-    // --- 全局攔截圖片長按彈出系統選單 (防止 Android/iOS 長按彈出下載圖片選單) ---
+    // --- 全局攔截圖片長按彈出系統選單 ---
     window.addEventListener('contextmenu', (e) => {
       if (e.target.tagName === 'IMG' || e.target.closest('#cropperModal') || e.target.closest('#deskCanvas') || e.target.closest('#inspectModal')) {
         e.preventDefault();
@@ -612,6 +656,28 @@
     let currentDeskThemeIdx = 0;
     let calYear = new Date().getFullYear();
     let calMonth = new Date().getMonth();
+
+    // 📍 地圖標示狀態與預設熱門應援場地座標庫
+    let editingLat = null;
+    let editingLng = null;
+    let editMapInstance = null;
+    let editMapMarker = null;
+    let statsMapInstance = null;
+    let statsMapMarkersLayer = null;
+
+    const PRESET_VENUES = [
+      { name: 'KANDA SQUARE HALL (東京)', lat: 35.6925, lng: 139.7623 },
+      { name: 'ららぽーと豊洲 (東京)', lat: 35.6554, lng: 139.7924 },
+      { name: 'お台場・TIF会場 (東京)', lat: 35.6247, lng: 139.7755 },
+      { name: '日本武道館 (東京)', lat: 35.6933, lng: 139.7499 },
+      { name: '原宿 AF GALLERY (東京)', lat: 35.6702, lng: 139.7065 },
+      { name: '所沢さくらタウン (埼玉)', lat: 35.7975, lng: 139.5074 },
+      { name: 'ららぽーと横浜 (神奈川)', lat: 35.5162, lng: 139.5663 },
+      { name: '福岡 (Fukuoka)', lat: 33.5902, lng: 130.4017 },
+      { name: '門司港レトロ (北九州)', lat: 33.9467, lng: 130.9631 },
+      { name: 'あなぶきアリーナ香川', lat: 34.3519, lng: 134.0485 },
+      { name: '香港 (Hong Kong)', lat: 22.3193, lng: 114.1694 }
+    ];
 
     // Batch Album Picker state
     let batchTargetAlbum = '';
@@ -642,6 +708,160 @@
       const clean = [...new Set((albumArray || []).filter(Boolean))];
       card.albums = clean.length > 0 ? clean : [albums[0] || '預設相簿'];
       card.album = card.albums[0];
+    }
+
+    // =========================================================================
+    // 📍 互動地圖選點與場地搜尋功能 (Leaflet + OpenStreetMap Nominatim)
+    // =========================================================================
+    function renderQuickVenuePills() {
+      const box = document.getElementById('quickVenuePills');
+      if (!box) return;
+      // 結合使用者過去輸入過的地點與預設應援場地
+      const customVenues = [];
+      cards.forEach(c => {
+        if (c.locationName && typeof c.lat === 'number' && typeof c.lng === 'number') {
+          if (!PRESET_VENUES.some(p => p.name === c.locationName) && !customVenues.some(v => v.name === c.locationName)) {
+            customVenues.push({ name: c.locationName, lat: c.lat, lng: c.lng });
+          }
+        }
+      });
+      const allVenues = [...customVenues, ...PRESET_VENUES];
+      box.innerHTML = allVenues.map((v, idx) => `
+        <button type="button" onclick="selectPresetVenue(${idx})" data-lat="${v.lat}" data-lng="${v.lng}" data-name="${v.name}" class="venue-pill-btn px-2.5 py-0.5 rounded-full bg-white border border-blue-300 text-[10px] font-black text-blue-900 shrink-0 hover:bg-blue-100">
+          📍 ${v.name}
+        </button>
+      `).join('');
+    }
+
+    function selectPresetVenue(idx) {
+      const btns = document.querySelectorAll('.venue-pill-btn');
+      const btn = btns[idx];
+      if (!btn) return;
+      const name = btn.dataset.name;
+      const lat = parseFloat(btn.dataset.lat);
+      const lng = parseFloat(btn.dataset.lng);
+      document.getElementById('cardLocationInput').value = name;
+      setEditLocationPin(lat, lng, true);
+    }
+
+    function toggleEditMapPicker(forceShow) {
+      const wrapper = document.getElementById('editMapWrapper');
+      const btn = document.getElementById('toggleMapBtn');
+      const willShow = typeof forceShow === 'boolean' ? forceShow : wrapper.classList.contains('hidden');
+      wrapper.classList.toggle('hidden', !willShow);
+      btn.textContent = willShow ? '🗺️ 收起地圖' : '🗺️ 開啟地圖選點';
+
+      if (willShow) {
+        setTimeout(() => {
+          initOrUpdateEditMap();
+        }, 80);
+      }
+    }
+
+    function initOrUpdateEditMap() {
+      const defaultLat = typeof editingLat === 'number' ? editingLat : 35.6812; // 預設東京
+      const defaultLng = typeof editingLng === 'number' ? editingLng : 139.7671;
+
+      if (!editMapInstance) {
+        editMapInstance = L.map('editPickerMap').setView([defaultLat, defaultLng], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap'
+        }).addTo(editMapInstance);
+
+        editMapInstance.on('click', (e) => {
+          setEditLocationPin(e.latlng.lat, e.latlng.lng, false);
+        });
+      } else {
+        editMapInstance.invalidateSize();
+        editMapInstance.setView([defaultLat, defaultLng], typeof editingLat === 'number' ? 15 : 11);
+      }
+
+      if (typeof editingLat === 'number' && typeof editingLng === 'number') {
+        setEditLocationPin(editingLat, editingLng, false);
+      }
+    }
+
+    function setEditLocationPin(lat, lng, openMapIfNeeded = true) {
+      editingLat = Math.round(lat * 100000) / 100000;
+      editingLng = Math.round(lng * 100000) / 100000;
+
+      if (openMapIfNeeded) {
+        toggleEditMapPicker(true);
+      }
+
+      setTimeout(() => {
+        if (editMapInstance) {
+          editMapInstance.invalidateSize();
+          if (editMapMarker) {
+            editMapMarker.setLatLng([editingLat, editingLng]);
+          } else {
+            editMapMarker = L.marker([editingLat, editingLng]).addTo(editMapInstance);
+          }
+          editMapInstance.setView([editingLat, editingLng], 15);
+        }
+        const coordText = document.getElementById('editCoordsText');
+        if (coordText) {
+          coordText.textContent = `✅ 已標示座標：${editingLat}, ${editingLng}`;
+        }
+      }, 100);
+    }
+
+    function clearEditLocationPin() {
+      editingLat = null;
+      editingLng = null;
+      if (editMapInstance && editMapMarker) {
+        editMapInstance.removeLayer(editMapMarker);
+        editMapMarker = null;
+      }
+      const coordText = document.getElementById('editCoordsText');
+      if (coordText) coordText.textContent = '👆 直接點擊地圖任意位置即可放置標記大頭針';
+    }
+
+    async function searchPlaceOnMap() {
+      const q = (document.getElementById('cardLocationInput').value || '').trim();
+      if (!q) {
+        alert('請先輸入場地或城市名稱（例如：福岡、KANDA SQUARE HALL）！');
+        return;
+      }
+      // 先比對內建場地庫
+      const preset = PRESET_VENUES.find(v => v.name.toLowerCase().includes(q.toLowerCase()) || q.toLowerCase().includes(v.name.split(' ')[0].toLowerCase()));
+      if (preset) {
+        setEditLocationPin(preset.lat, preset.lng, true);
+        return;
+      }
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`);
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const lat = parseFloat(data[0].lat);
+          const lon = parseFloat(data[0].lon);
+          setEditLocationPin(lat, lon, true);
+        } else {
+          toggleEditMapPicker(true);
+          alert('找不到完全符合的地名，已為你開啟地圖，你可以直接在地圖上點一下標示位置！');
+        }
+      } catch (err) {
+        toggleEditMapPicker(true);
+      }
+    }
+
+    function locateCurrentGPS() {
+      if (!navigator.geolocation) {
+        alert('你的瀏覽器不支援 GPS 定位');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setEditLocationPin(pos.coords.latitude, pos.coords.longitude, true);
+          if (!document.getElementById('cardLocationInput').value.trim()) {
+            document.getElementById('cardLocationInput').value = '目前位置';
+          }
+        },
+        () => {
+          alert('無法取得目前 GPS 位置，請確認已允許位置權限，或直接使用地圖點選。');
+        }
+      );
     }
 
     // =========================================================================
@@ -940,8 +1160,9 @@
         if (q) {
           const matchMember = (c.member || '').toLowerCase().includes(q);
           const matchNote = (c.note || '').toLowerCase().includes(q);
+          const matchLocation = (c.locationName || '').toLowerCase().includes(q);
           const matchAlbum = getCardAlbums(c).some(a => a.toLowerCase().includes(q));
-          return matchMember || matchNote || matchAlbum;
+          return matchMember || matchNote || matchLocation || matchAlbum;
         }
         return true;
       });
@@ -1091,7 +1312,7 @@
 
       const filtered = cards.filter(c => {
         if (!q) return true;
-        return (c.member || '').toLowerCase().includes(q) || (c.note || '').toLowerCase().includes(q);
+        return (c.member || '').toLowerCase().includes(q) || (c.note || '').toLowerCase().includes(q) || (c.locationName || '').toLowerCase().includes(q);
       });
 
       if (filtered.length === 0) {
@@ -1287,6 +1508,7 @@
           <div class="mt-1 text-center">
             <p class="font-black text-xs truncate max-w-[140px]">${card.member || '未命名'}</p>
             <p class="text-[10px] text-zinc-500 font-bold">${card.date || ''}</p>
+            ${card.locationName ? `<p class="text-[10px] text-blue-600 font-black truncate max-w-[140px]">📍 ${card.locationName}</p>` : ''}
           </div>
         `;
         grid.appendChild(item);
@@ -1347,7 +1569,7 @@
           <img src="${c.image}" draggable="false" class="w-12 h-16 object-contain rounded pointer-events-none">
           <div class="flex-1 min-w-0">
             <p class="font-black text-sm truncate">${c.member}</p>
-            <p class="text-xs text-zinc-500 font-bold">${c.date || ''}</p>
+            <p class="text-xs text-zinc-500 font-bold">${c.date || ''} ${c.locationName ? `· 📍 ${c.locationName}` : ''}</p>
             <p class="text-xs text-zinc-600 truncate mt-0.5">${c.note || ''}</p>
           </div>
         `;
@@ -1355,15 +1577,17 @@
       });
     }
 
-    // --- TAB 4: STATS ---
+    // --- TAB 4: STATS (含 🗺️ 應援足跡互動地圖 + 偶像排行 + 月份統計) ---
     function renderStats() {
       const idolCounts = getIdolCounts();
       const favCount = cards.filter(c => c.fav).length;
+      const geoCards = cards.filter(c => typeof c.lat === 'number' && typeof c.lng === 'number');
+      const uniqueLocs = new Set(cards.map(c => (c.locationName || '').trim()).filter(Boolean));
 
       document.getElementById('statTotalCards').textContent = cards.length;
       document.getElementById('statTotalIdols').textContent = idolCounts.length;
       document.getElementById('statTotalFavs').textContent = favCount;
-      document.getElementById('statTotalAlbums').textContent = albums.length;
+      document.getElementById('statTotalLocations').textContent = uniqueLocs.size || geoCards.length;
 
       const topOshiCard = document.getElementById('topOshiHighlightCard');
       if (idolCounts.length > 0) {
@@ -1386,6 +1610,31 @@
         topOshiCard.classList.add('hidden');
       }
 
+      // 渲染應援足跡互動地圖
+      setTimeout(() => {
+        renderStatsFootprintMap();
+      }, 80);
+
+      // 渲染場地統計列表
+      const locMap = {};
+      cards.forEach(c => {
+        const loc = (c.locationName || '').trim();
+        if (loc) locMap[loc] = (locMap[loc] || 0) + 1;
+      });
+      const locList = Object.entries(locMap).sort((a, b) => b[1] - a[1]);
+      const locBox = document.getElementById('locationStatsList');
+      if (locList.length === 0) {
+        locBox.innerHTML = `<p class="text-center text-xs text-zinc-400 font-bold py-1">新增或編輯 Cheki 時可加入「📍 拍攝地點 / 地圖標示」！</p>`;
+      } else {
+        locBox.innerHTML = locList.map(([place, cnt]) => `
+          <div onclick="searchByLocationInBinder('${place.replace(/'/g, "\\'")}')" class="flex justify-between items-center px-3 py-1.5 rounded-xl bg-blue-50/70 border border-blue-200 cursor-pointer text-xs font-black">
+            <span class="truncate">📍 ${place}</span>
+            <span class="text-blue-600 shrink-0">${cnt} 張 Cheki</span>
+          </div>
+        `).join('');
+      }
+
+      // 渲染各偶像排行榜
       const board = document.getElementById('idolStatsLeaderboard');
       if (idolCounts.length === 0) {
         board.innerHTML = `<p class="text-center py-6 text-zinc-400 font-bold text-xs">尚無拍立得資料，快去新增第一張 Cheki 吧！</p>`;
@@ -1463,6 +1712,57 @@
       `).join('');
     }
 
+    function renderStatsFootprintMap() {
+      const container = document.getElementById('statsFootprintMap');
+      if (!container || typeof L === 'undefined') return;
+
+      if (!statsMapInstance) {
+        statsMapInstance = L.map('statsFootprintMap').setView([35.6812, 139.7671], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap'
+        }).addTo(statsMapInstance);
+        statsMapMarkersLayer = L.layerGroup().addTo(statsMapInstance);
+      } else {
+        statsMapInstance.invalidateSize();
+        statsMapMarkersLayer.clearLayers();
+      }
+
+      const bounds = [];
+      cards.forEach(c => {
+        if (typeof c.lat === 'number' && typeof c.lng === 'number') {
+          bounds.push([c.lat, c.lng]);
+          const marker = L.marker([c.lat, c.lng]);
+          const popupHtml = `
+            <div style="text-align:center; min-width:110px; cursor:pointer;" onclick="openInspectModal(${c.id})">
+              <img src="${c.image}" style="height:75px; width:auto; margin:0 auto 4px; border-radius:6px; object-fit:contain;" />
+              <div style="font-weight:900; font-size:12px;">${c.member || ''}</div>
+              <div style="font-size:10px; color:#2563eb; font-weight:700;">📍 ${c.locationName || '標記地點'}</div>
+              <div style="font-size:10px; color:#666;">${c.date || ''}</div>
+            </div>
+          `;
+          marker.bindPopup(popupHtml);
+          statsMapMarkersLayer.addLayer(marker);
+        }
+      });
+
+      if (bounds.length > 0) {
+        statsMapInstance.fitBounds(bounds, { padding: [25, 25], maxZoom: 14 });
+      }
+    }
+
+    function fitAllMarkersOnStatsMap() {
+      renderStatsFootprintMap();
+    }
+
+    function searchByLocationInBinder(locName) {
+      document.getElementById('searchBar').classList.remove('hidden');
+      document.getElementById('searchInput').value = locName;
+      selectedAlbumFilter = 'ALL';
+      selectedMemberFilter = 'ALL';
+      switchTab('binder');
+    }
+
     // --- TAB 5: DESK ---
     function renderDesk() {
       const canvas = document.getElementById('deskCanvas');
@@ -1499,8 +1799,11 @@
               <img src="${card.image}" draggable="false" class="w-full h-auto block rounded-lg shadow-xl pointer-events-none">
             </div>
             <div class="backface-hidden rotate-y-180 absolute inset-0 rounded-xl shadow-xl p-3 flex flex-col justify-between items-center text-center pointer-events-none border border-white/40" style="background-color: ${backColor}; color: ${backColor === '#FFFDF9' ? '#272228' : '#FFFFFF'};">
-              <div class="text-[10px] font-bold opacity-80 w-full text-left">${card.date || ''}</div>
-              <div class="font-marker font-bold text-sm leading-snug line-clamp-5 break-words my-auto px-1">${backText}</div>
+              <div class="text-[9px] font-bold opacity-85 w-full flex justify-between gap-1">
+                <span>${card.date || ''}</span>
+                <span class="truncate">${card.locationName ? `📍${card.locationName}` : ''}</span>
+              </div>
+              <div class="font-marker font-bold text-sm leading-snug line-clamp-4 break-words my-auto px-1">${backText}</div>
               <div class="text-[10px] font-black opacity-90 w-full text-right">${card.member || ''}</div>
             </div>
           </div>
@@ -1748,7 +2051,7 @@
       compressAndSetImage(dataUrl, true, savedBounds, autoSnap);
     }
 
-    // --- FREE CROPPER & AUTO EDGE DETECTION (已徹底封鎖長按彈出圖片選單) ---
+    // --- FREE CROPPER & AUTO EDGE DETECTION ---
     function openCropperModal(autoRunDetect = false, presetBounds = null) {
       if (!rawUploadDataUrl && !currentUploadDataUrl) return;
       const modal = document.getElementById('cropperModal');
@@ -1837,7 +2140,6 @@
       }
     }
 
-    // 強化版裁切觸控控制器：攔截原生長按、支援四角四邊縮放與整框平移
     (function initCropHandles() {
       let activeHandle = null;
       let startMouseX = 0, startMouseY = 0;
@@ -1955,6 +2257,7 @@
       document.getElementById('inspectMemberTitle').textContent = card.member || '未命名';
       document.getElementById('inspectImg').src = card.image;
       document.getElementById('inspectBackDate').textContent = card.date || '';
+      document.getElementById('inspectBackLocation').textContent = card.locationName ? `📍 ${card.locationName}` : '';
       document.getElementById('inspectBackNote').textContent = card.note || '（尚無背面筆記）';
       document.getElementById('inspectBackMember').textContent = card.member || '';
 
@@ -1964,6 +2267,22 @@
       backCard.style.color = bg === '#FFFDF9' ? '#272228' : '#FFFFFF';
 
       renderInspectAlbumBadges(card);
+
+      // 顯示地點與點擊開啟 Google Maps 連結
+      const locBox = document.getElementById('inspectLocationBadgeBox');
+      if (card.locationName || (typeof card.lat === 'number' && typeof card.lng === 'number')) {
+        const query = (typeof card.lat === 'number' && typeof card.lng === 'number')
+          ? `${card.lat},${card.lng}`
+          : encodeURIComponent(card.locationName);
+        const label = card.locationName || `${card.lat}, ${card.lng}`;
+        locBox.innerHTML = `
+          <a href="https://www.google.com/maps/search/?api=1&query=${query}" target="_blank" class="inline-flex items-center gap-1 px-3 py-0.5 rounded-full bg-blue-500/80 text-white border border-blue-300 text-[11px] font-black">
+            📍 ${label} (點此開啟地圖)
+          </a>
+        `;
+      } else {
+        locBox.innerHTML = '';
+      }
 
       document.getElementById('inspectFlipInner').classList.remove('rotate-y-180');
       document.getElementById('inspectFavBtn').style.opacity = card.fav ? '1' : '0.4';
@@ -2058,10 +2377,15 @@
       editingSelectedAlbums = new Set([defaultAlb]);
       renderEditAlbumPills();
       populateMemberSuggestions();
+      renderQuickVenuePills();
 
       document.getElementById('modalTitle').textContent = '✨ 新增拍立得';
       document.getElementById('cardMemberInput').value = '遠藤まりん';
       document.getElementById('cardDateInput').value = new Date().toISOString().split('T')[0];
+      document.getElementById('cardLocationInput').value = '';
+      clearEditLocationPin();
+      toggleEditMapPicker(false);
+
       document.getElementById('cardNoteInput').value = '';
       document.getElementById('brightnessSlider').value = 100;
       document.getElementById('contrastSlider').value = 100;
@@ -2082,10 +2406,20 @@
       editingSelectedAlbums = new Set(getCardAlbums(card));
       renderEditAlbumPills();
       populateMemberSuggestions();
+      renderQuickVenuePills();
 
-      document.getElementById('modalTitle').textContent = '✏️ 編輯拍立得與相簿';
+      document.getElementById('modalTitle').textContent = '✏️ 編輯拍立得與地點';
       document.getElementById('cardMemberInput').value = card.member || '';
       document.getElementById('cardDateInput').value = card.date || '';
+      document.getElementById('cardLocationInput').value = card.locationName || '';
+
+      if (typeof card.lat === 'number' && typeof card.lng === 'number') {
+        setEditLocationPin(card.lat, card.lng, true);
+      } else {
+        clearEditLocationPin();
+        toggleEditMapPicker(false);
+      }
+
       document.getElementById('cardNoteInput').value = card.note || '';
       document.getElementById('brightnessSlider').value = 100;
       document.getElementById('contrastSlider').value = 100;
@@ -2192,8 +2526,18 @@
       }
       const member = document.getElementById('cardMemberInput').value.trim() || '遠藤まりん';
       const date = document.getElementById('cardDateInput').value;
+      const locationName = document.getElementById('cardLocationInput').value.trim();
       const chosenAlbums = [...editingSelectedAlbums];
       const note = document.getElementById('cardNoteInput').value;
+
+      // 若輸入了預設場地名稱但尚未產生座標，自動配對座標
+      if (locationName && typeof editingLat !== 'number') {
+        const match = PRESET_VENUES.find(v => v.name.toLowerCase().includes(locationName.toLowerCase()));
+        if (match) {
+          editingLat = match.lat;
+          editingLng = match.lng;
+        }
+      }
 
       if (editingCardId) {
         const idx = cards.findIndex(c => c.id === editingCardId);
@@ -2201,6 +2545,9 @@
           cards[idx] = {
             ...cards[idx],
             member, date, note,
+            locationName,
+            lat: editingLat,
+            lng: editingLng,
             image: currentUploadDataUrl,
             backColor: selectedBackColor
           };
@@ -2212,6 +2559,9 @@
           id: Date.now(),
           createdAt: Date.now(),
           member, date, note,
+          locationName,
+          lat: editingLat,
+          lng: editingLng,
           image: currentUploadDataUrl,
           backColor: selectedBackColor,
           fav: false,
@@ -2282,6 +2632,9 @@
               createdAt: raw.createdAt || Date.now(),
               member: raw.member || raw.idol || raw.name || '遠藤まりん',
               date: raw.date || new Date().toISOString().split('T')[0],
+              locationName: raw.locationName || raw.location || '',
+              lat: typeof raw.lat === 'number' ? raw.lat : null,
+              lng: typeof raw.lng === 'number' ? raw.lng : null,
               note: raw.note || raw.memo || '',
               image: raw.image || raw.img || raw.dataUrl || '',
               backColor: raw.backColor || '#60A5FA',
