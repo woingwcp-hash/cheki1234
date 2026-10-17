@@ -248,7 +248,6 @@
           <button onclick="fitAllMarkersOnStatsMap()" class="px-2.5 py-1 rounded-xl bg-blue-100 neo-btn text-[11px] font-black shrink-0">🔍 顯示全部標記</button>
         </div>
         <div id="statsFootprintMap" class="w-full h-64 rounded-2xl border-2 border-cheki-dark overflow-hidden bg-blue-50"></div>
-        <!-- 場地拍攝數量排行 -->
         <div id="locationStatsList" class="space-y-1.5 pt-1"></div>
       </div>
 
@@ -274,7 +273,7 @@
       </div>
     </section>
 
-    <!-- TAB 5: DESK (桌布 - 支援自訂相片背景 + 背景縮放與位置調整) -->
+    <!-- TAB 5: DESK (桌布 - 新增全體 Cheki 超微縮比例滑桿 12%~200% + 自訂背景縮放) -->
     <section id="tab-desk" class="space-y-2">
       <!-- 頂部工具列 -->
       <div class="neo-box bg-white rounded-2xl p-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
@@ -284,42 +283,64 @@
         <button onclick="openDeskBgModal()" class="px-3 py-1.5 rounded-full bg-blue-200 text-xs font-black neo-btn shrink-0">🖼️ 自訂背景</button>
       </div>
 
-      <!-- 🔍 桌布背景快速縮放與換圖控制列 (新增！) -->
-      <div class="neo-box bg-blue-50/90 rounded-2xl px-3 py-1.5 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-1 shrink-0">
-          <span class="text-[11px] font-black text-blue-900">🖼️ 背景縮放</span>
-          <span id="deskBgZoomValueText" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-white border border-blue-300 text-blue-700">100%</span>
+      <!-- 📏 新增：桌布「全部 Cheki 統一縮細 / 放大」與「背景縮放」雙控制列 -->
+      <div class="neo-box bg-white rounded-2xl p-2 space-y-1.5">
+        <!-- 第一行：全體 Cheki 尺寸縮放 (最低可縮至 12% 超迷你海報牆！) -->
+        <div class="flex items-center justify-between gap-1.5">
+          <div class="flex items-center gap-1 shrink-0">
+            <span class="text-[11px] font-black text-pink-700">🎴 全部 Cheki 大小</span>
+            <span id="deskAllCardsScaleText" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-pink-100 border border-pink-300 text-cheki-accent">100%</span>
+          </div>
+          <div class="flex items-center gap-1 flex-1 max-w-[155px]">
+            <button onclick="stepAllDeskCardsScale(-15)" class="w-6 h-6 rounded-lg bg-pink-50 border border-cheki-dark font-black text-xs flex items-center justify-center shrink-0 active:scale-90">➖</button>
+            <input id="deskAllCardsScaleSlider" type="range" min="12" max="200" value="100" oninput="onAllDeskCardsScaleChange(this.value)" class="w-full accent-pink-500 h-1.5">
+            <button onclick="stepAllDeskCardsScale(15)" class="w-6 h-6 rounded-lg bg-pink-50 border border-cheki-dark font-black text-xs flex items-center justify-center shrink-0 active:scale-90">➕</button>
+          </div>
+          <button onclick="neatArrangeDeskCards()" class="px-2 py-1 rounded-xl bg-pink-100 border border-cheki-dark text-[10px] font-black shrink-0" title="依目前大小自動密集重排">✨ 密集重排</button>
         </div>
-        <div class="flex items-center gap-1 flex-1 max-w-[165px]">
-          <button onclick="stepDeskBgZoom(-15)" class="w-6 h-6 rounded-lg bg-white border border-cheki-dark font-black text-xs flex items-center justify-center shrink-0 active:scale-90">➖</button>
-          <input id="deskBgQuickSlider" type="range" min="20" max="300" value="100" oninput="onDeskBgZoomChange(this.value)" class="w-full accent-blue-500 h-1.5">
-          <button onclick="stepDeskBgZoom(15)" class="w-6 h-6 rounded-lg bg-white border border-cheki-dark font-black text-xs flex items-center justify-center shrink-0 active:scale-90">➕</button>
-        </div>
-        <div class="flex items-center gap-1 shrink-0">
-          <label class="px-2 py-1 rounded-xl bg-amber-200 border border-cheki-dark text-[10px] font-black cursor-pointer flex items-center gap-0.5">
-            📁 揀相片
-            <input type="file" accept="image/*" class="hidden" onchange="handleDeskCustomBgUpload(event)">
-          </label>
-          <button onclick="resetDeskBgTransform()" class="px-1.5 py-1 rounded-xl bg-white border border-cheki-dark text-[10px] font-black" title="重設背景位置與縮放">🎯</button>
+
+        <!-- 第二行：桌布背景縮放與揀相 -->
+        <div class="flex items-center justify-between gap-1.5 pt-1 border-t border-zinc-100">
+          <div class="flex items-center gap-1 shrink-0">
+            <span class="text-[11px] font-black text-blue-900">🖼️ 背景縮放</span>
+            <span id="deskBgZoomValueText" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-blue-50 border border-blue-300 text-blue-700">100%</span>
+          </div>
+          <div class="flex items-center gap-1 flex-1 max-w-[140px]">
+            <button onclick="stepDeskBgZoom(-15)" class="w-6 h-6 rounded-lg bg-blue-50 border border-cheki-dark font-black text-xs flex items-center justify-center shrink-0 active:scale-90">➖</button>
+            <input id="deskBgQuickSlider" type="range" min="20" max="300" value="100" oninput="onDeskBgZoomChange(this.value)" class="w-full accent-blue-500 h-1.5">
+            <button onclick="stepDeskBgZoom(15)" class="w-6 h-6 rounded-lg bg-blue-50 border border-cheki-dark font-black text-xs flex items-center justify-center shrink-0 active:scale-90">➕</button>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <label class="px-2 py-1 rounded-xl bg-amber-200 border border-cheki-dark text-[10px] font-black cursor-pointer flex items-center gap-0.5">
+              📁 換背景
+              <input type="file" accept="image/*" class="hidden" onchange="handleDeskCustomBgUpload(event)">
+            </label>
+            <button onclick="resetDeskBgTransform()" class="px-1.5 py-1 rounded-xl bg-white border border-cheki-dark text-[10px] font-black" title="重設背景位置與縮放">🎯</button>
+          </div>
         </div>
       </div>
 
-      <!-- 選中卡片資訊與翻面列 -->
-      <div class="neo-box bg-pink-100/90 rounded-2xl px-3 py-2 flex items-center justify-between gap-2">
-        <span id="deskSelectedName" class="font-black text-sm truncate max-w-[100px]">點擊相片操作</span>
-        <span class="px-2.5 py-0.5 rounded-full bg-white border border-cheki-dark text-[11px] font-bold text-zinc-700 shrink-0">💡 點擊相片翻面 / 雙指縮放</span>
-        <button onclick="flipSelectedDeskCard()" class="px-3 py-1 rounded-full bg-white neo-btn text-xs font-black flex items-center gap-1 shrink-0">🔄 翻面</button>
+      <!-- 選中單張卡片資訊、單張微調縮放與翻面列 -->
+      <div class="neo-box bg-pink-100/90 rounded-2xl px-3 py-1.5 flex items-center justify-between gap-1.5">
+        <span id="deskSelectedName" class="font-black text-xs truncate max-w-[90px]">點擊相片操作</span>
+        <div class="flex items-center gap-1 shrink-0">
+          <span class="text-[10px] font-bold text-zinc-600">單張大小:</span>
+          <button onclick="stepSelectedDeskCardScale(-0.12)" class="w-6 h-6 rounded-lg bg-white border border-cheki-dark font-black text-xs flex items-center justify-center active:scale-90" title="縮細此張 Cheki">➖</button>
+          <span id="deskSelectedScaleBadge" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-white border border-pink-300">100%</span>
+          <button onclick="stepSelectedDeskCardScale(0.12)" class="w-6 h-6 rounded-lg bg-white border border-cheki-dark font-black text-xs flex items-center justify-center active:scale-90" title="放大此張 Cheki">➕</button>
+        </div>
+        <button onclick="flipSelectedDeskCard()" class="px-2.5 py-1 rounded-full bg-white neo-btn text-xs font-black flex items-center gap-1 shrink-0">🔄 翻面</button>
       </div>
 
-      <!-- 桌布畫布 (內建底層可縮放平移背景層 + 頂層拍立得卡片層) -->
-      <div id="deskCanvas" oncontextmenu="return false;" class="desk-dots-brown neo-box rounded-3xl relative w-full h-[64vh] overflow-hidden touch-none">
+      <!-- 桌布畫布 (支援大量迷你卡片時向下捲動) -->
+      <div id="deskCanvas" oncontextmenu="return false;" class="desk-dots-brown neo-box rounded-3xl relative w-full h-[62vh] overflow-y-auto overflow-x-hidden touch-pan-y">
         <!-- 自訂背景圖片與遮罩層 -->
-        <div id="deskCustomBgLayer" class="hidden absolute inset-0 pointer-events-none overflow-hidden z-0">
+        <div id="deskCustomBgLayer" class="hidden sticky top-0 left-0 right-0 w-full h-full pointer-events-none overflow-hidden z-0">
           <img id="deskCustomBgImg" src="" draggable="false" class="w-full h-full object-contain origin-center transition-transform duration-75 pointer-events-none">
           <div id="deskCustomBgDimmer" class="absolute inset-0 bg-black/0 pointer-events-none"></div>
         </div>
         <!-- 拍立得卡片容器層 -->
-        <div id="deskCardsLayer" class="absolute inset-0 z-10 pointer-events-auto"></div>
+        <div id="deskCardsLayer" class="absolute inset-0 min-h-full z-10 pointer-events-auto"></div>
       </div>
     </section>
 
@@ -345,7 +366,7 @@
     </button>
   </nav>
 
-  <!-- 🖼️ DESK CUSTOM BACKGROUND & ZOOM MODAL (自訂桌布背景與進階縮放移位視窗) -->
+  <!-- 🖼️ DESK CUSTOM BACKGROUND & ZOOM MODAL -->
   <div id="deskBgModal" class="hidden fixed inset-0 z-[75] bg-black/75 flex items-center justify-center p-4 overflow-y-auto">
     <div class="bg-white w-full max-w-sm rounded-3xl neo-box p-4 space-y-3.5 max-h-[90vh] overflow-y-auto">
       <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
@@ -353,7 +374,6 @@
         <button onclick="closeDeskBgModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black">✕</button>
       </div>
 
-      <!-- 1. 選取相片來源 -->
       <div class="space-y-2">
         <p class="text-xs font-black text-zinc-700">1️⃣ 選擇自訂背景相片：</p>
         <div class="grid grid-cols-2 gap-2">
@@ -366,11 +386,9 @@
           </button>
         </div>
 
-        <!-- 從現有 Cheki 挑選作為背景的清單 -->
         <div id="pickChekiAsBgBox" class="hidden border-2 border-cheki-dark rounded-2xl p-2 bg-pink-50/60 max-h-44 overflow-y-auto grid grid-cols-4 gap-1.5"></div>
       </div>
 
-      <!-- 2. 背景縮放、平移與暗度微調 -->
       <div class="neo-box bg-blue-50/70 rounded-2xl p-3 space-y-2.5">
         <div class="flex justify-between items-center">
           <span class="text-xs font-black">2️⃣ 背景縮小 / 放大 / 位置微調</span>
@@ -409,7 +427,6 @@
         </div>
       </div>
 
-      <!-- 3. 切換回內建主題 -->
       <div class="space-y-1.5">
         <p class="text-xs font-black text-zinc-700">3️⃣ 或切換為內建圖案桌布（同樣支援縮放！）：</p>
         <div class="grid grid-cols-4 gap-1.5">
@@ -762,15 +779,16 @@
     let calYear = new Date().getFullYear();
     let calMonth = new Date().getMonth();
 
-    // 🖼️ 桌布背景自訂與縮放狀態 (永久儲存於 IndexedDB meta)
+    // 🖼️ 桌布背景自訂與全體 Cheki 預設縮放狀態
     let deskBgConfig = {
       mode: 'preset', // 'preset' | 'custom'
       themeIdx: 0,
       customImage: '',
-      zoom: 100, // 20% ~ 300%
+      zoom: 100, // 背景縮放 20% ~ 300%
       panX: 0,
       panY: 0,
-      dim: 0
+      dim: 0,
+      defaultCardScale: 100 // 全部 Cheki 統一縮放百分比 12% ~ 200%
     };
 
     // 📍 地圖標示狀態與預設熱門應援場地座標庫
@@ -827,6 +845,62 @@
     }
 
     // =========================================================================
+    // 🎴 全體與單張 Cheki 超微縮比例控制 (支援 12% ~ 250%)
+    // =========================================================================
+    let saveAllCardsTimeout = null;
+
+    function onAllDeskCardsScaleChange(pctVal) {
+      const pct = Math.min(200, Math.max(12, Number(pctVal) || 100));
+      deskBgConfig.defaultCardScale = pct;
+      const scaleNum = Math.round((pct / 100) * 100) / 100;
+
+      const slider = document.getElementById('deskAllCardsScaleSlider');
+      const text = document.getElementById('deskAllCardsScaleText');
+      if (slider) slider.value = pct;
+      if (text) text.textContent = `${pct}%`;
+
+      cards.forEach(c => {
+        c.deskScale = scaleNum;
+        const node = document.querySelector(`#deskCardsLayer > div[data-id="${c.id}"]`);
+        if (node) {
+          node.style.transform = `rotate(${c.deskRot || 0}deg) scale(${scaleNum})`;
+        }
+      });
+
+      const selBadge = document.getElementById('deskSelectedScaleBadge');
+      if (selBadge) selBadge.textContent = `${pct}%`;
+
+      saveDeskBgConfigToDB();
+      if (saveAllCardsTimeout) clearTimeout(saveAllCardsTimeout);
+      saveAllCardsTimeout = setTimeout(async () => {
+        for (const c of cards) await saveCardToDB(c);
+      }, 350);
+    }
+
+    function stepAllDeskCardsScale(deltaPct) {
+      const cur = deskBgConfig.defaultCardScale || 100;
+      onAllDeskCardsScaleChange(cur + deltaPct);
+    }
+
+    function stepSelectedDeskCardScale(deltaScale) {
+      if (!selectedDeskCardId && cards.length > 0) {
+        selectedDeskCardId = cards[0].id;
+      }
+      const card = cards.find(c => c.id === selectedDeskCardId);
+      if (!card) return;
+      const nextScale = Math.min(2.5, Math.max(0.12, Math.round(((card.deskScale || 1) + deltaScale) * 100) / 100));
+      card.deskScale = nextScale;
+
+      const node = document.querySelector(`#deskCardsLayer > div[data-id="${card.id}"]`);
+      if (node) {
+        node.style.transform = `rotate(${card.deskRot || 0}deg) scale(${nextScale})`;
+      }
+      const selBadge = document.getElementById('deskSelectedScaleBadge');
+      if (selBadge) selBadge.textContent = `${Math.round(nextScale * 100)}%`;
+      saveCardToDB(card);
+    }
+
+    // =========================================================================
     // 🖼️ 桌布自訂相片背景 & 背景縮放平移系統
     // =========================================================================
     function applyDeskBgVisuals() {
@@ -836,7 +910,6 @@
       const dimmer = document.getElementById('deskCustomBgDimmer');
       if (!canvas) return;
 
-      // 移除所有預設主題 class
       deskThemes.forEach(t => canvas.classList.remove(t));
       currentDeskThemeIdx = deskBgConfig.themeIdx || 0;
       canvas.classList.add(deskThemes[currentDeskThemeIdx]);
@@ -852,7 +925,6 @@
         canvas.style.backgroundPosition = '';
       } else {
         customLayer.classList.add('hidden');
-        // 內建圖案主題同樣支援背景放大與縮小！
         const basePx = currentDeskThemeIdx === 2 ? 28 : 32;
         const scaledPx = Math.max(8, Math.round(basePx * zoomRatio));
         if (currentDeskThemeIdx !== 3) {
@@ -864,8 +936,13 @@
         }
       }
 
-      // 同步更新介面上的縮放數值與滑桿
       const zVal = Math.round(deskBgConfig.zoom || 100);
+      const cardScalePct = Math.round(deskBgConfig.defaultCardScale || 100);
+      const allCardsSlider = document.getElementById('deskAllCardsScaleSlider');
+      const allCardsText = document.getElementById('deskAllCardsScaleText');
+      if (allCardsSlider) allCardsSlider.value = cardScalePct;
+      if (allCardsText) allCardsText.textContent = `${cardScalePct}%`;
+
       const quickSlider = document.getElementById('deskBgQuickSlider');
       const quickText = document.getElementById('deskBgZoomValueText');
       const modalZoomSlider = document.getElementById('modalBgZoomSlider');
@@ -2066,7 +2143,7 @@
       switchTab('binder');
     }
 
-    // --- TAB 5: DESK (支援底層自訂背景縮放 + 頂層拍立得卡片操作) ---
+    // --- TAB 5: DESK (支援超微縮 12%~250% 比例 + 自適應多欄密集排列) ---
     function renderDesk() {
       applyDeskBgVisuals();
       const canvas = document.getElementById('deskCanvas');
@@ -2077,25 +2154,31 @@
       const rect = canvas.getBoundingClientRect();
       const cw = rect.width || 360;
       const ch = rect.height || 480;
+      const defaultScale = (deskBgConfig.defaultCardScale || 100) / 100;
+
+      let maxBottomY = ch;
 
       cards.forEach((card, idx) => {
         if (typeof card.deskX !== 'number') {
-          card.deskX = 35 + ((idx * 55) % Math.max(120, cw - 160));
-          card.deskY = 35 + ((idx * 65) % Math.max(140, ch - 210));
+          card.deskX = 20 + ((idx * 45) % Math.max(80, cw - 150));
+          card.deskY = 20 + ((idx * 55) % Math.max(100, ch - 190));
           card.deskRot = (idx % 2 === 0 ? 1 : -1) * (4 + (idx * 3) % 10);
-          card.deskScale = 1;
+          card.deskScale = defaultScale;
           card.deskZ = idx + 1;
         }
         if (typeof card.deskFlipped !== 'boolean') card.deskFlipped = false;
 
+        const curScale = card.deskScale || defaultScale;
+        if (card.deskY + 210 > maxBottomY) maxBottomY = card.deskY + 210;
+
         const el = document.createElement('div');
         el.dataset.id = card.id;
-        el.className = `desk-card-node absolute perspective-1000 select-none touch-none cursor-grab ${selectedDeskCardId === card.id ? 'desk-card-selected' : ''}`;
+        el.className = `desk-card-node absolute perspective-1000 select-none touch-none cursor-grab origin-top-left ${selectedDeskCardId === card.id ? 'desk-card-selected' : ''}`;
         el.style.width = '145px';
         el.style.left = `${card.deskX}px`;
         el.style.top = `${card.deskY}px`;
         el.style.zIndex = card.deskZ || 1;
-        el.style.transform = `rotate(${card.deskRot || 0}deg) scale(${card.deskScale || 1})`;
+        el.style.transform = `rotate(${card.deskRot || 0}deg) scale(${curScale})`;
 
         const backColor = card.backColor || '#F472B6';
         const backText = (card.note && card.note.trim()) ? card.note : `${card.member || 'Cheki'}`;
@@ -2119,6 +2202,8 @@
         attachDeskCardInteractions(el, card);
         cardsLayer.appendChild(el);
       });
+
+      cardsLayer.style.height = `${Math.max(ch, maxBottomY + 60)}px`;
     }
 
     function attachDeskCardInteractions(el, card) {
@@ -2173,6 +2258,7 @@
         saveCardToDB(card);
       });
 
+      // 雙指捏合縮放：解鎖最小縮放至 0.12 (12%)，最大 2.5 (250%)
       el.addEventListener('touchstart', (e) => {
         if (e.touches.length === 2) {
           isPinching = true;
@@ -2190,9 +2276,11 @@
           const t1 = e.touches[0], t2 = e.touches[1];
           const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
           const angle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX) * (180 / Math.PI);
-          card.deskScale = Math.min(2.2, Math.max(0.5, initScale * (dist / startDist)));
+          card.deskScale = Math.min(2.5, Math.max(0.12, initScale * (dist / startDist)));
           card.deskRot = initRot + (angle - startAngle);
           el.style.transform = `rotate(${card.deskRot}deg) scale(${card.deskScale})`;
+          const selBadge = document.getElementById('deskSelectedScaleBadge');
+          if (selBadge) selBadge.textContent = `${Math.round(card.deskScale * 100)}%`;
         }
       }, { passive: true });
 
@@ -2214,6 +2302,8 @@
         node.classList.toggle('desk-card-selected', Number(node.dataset.id) === card.id);
       });
       document.getElementById('deskSelectedName').textContent = card.member || '未命名';
+      const selBadge = document.getElementById('deskSelectedScaleBadge');
+      if (selBadge) selBadge.textContent = `${Math.round((card.deskScale || 1) * 100)}%`;
     }
 
     function flipSelectedDeskCard() {
@@ -2229,26 +2319,45 @@
     function scatterDeskCards() {
       const canvas = document.getElementById('deskCanvas');
       const rect = canvas.getBoundingClientRect();
-      const maxW = Math.max(80, rect.width - 155);
-      const maxH = Math.max(100, rect.height - 210);
+      const avgScale = cards.length ? (cards.reduce((s, c) => s + (c.deskScale || 1), 0) / cards.length) : 1;
+      const cardW = Math.round(145 * avgScale);
+      const cardH = Math.round(190 * avgScale);
+      const maxW = Math.max(20, rect.width - cardW - 15);
+      const maxH = Math.max(40, rect.height - cardH - 15);
+
       cards.forEach((c, i) => {
-        c.deskX = Math.floor(15 + Math.random() * maxW);
-        c.deskY = Math.floor(15 + Math.random() * maxH);
-        c.deskRot = Math.floor(Math.random() * 36) - 18;
+        c.deskX = Math.floor(10 + Math.random() * maxW);
+        c.deskY = Math.floor(10 + Math.random() * maxH);
+        c.deskRot = Math.floor(Math.random() * 34) - 17;
         c.deskZ = i + 1;
         saveCardToDB(c);
       });
       renderDesk();
     }
 
+    // 升級版「整齊排列 / 密集重排」：自動根據當前 Cheki 縮放大小計算每列可排幾多張 (最多可排 6~7 欄迷你牆)
     function neatArrangeDeskCards() {
+      if (cards.length === 0) return;
+      const canvas = document.getElementById('deskCanvas');
+      const cw = canvas.getBoundingClientRect().width || 360;
+
+      // 若全部卡片目前仍為 100% 且數量較多，或者使用者調整過全局大小，按目前縮放自動計算欄位數
+      const targetScale = (deskBgConfig.defaultCardScale || 100) / 100;
+      const effectiveW = Math.max(24, Math.round(145 * targetScale));
+      const effectiveH = Math.max(32, Math.round(195 * targetScale));
+      const gap = Math.max(6, Math.round(10 * targetScale));
+
+      const cols = Math.max(1, Math.min(7, Math.floor((cw - 16) / (effectiveW + gap))));
+      const totalRowW = cols * effectiveW + (cols - 1) * gap;
+      const startX = Math.max(8, Math.floor((cw - totalRowW) / 2));
+
       cards.forEach((c, i) => {
-        const col = i % 2;
-        const row = Math.floor(i / 2);
-        c.deskX = 22 + col * 165;
-        c.deskY = 20 + row * 195;
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        c.deskScale = targetScale;
+        c.deskX = startX + col * (effectiveW + gap);
+        c.deskY = 14 + row * (effectiveH + gap);
         c.deskRot = 0;
-        c.deskScale = 0.95;
         c.deskZ = i + 1;
         saveCardToDB(c);
       });
@@ -2853,6 +2962,7 @@
           await saveCardToDB(cards[idx]);
         }
       } else {
+        const defaultScale = (deskBgConfig.defaultCardScale || 100) / 100;
         const newCard = {
           id: Date.now(),
           createdAt: Date.now(),
@@ -2863,10 +2973,10 @@
           image: currentUploadDataUrl,
           backColor: selectedBackColor,
           fav: false,
-          deskX: 40 + (cards.length * 35) % 160,
-          deskY: 40 + (cards.length * 45) % 180,
+          deskX: 30 + (cards.length * 35) % 160,
+          deskY: 30 + (cards.length * 45) % 180,
           deskRot: (cards.length % 2 === 0 ? 1 : -1) * 6,
-          deskScale: 1,
+          deskScale: defaultScale,
           deskZ: cards.length + 1,
           deskFlipped: false
         };
@@ -2880,7 +2990,7 @@
       renderCurrentTab();
     }
 
-    // --- BACKUP & RESTORE (包含自訂桌布背景與縮放設定一併備份還原) ---
+    // --- BACKUP & RESTORE ---
     function openBackupModal() {
       updateHeaderStats();
       document.getElementById('backupModal').classList.remove('hidden');
