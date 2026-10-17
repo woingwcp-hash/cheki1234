@@ -118,27 +118,40 @@
     </div>
   </header>
 
-  <!-- 🔍 強化版全域智慧搜尋列 (支援桌布、卡冊、日曆即時過濾 + 結果預覽列) -->
-  <div id="searchBar" class="hidden px-3 py-2.5 bg-pink-50 border-b-2 border-cheki-dark space-y-2 sticky top-[61px] z-20 shadow-md">
+  <!-- 🔍 展開式搜尋面板 (移除 sticky 懸浮遮擋，搜尋確認後自動收折為下方極簡單行條) -->
+  <div id="searchBar" class="hidden px-3 py-2.5 bg-pink-50 border-b-2 border-cheki-dark space-y-2">
     <div class="flex gap-1.5">
-      <input id="searchInput" type="search" placeholder="搜尋偶像名稱、地點、相簿、背面筆記..." oninput="executeSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();executeSearch();this.blur();}" class="flex-1 px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-sm font-bold bg-white focus:outline-none">
-      <button onclick="executeSearch()" class="px-3 py-1.5 rounded-xl bg-cheki-accent text-white neo-btn text-xs font-black shrink-0">搜尋</button>
-      <button onclick="clearSearch()" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-bold shrink-0">清除</button>
+      <input id="searchInput" type="search" placeholder="搜尋偶像名稱、地點、相簿、背面筆記..." oninput="executeSearch(false)" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAndCollapseSearch();}" class="flex-1 px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-sm font-bold bg-white focus:outline-none">
+      <button onclick="confirmAndCollapseSearch()" class="px-3 py-1.5 rounded-xl bg-cheki-accent text-white neo-btn text-xs font-black shrink-0">搜尋</button>
+      <button onclick="clearSearch()" class="px-2.5 py-1.5 rounded-xl bg-white neo-btn text-xs font-bold shrink-0">清除</button>
     </div>
 
     <!-- 常用搜尋關鍵字快速點選列 -->
     <div id="searchQuickTags" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar"></div>
 
-    <!-- 即時搜尋結果統計與縮圖預覽區 -->
+    <!-- 即時搜尋結果統計與縮圖預覽區 (可隨時收起) -->
     <div id="searchResultFeedback" class="hidden bg-white rounded-2xl border-2 border-cheki-dark p-2 space-y-2">
-      <div class="flex items-center justify-between gap-2 px-1">
-        <span id="searchResultCountText" class="text-xs font-black text-cheki-accent">🎯 找到 0 張相片</span>
-        <div class="flex gap-1">
-          <button onclick="switchTab('binder')" class="px-2 py-0.5 rounded-lg bg-pink-100 border border-cheki-dark text-[10px] font-black">🎴 卡冊檢視</button>
-          <button onclick="switchTab('desk'); neatArrangeDeskCards();" class="px-2 py-0.5 rounded-lg bg-blue-100 border border-cheki-dark text-[10px] font-black">🪵 桌布排列</button>
+      <div class="flex items-center justify-between gap-1 px-1">
+        <span id="searchResultCountText" class="text-xs font-black text-cheki-accent truncate">🎯 找到 0 張相片</span>
+        <div class="flex gap-1 shrink-0">
+          <button onclick="switchTab('binder'); collapseSearchPanelOnly();" class="px-2 py-0.5 rounded-lg bg-pink-100 border border-cheki-dark text-[10px] font-black">🎴 卡冊檢視</button>
+          <button onclick="switchTab('desk'); neatArrangeDeskCards(); collapseSearchPanelOnly();" class="px-2 py-0.5 rounded-lg bg-blue-100 border border-cheki-dark text-[10px] font-black">🪵 桌布排列</button>
+          <button onclick="collapseSearchPanelOnly()" class="px-2 py-0.5 rounded-lg bg-zinc-100 border border-cheki-dark text-[10px] font-black" title="收起面板避免遮擋">🔼 收起</button>
         </div>
       </div>
       <div id="searchResultQuickStrip" class="flex gap-2 overflow-x-auto no-scrollbar py-0.5"></div>
+    </div>
+  </div>
+
+  <!-- 🎯 纖薄單行搜尋狀態列 (當搜尋面板收起時顯示，完全不遮擋桌布與工具列！) -->
+  <div id="activeSearchCompactBar" class="hidden px-3 py-1.5 bg-amber-100 border-b-2 border-cheki-dark flex items-center justify-between gap-2">
+    <div onclick="expandSearchPanel()" class="flex items-center gap-1.5 min-w-0 cursor-pointer flex-1">
+      <span class="text-xs">🎯</span>
+      <span id="compactSearchText" class="text-xs font-black text-cheki-dark truncate">篩選中：「」</span>
+    </div>
+    <div class="flex items-center gap-1 shrink-0">
+      <button onclick="expandSearchPanel()" class="px-2 py-0.5 rounded-lg bg-white border border-cheki-dark text-[10px] font-black">🖼️ 展開預覽 / 改字</button>
+      <button onclick="clearSearch()" class="px-2 py-0.5 rounded-lg bg-rose-500 text-white border border-cheki-dark text-[10px] font-black">✕ 清除</button>
     </div>
   </div>
 
@@ -348,8 +361,8 @@
         <button onclick="flipSelectedDeskCard()" class="px-2.5 py-1 rounded-full bg-white neo-btn text-xs font-black flex items-center gap-1 shrink-0">🔄 翻面</button>
       </div>
 
-      <!-- 桌布畫布 (支援大量迷你卡片時向下捲動) -->
-      <div id="deskCanvas" oncontextmenu="return false;" class="desk-dots-brown neo-box rounded-3xl relative w-full h-[62vh] overflow-y-auto overflow-x-hidden touch-pan-y">
+      <!-- 桌布畫布 (點擊桌布時如搜尋面板展開會自動收折為極簡一行，絕不遮擋！) -->
+      <div id="deskCanvas" onpointerdown="autoCollapseSearchOnDeskTouch()" oncontextmenu="return false;" class="desk-dots-brown neo-box rounded-3xl relative w-full h-[64vh] overflow-y-auto overflow-x-hidden touch-pan-y">
         <!-- 自訂背景圖片與遮罩層 -->
         <div id="deskCustomBgLayer" class="hidden sticky top-0 left-0 right-0 w-full h-full pointer-events-none overflow-hidden z-0">
           <img id="deskCustomBgImg" src="" draggable="false" class="w-full h-full object-contain origin-center transition-transform duration-75 pointer-events-none">
@@ -873,7 +886,7 @@
     }
 
     // =========================================================================
-    // 🔍 全域智慧搜尋引擎 (支援桌布、卡冊、日曆即時過濾 + 姓名關聯匹配)
+    // 🔍 全域智慧搜尋引擎 (含自動收折為纖薄單行狀態列，絕不遮擋桌布！)
     // =========================================================================
     function normalizeSearchStr(str) {
       return (str || '').toString().toLowerCase().replace(/\s+/g, '');
@@ -890,7 +903,6 @@
       const date = normalizeSearchStr(card.date);
       const albs = getCardAlbums(card).map(a => normalizeSearchStr(a));
 
-      // 1. 直接包含關鍵字
       if (
         member.includes(q) ||
         note.includes(q) ||
@@ -901,12 +913,10 @@
         return true;
       }
 
-      // 2. 智慧關聯匹配：例如搜尋「遠藤まりん」時，自動同時匹配只寫咗「まりん」的卡片（反之亦然）
       if (member.length >= 2 && q.includes(member)) {
         return true;
       }
 
-      // 3. 多關鍵字分拆搜尋（例如「まりん 福岡」）
       const tokens = rawQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
       if (tokens.length > 1) {
         const combined = `${member} ${note} ${loc} ${date} ${albs.join(' ')}`;
@@ -918,17 +928,70 @@
 
     function toggleSearchBar() {
       const sb = document.getElementById('searchBar');
+      const compactBar = document.getElementById('activeSearchCompactBar');
       const btn = document.getElementById('topSearchBtn');
-      sb.classList.toggle('hidden');
-      const isOpen = !sb.classList.contains('hidden');
-      if (btn) {
-        btn.classList.toggle('bg-pink-200', isOpen);
-        btn.classList.toggle('bg-white', !isOpen);
-      }
-      if (isOpen) {
+      const isCurrentlyOpen = !sb.classList.contains('hidden');
+
+      if (isCurrentlyOpen) {
+        collapseSearchPanelOnly();
+      } else {
+        sb.classList.remove('hidden');
+        if (compactBar) compactBar.classList.add('hidden');
+        if (btn) {
+          btn.classList.add('bg-pink-200');
+          btn.classList.remove('bg-white');
+        }
         renderSearchQuickTags();
         document.getElementById('searchInput').focus();
-        executeSearch();
+        executeSearch(false);
+      }
+    }
+
+    function expandSearchPanel() {
+      const sb = document.getElementById('searchBar');
+      const compactBar = document.getElementById('activeSearchCompactBar');
+      if (compactBar) compactBar.classList.add('hidden');
+      if (sb) {
+        sb.classList.remove('hidden');
+        renderSearchQuickTags();
+        executeSearch(false);
+      }
+    }
+
+    function collapseSearchPanelOnly() {
+      const sb = document.getElementById('searchBar');
+      const compactBar = document.getElementById('activeSearchCompactBar');
+      const compactText = document.getElementById('compactSearchText');
+      const q = (document.getElementById('searchInput')?.value || '').trim();
+
+      if (sb) sb.classList.add('hidden');
+      try { document.getElementById('searchInput')?.blur(); } catch (_) {}
+
+      if (q) {
+        const matchedCount = cards.filter(c => cardMatchesSearchQuery(c, q)).length;
+        if (compactText) compactText.textContent = `篩選中：「${q}」（共 ${matchedCount} 張 Cheki）`;
+        if (compactBar) compactBar.classList.remove('hidden');
+      } else {
+        if (compactBar) compactBar.classList.add('hidden');
+        const btn = document.getElementById('topSearchBtn');
+        if (btn) {
+          btn.classList.remove('bg-pink-200');
+          btn.classList.add('bg-white');
+        }
+      }
+    }
+
+    function confirmAndCollapseSearch() {
+      executeSearch(true);
+      if (currentTab === 'desk') {
+        neatArrangeDeskCards();
+      }
+    }
+
+    function autoCollapseSearchOnDeskTouch() {
+      const sb = document.getElementById('searchBar');
+      if (sb && !sb.classList.contains('hidden')) {
+        collapseSearchPanelOnly();
       }
     }
 
@@ -954,27 +1017,30 @@
       const input = document.getElementById('searchInput');
       if (!input) return;
       input.value = q;
-      executeSearch();
+      // 點選快速標籤後，若在桌布分頁則自動收折搜尋面板並整齊排列，完全不遮擋桌布！
+      executeSearch(currentTab === 'desk');
+      if (currentTab === 'desk') {
+        neatArrangeDeskCards();
+      }
     }
 
-    function executeSearch() {
+    function executeSearch(autoCollapse = false) {
       const q = (document.getElementById('searchInput')?.value || '').trim();
       const feedbackBox = document.getElementById('searchResultFeedback');
       const countText = document.getElementById('searchResultCountText');
       const strip = document.getElementById('searchResultQuickStrip');
 
-      // 如果正在輸入搜尋字眼，而且卡冊原本鎖定咗其他相簿或成員，自動切換為搜尋全庫，避免搵唔到
       if (q) {
         const matchedAll = cards.filter(c => cardMatchesSearchQuery(c, q));
         if (feedbackBox) {
           feedbackBox.classList.remove('hidden');
-          countText.textContent = `🎯 搜尋「${q}」：共找到 ${matchedAll.length} 張 Cheki`;
+          countText.textContent = `🎯 搜尋「${q}」：共 ${matchedAll.length} 張`;
           if (matchedAll.length === 0) {
             strip.innerHTML = `<p class="text-[11px] text-zinc-400 font-bold py-1 px-1">沒有找到符合「${q}」的拍立得</p>`;
           } else {
             strip.innerHTML = matchedAll.map(c => `
-              <div onclick="openInspectModal(${c.id})" class="shrink-0 w-14 flex flex-col items-center cursor-pointer group">
-                <div class="w-14 h-16 rounded-lg bg-pink-50 border border-pink-200 flex items-center justify-center overflow-hidden p-0.5">
+              <div onclick="openInspectModal(${c.id})" class="shrink-0 w-12 flex flex-col items-center cursor-pointer group">
+                <div class="w-12 h-14 rounded-lg bg-pink-50 border border-pink-200 flex items-center justify-center overflow-hidden p-0.5">
                   <img src="${c.image}" draggable="false" class="max-h-full max-w-full object-contain rounded pointer-events-none">
                 </div>
                 <span class="text-[9px] font-black truncate w-full text-center mt-0.5">${c.member || ''}</span>
@@ -986,6 +1052,10 @@
         feedbackBox.classList.add('hidden');
       }
 
+      if (autoCollapse && q) {
+        collapseSearchPanelOnly();
+      }
+
       renderCurrentTab();
     }
 
@@ -994,6 +1064,15 @@
       if (input) input.value = '';
       const feedbackBox = document.getElementById('searchResultFeedback');
       if (feedbackBox) feedbackBox.classList.add('hidden');
+      const compactBar = document.getElementById('activeSearchCompactBar');
+      if (compactBar) compactBar.classList.add('hidden');
+      const sb = document.getElementById('searchBar');
+      if (sb) sb.classList.add('hidden');
+      const btn = document.getElementById('topSearchBtn');
+      if (btn) {
+        btn.classList.remove('bg-pink-200');
+        btn.classList.add('bg-white');
+      }
       renderCurrentTab();
     }
 
@@ -2273,11 +2352,10 @@
     }
 
     function searchByLocationInBinder(locName) {
-      document.getElementById('searchBar').classList.remove('hidden');
       document.getElementById('searchInput').value = locName;
       selectedAlbumFilter = 'ALL';
       selectedMemberFilter = 'ALL';
-      executeSearch();
+      executeSearch(true);
       switchTab('binder');
     }
 
@@ -2294,7 +2372,6 @@
       const ch = rect.height || 480;
       const defaultScale = (deskBgConfig.defaultCardScale || 100) / 100;
 
-      // 根據目前搜尋框關鍵字即時過濾桌布上的 Cheki！
       const q = (document.getElementById('searchInput')?.value || '').trim();
       const deskCards = q ? cards.filter(c => cardMatchesSearchQuery(c, q)) : cards;
 
@@ -2377,6 +2454,7 @@
 
       el.addEventListener('pointerdown', (e) => {
         e.stopPropagation();
+        autoCollapseSearchOnDeskTouch();
         bringCardToFront(card, el);
 
         isDragging = true;
