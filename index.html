@@ -73,6 +73,7 @@
     }
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    #liveDetectBox { transition: all 0.18s ease-out; }
   </style>
 </head>
 <body class="min-h-screen pb-24 flex flex-col max-w-md mx-auto relative">
@@ -195,7 +196,6 @@
 
     <!-- TAB 4: STATS (偶像 Cheki 數量深度統計與應援成就系統) -->
     <section id="tab-stats" class="hidden space-y-4">
-      <!-- 總覽數據四宮格 -->
       <div class="grid grid-cols-4 gap-2">
         <div class="neo-box bg-pink-100 rounded-2xl p-2.5 text-center">
           <p class="text-[10px] font-bold text-zinc-600">總 Cheki 數</p>
@@ -259,7 +259,7 @@
 
   </main>
 
-  <!-- Bottom Navigation (5個主要分頁 + 中央快速新增按鈕) -->
+  <!-- Bottom Navigation -->
   <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t-2 border-cheki-dark px-3 py-2 flex justify-between items-center z-30">
     <button onclick="switchTab('albums')" id="nav-albums" class="flex flex-col items-center gap-0.5 text-zinc-400 font-bold text-[11px] w-14">
       <span class="text-lg">📚</span><span>相簿</span>
@@ -312,7 +312,7 @@
     <button onclick="exportInspectImage()" class="w-full py-3 rounded-2xl bg-cheki-accent text-white font-black text-sm neo-box">📥 匯出相片</button>
   </div>
 
-  <!-- QUICK MOVE / ASSIGN ALBUMS FOR SINGLE CARD MODAL (單張 Cheki 快速調動相簿視窗) -->
+  <!-- QUICK MOVE / ASSIGN ALBUMS FOR SINGLE CARD MODAL -->
   <div id="quickMoveAlbumsModal" class="hidden fixed inset-0 z-[75] bg-black/75 flex items-center justify-center p-4">
     <div class="bg-white w-full max-w-sm rounded-3xl neo-box p-4 space-y-3">
       <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
@@ -328,7 +328,7 @@
     </div>
   </div>
 
-  <!-- BATCH PICK CHEKIS INTO ALBUM MODAL (相簿內隨意勾選加入/移除現有 Cheki 視窗) -->
+  <!-- BATCH PICK CHEKIS INTO ALBUM MODAL -->
   <div id="batchAlbumPickerModal" class="hidden fixed inset-0 z-[75] bg-black/80 flex items-center justify-center p-3">
     <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-4 flex flex-col max-h-[90vh]">
       <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
@@ -339,13 +339,11 @@
         <button onclick="closeBatchAlbumPicker()" class="w-8 h-8 rounded-full bg-white neo-btn font-black">✕</button>
       </div>
 
-      <!-- 篩選與全選工具列 -->
       <div class="flex items-center justify-between gap-2 my-2.5">
         <input id="batchPickerSearch" type="text" placeholder="搜尋成員或筆記..." oninput="renderBatchPickerGrid()" class="flex-1 px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-xs font-bold bg-white">
         <button onclick="batchSelectAllVisible(true)" class="px-2.5 py-1.5 rounded-xl bg-blue-100 neo-btn text-[11px] font-black shrink-0">全選</button>
       </div>
 
-      <!-- 所有現有 Cheki 網格清單 -->
       <div id="batchPickerGrid" class="flex-1 overflow-y-auto grid grid-cols-3 gap-2.5 py-2 pr-1"></div>
 
       <div class="pt-3 border-t-2 border-cheki-dark mt-2 flex items-center justify-between gap-2">
@@ -366,7 +364,7 @@
       <!-- 3種清楚分離的拍攝/選取按鈕 -->
       <div class="space-y-2">
         <button type="button" onclick="openLiveCameraScanner()" class="w-full py-2.5 rounded-xl bg-cheki-accent text-white neo-btn text-center font-black text-xs flex items-center justify-center gap-1.5">
-          📸 開啟專業掃描相機（防反光水平引導 + 對齊框）
+          📸 開啟 AI 自動尋邊掃描相機（自動偵測邊緣與尺寸）
         </button>
 
         <div class="grid grid-cols-2 gap-2">
@@ -382,9 +380,12 @@
 
         <!-- 預覽與裁切/旋轉/畫質微調工具列 -->
         <div id="previewContainer" class="hidden flex flex-col items-center bg-zinc-900 rounded-2xl p-2.5 space-y-2">
+          <div class="flex items-center justify-between w-full px-1">
+            <span id="detectedSizeTag" class="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 border border-emerald-400/40">📏 已自動對齊 Cheki 邊緣</span>
+          </div>
           <img id="editPreviewImg" src="" class="max-h-52 object-contain rounded-lg">
           <div class="flex gap-2 w-full">
-            <button type="button" onclick="openCropperModal()" class="flex-1 py-1.5 rounded-xl bg-emerald-300 neo-btn text-xs font-black">✂️ 自由裁切邊框</button>
+            <button type="button" onclick="openCropperModal(false)" class="flex-1 py-1.5 rounded-xl bg-emerald-300 neo-btn text-xs font-black">✂️ 微調邊框與尺寸</button>
             <button type="button" onclick="rotateUploadImage(90)" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-black">↻ 旋轉 90°</button>
           </div>
           <!-- 畫質微調 (亮度與對比度) -->
@@ -445,51 +446,101 @@
     </div>
   </div>
 
-  <!-- LIVE CAMERA SCANNER MODAL -->
+  <!-- LIVE CAMERA SCANNER MODAL (即時動態自動尋邊與尺寸識別相機) -->
   <div id="liveCameraModal" class="hidden fixed inset-0 z-[80] bg-black flex flex-col justify-between p-4">
-    <div class="flex justify-between items-center text-white z-10">
-      <button onclick="closeLiveCameraScanner()" class="px-3 py-1.5 rounded-xl bg-zinc-800 border border-zinc-600 text-xs font-black">✕ 關閉相機</button>
-      <div id="tiltStatusBadge" class="px-3 py-1 rounded-full bg-emerald-600/90 text-xs font-black">✨ 請將拍立得對準框線</div>
-      <button onclick="switchCameraFacing()" class="px-3 py-1.5 rounded-xl bg-zinc-800 border border-zinc-600 text-xs font-black">🔄 鏡頭</button>
+    <div class="flex justify-between items-center text-white z-10 gap-1">
+      <button onclick="closeLiveCameraScanner()" class="px-3 py-1.5 rounded-xl bg-zinc-800 border border-zinc-600 text-xs font-black shrink-0">✕ 關閉</button>
+      <div id="liveDetectBadge" class="px-3 py-1 rounded-full bg-emerald-600/95 text-[11px] font-black truncate text-center">🔍 正在自動尋找 Cheki 邊邊...</div>
+      <button onclick="switchCameraFacing()" class="px-3 py-1.5 rounded-xl bg-zinc-800 border border-zinc-600 text-xs font-black shrink-0">🔄 鏡頭</button>
     </div>
 
-    <div class="relative flex-1 my-3 rounded-2xl overflow-hidden flex items-center justify-center bg-zinc-950">
+    <div id="liveVideoContainer" class="relative flex-1 my-3 rounded-2xl overflow-hidden flex items-center justify-center bg-zinc-950">
       <video id="cameraVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
+      
+      <!-- 參考虛線框 (當未偵測到明顯邊界時的預設參考) -->
       <div class="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
-        <div class="w-64 aspect-[54/86] border-2 border-dashed border-pink-400 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] relative">
-          <span class="absolute -top-6 left-1/2 -translate-x-1/2 text-[11px] font-black text-pink-300 whitespace-nowrap">將 Cheki 放入虛線框內（微傾可避開反光）</span>
+        <div class="w-60 aspect-[54/86] border border-dashed border-white/40 rounded-xl relative">
+          <span class="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-white/80 whitespace-nowrap">將 Cheki 放在深色背景上可自動吸附邊緣</span>
         </div>
+      </div>
+
+      <!-- AI 即時動態偵測到的 Cheki 綠色邊框與尺寸標籤 -->
+      <div id="liveDetectBox" class="hidden absolute pointer-events-none border-[3px] border-emerald-400 rounded-lg shadow-[0_0_20px_rgba(52,211,153,0.6)]">
+        <div class="absolute -top-6 left-0 bg-emerald-500 text-zinc-950 text-[10px] font-black px-2 py-0.5 rounded-md whitespace-nowrap shadow" id="liveDetectSizeLabel">
+          🎯 標準 Mini (86×54mm)
+        </div>
+        <!-- 四角準星裝飾 -->
+        <div class="absolute -top-1 -left-1 w-3 h-3 border-t-4 border-l-4 border-white"></div>
+        <div class="absolute -top-1 -right-1 w-3 h-3 border-t-4 border-r-4 border-white"></div>
+        <div class="absolute -bottom-1 -left-1 w-3 h-3 border-b-4 border-l-4 border-white"></div>
+        <div class="absolute -bottom-1 -right-1 w-3 h-3 border-b-4 border-r-4 border-white"></div>
       </div>
     </div>
 
-    <div class="flex items-center justify-center pb-2">
-      <button onclick="captureLivePhoto()" class="w-16 h-16 rounded-full bg-white border-4 border-cheki-accent flex items-center justify-center shadow-lg active:scale-90 transition">
+    <div class="flex flex-col items-center gap-2 pb-1">
+      <div class="flex items-center gap-3">
+        <label class="flex items-center gap-1.5 text-white text-xs font-bold bg-zinc-800/90 px-3 py-1.5 rounded-full border border-zinc-600 cursor-pointer">
+          <input id="autoSnapCropToggle" type="checkbox" checked class="accent-emerald-400 w-4 h-4">
+          <span>快門自動沿綠框裁切邊邊</span>
+        </label>
+      </div>
+      <button onclick="captureLivePhoto()" class="w-16 h-16 rounded-full bg-white border-4 border-emerald-400 flex items-center justify-center shadow-lg active:scale-90 transition">
         <div class="w-12 h-12 rounded-full bg-cheki-accent"></div>
       </button>
     </div>
   </div>
 
-  <!-- FREE CROPPER MODAL -->
-  <div id="cropperModal" class="hidden fixed inset-0 z-[90] bg-black/95 flex flex-col justify-between p-4 touch-none">
+  <!-- FREE CROPPER MODAL (含 AI 自動抓邊 + 標準拍立得尺寸鎖定工具列) -->
+  <div id="cropperModal" class="hidden fixed inset-0 z-[90] bg-black/95 flex flex-col justify-between p-3.5 touch-none">
     <div class="flex justify-between items-center text-white">
       <button onclick="closeCropperModal()" class="px-3 py-1.5 rounded-xl bg-zinc-800 text-xs font-black">✕ 取消</button>
-      <span class="text-xs font-black text-pink-300">✂️ 拖曳四邊圓點裁切多餘背景</span>
+      <div class="text-center">
+        <span class="text-xs font-black text-emerald-300 block">✂️ 自動尋邊與尺寸裁切</span>
+        <span id="cropSizeIndicator" class="text-[10px] text-white/70 font-bold">偵測尺寸：計算中...</span>
+      </div>
       <button onclick="applyFreeCrop()" class="px-4 py-1.5 rounded-xl bg-emerald-400 text-zinc-900 text-xs font-black">✓ 完成裁切</button>
     </div>
 
-    <div id="cropWorkspace" class="relative flex-1 my-4 flex items-center justify-center overflow-hidden select-none">
+    <div id="cropWorkspace" class="relative flex-1 my-2 flex items-center justify-center overflow-hidden select-none">
       <div id="cropImgWrapper" class="relative inline-block">
-        <img id="cropTargetImg" src="" class="max-h-[68vh] max-w-[88vw] object-contain block pointer-events-none select-none">
-        <div id="cropBox" class="absolute border-2 border-pink-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
-          <div data-handle="nw" class="crop-handle absolute -top-3 -left-3 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full"></div>
-          <div data-handle="ne" class="crop-handle absolute -top-3 -right-3 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full"></div>
-          <div data-handle="sw" class="crop-handle absolute -bottom-3 -left-3 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full"></div>
-          <div data-handle="se" class="crop-handle absolute -bottom-3 -right-3 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full"></div>
+        <img id="cropTargetImg" src="" class="max-h-[62vh] max-w-[88vw] object-contain block pointer-events-none select-none">
+        <div id="cropBox" class="absolute border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]">
+          <!-- 四角控制點 -->
+          <div data-handle="nw" class="crop-handle absolute -top-3.5 -left-3.5 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full shadow"></div>
+          <div data-handle="ne" class="crop-handle absolute -top-3.5 -right-3.5 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full shadow"></div>
+          <div data-handle="sw" class="crop-handle absolute -bottom-3.5 -left-3.5 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full shadow"></div>
+          <div data-handle="se" class="crop-handle absolute -bottom-3.5 -right-3.5 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full shadow"></div>
+          <!-- 四邊中點控制條 (方便單獨微調上下左右邊線) -->
+          <div data-handle="n" class="crop-handle absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-3 bg-emerald-300 border border-zinc-900 rounded-full"></div>
+          <div data-handle="s" class="crop-handle absolute -bottom-2 left-1/2 -translate-x-1/2 w-8 h-3 bg-emerald-300 border border-zinc-900 rounded-full"></div>
+          <div data-handle="w" class="crop-handle absolute top-1/2 -translate-y-1/2 -left-2 w-3 h-8 bg-emerald-300 border border-zinc-900 rounded-full"></div>
+          <div data-handle="e" class="crop-handle absolute top-1/2 -translate-y-1/2 -right-2 w-3 h-8 bg-emerald-300 border border-zinc-900 rounded-full"></div>
         </div>
       </div>
     </div>
 
-    <p class="text-center text-white/70 text-xs font-bold">💡 提示：拉動四角白色圓點，剛好包住你原本的 Cheki 白邊即可</p>
+    <!-- 自動尋邊與標準拍立得尺寸快捷按鈕列 -->
+    <div class="space-y-2">
+      <div class="grid grid-cols-4 gap-1.5">
+        <button type="button" onclick="runAutoDetectOnCropperImage()" class="py-2 px-1 rounded-xl bg-emerald-400 text-zinc-950 font-black text-[11px] flex flex-col items-center justify-center">
+          <span>🤖 自動尋邊</span>
+          <span class="text-[9px] opacity-80">AI 抓白邊</span>
+        </button>
+        <button type="button" onclick="setCropPresetRatio(54, 86)" class="py-2 px-1 rounded-xl bg-pink-200 text-zinc-900 font-black text-[11px] flex flex-col items-center justify-center">
+          <span>📏 直向 Cheki</span>
+          <span class="text-[9px] opacity-75">54 × 86 mm</span>
+        </button>
+        <button type="button" onclick="setCropPresetRatio(86, 54)" class="py-2 px-1 rounded-xl bg-blue-200 text-zinc-900 font-black text-[11px] flex flex-col items-center justify-center">
+          <span>📐 橫向 Cheki</span>
+          <span class="text-[9px] opacity-75">86 × 54 mm</span>
+        </button>
+        <button type="button" onclick="setCropFullImage()" class="py-2 px-1 rounded-xl bg-zinc-700 text-white font-black text-[11px] flex flex-col items-center justify-center">
+          <span>🔲 原圖全選</span>
+          <span class="text-[9px] opacity-75">100% 範圍</span>
+        </button>
+      </div>
+      <p class="text-center text-white/60 text-[11px] font-bold">💡 系統已自動嘗試吸附 Cheki 四邊，你亦可拉動圓點微調</p>
+    </div>
   </div>
 
   <!-- BACKUP / RESTORE MODAL -->
@@ -539,21 +590,19 @@
     let batchTargetAlbum = '';
     let batchSelectedCardIds = new Set();
 
-    // Live Camera state
+    // Live Camera & Auto Edge Detection state
     let cameraStream = null;
     let useFrontCamera = false;
+    let liveDetectInterval = null;
+    let lastLiveDetectedBounds = null; // { left, top, right, bottom, sizeName }
 
     // Cropper state
-    let cropRect = { left: 10, top: 10, right: 90, bottom: 90 };
+    let cropRect = { left: 8, top: 8, right: 92, bottom: 92 };
 
-    // --- 多相簿兼容輔助函數 (確保舊版單一 album 與新版 albums 陣列完全相容) ---
+    // --- 多相簿兼容輔助函數 ---
     function getCardAlbums(card) {
-      if (Array.isArray(card.albums) && card.albums.length > 0) {
-        return card.albums;
-      }
-      if (card.album && typeof card.album === 'string') {
-        return [card.album];
-      }
+      if (Array.isArray(card.albums) && card.albums.length > 0) return card.albums;
+      if (card.album && typeof card.album === 'string') return [card.album];
       return [albums[0] || '預設相簿'];
     }
 
@@ -565,7 +614,156 @@
     function setCardAlbums(card, albumArray) {
       const clean = [...new Set((albumArray || []).filter(Boolean))];
       card.albums = clean.length > 0 ? clean : [albums[0] || '預設相簿'];
-      card.album = card.albums[0]; // 同步保留舊欄位以確保 100% 向下相容
+      card.album = card.albums[0];
+    }
+
+    // =========================================================================
+    // 🤖 AI 智慧 Cheki 邊緣與尺寸自動偵測核心演算法
+    // 結合「高亮度白框尋找」與「雙向梯度邊緣投影 (Sobel-like Edge Projection)」
+    // =========================================================================
+    function classifyChekiDimension(widthPx, heightPx) {
+      if (!widthPx || !heightPx) return '自訂尺寸';
+      const ratio = widthPx / heightPx;
+      // 標準 instax mini: 54 x 86 mm (比例約 0.628)
+      if (ratio >= 0.52 && ratio <= 0.75) return '標準直向 Cheki (86×54mm)';
+      // 橫向 instax mini: 86 x 54 mm (比例約 1.59)
+      if (ratio >= 1.32 && ratio <= 1.85) return '標準橫向 Cheki (54×86mm)';
+      // Square 方形: 1:1 (約 0.85 ~ 1.15)
+      if (ratio > 0.75 && ratio < 1.32) return '方形 Square Cheki';
+      return '寬幅 / 自訂尺寸 Cheki';
+    }
+
+    function detectChekiBoundsFromSource(sourceEl, srcWidth, srcHeight) {
+      const procW = 180;
+      const procH = Math.max(60, Math.round((srcHeight / srcWidth) * procW));
+      const canvas = document.createElement('canvas');
+      canvas.width = procW;
+      canvas.height = procH;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(sourceEl, 0, 0, procW, procH);
+      const imgData = ctx.getImageData(0, 0, procW, procH).data;
+
+      // 計算全圖灰階亮度與飽和度（拍立得邊框通常高亮且低飽和度）
+      const lum = new Float32Array(procW * procH);
+      const whiteScore = new Float32Array(procW * procH);
+
+      // 取四周邊緣 6% 像素作為背景參考值
+      let bgLumSum = 0, bgCount = 0;
+      for (let y = 0; y < procH; y++) {
+        for (let x = 0; x < procW; x++) {
+          const i = (y * procW + x) * 4;
+          const r = imgData[i], g = imgData[i + 1], b = imgData[i + 2];
+          const l = 0.299 * r + 0.587 * g + 0.114 * b;
+          const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
+          const sat = maxC === 0 ? 0 : (maxC - minC) / maxC;
+          const idx = y * procW + x;
+          lum[idx] = l;
+          // 白色相紙特徵：高亮度 + 低彩度
+          whiteScore[idx] = l * (1 - sat * 0.65);
+
+          if (x < procW * 0.06 || x > procW * 0.94 || y < procH * 0.06 || y > procH * 0.94) {
+            bgLumSum += whiteScore[idx];
+            bgCount++;
+          }
+        }
+      }
+
+      const avgBgScore = bgCount > 0 ? bgLumSum / bgCount : 90;
+      // 動態門檻：比背景亮一定程度，或本身屬於高亮白框
+      const threshold = Math.min(215, Math.max(135, avgBgScore + 32));
+
+      // 方法 A：尋找白色拍立得外框的密集連通區域 (Row & Col Density)
+      const rowHits = new Uint16Array(procH);
+      const colHits = new Uint16Array(procW);
+      const marginX = Math.floor(procW * 0.03);
+      const marginY = Math.floor(procH * 0.03);
+
+      for (let y = marginY; y < procH - marginY; y++) {
+        for (let x = marginX; x < procW - marginX; x++) {
+          if (whiteScore[y * procW + x] >= threshold) {
+            rowHits[y]++;
+            colHits[x]++;
+          }
+        }
+      }
+
+      const minRowPixels = Math.max(4, Math.floor(procW * 0.12));
+      const minColPixels = Math.max(4, Math.floor(procH * 0.12));
+
+      let top = -1, bottom = -1, left = -1, right = -1;
+      for (let y = marginY; y < procH - marginY; y++) {
+        if (rowHits[y] >= minRowPixels) { top = y; break; }
+      }
+      for (let y = procH - marginY - 1; y >= marginY; y--) {
+        if (rowHits[y] >= minRowPixels) { bottom = y; break; }
+      }
+      for (let x = marginX; x < procW - marginX; x++) {
+        if (colHits[x] >= minColPixels) { left = x; break; }
+      }
+      for (let x = procW - marginX - 1; x >= marginX; x--) {
+        if (colHits[x] >= minColPixels) { right = x; break; }
+      }
+
+      // 方法 B：若背景也是淺色，改用梯度邊緣峰值搜尋 (Gradient Edge Projection)
+      const boxW = right - left;
+      const boxH = bottom - top;
+      let valid = (left >= 0 && top >= 0 && boxW > procW * 0.22 && boxH > procH * 0.22 && (boxW < procW * 0.94 || boxH < procH * 0.94));
+
+      if (!valid) {
+        const horizGrad = new Float32Array(procH);
+        const vertGrad = new Float32Array(procW);
+        for (let y = marginY; y < procH - marginY; y++) {
+          for (let x = marginX; x < procW - marginX; x++) {
+            const idx = y * procW + x;
+            const gx = Math.abs(lum[idx + 1] - lum[idx - 1]);
+            const gy = Math.abs(lum[idx + procW] - lum[idx - procW]);
+            horizGrad[y] += gy;
+            vertGrad[x] += gx;
+          }
+        }
+        // 在上半、下半、左半、右半尋找最強邊緣轉折線
+        let maxTopG = 0, maxBotG = 0, maxLeftG = 0, maxRightG = 0;
+        for (let y = marginY; y < Math.floor(procH * 0.42); y++) {
+          if (horizGrad[y] > maxTopG) { maxTopG = horizGrad[y]; top = y; }
+        }
+        for (let y = Math.floor(procH * 0.58); y < procH - marginY; y++) {
+          if (horizGrad[y] > maxBotG) { maxBotG = horizGrad[y]; bottom = y; }
+        }
+        for (let x = marginX; x < Math.floor(procW * 0.42); x++) {
+          if (vertGrad[x] > maxLeftG) { maxLeftG = vertGrad[x]; left = x; }
+        }
+        for (let x = Math.floor(procW * 0.58); x < procW - marginX; x++) {
+          if (vertGrad[x] > maxRightG) { maxRightG = vertGrad[x]; right = x; }
+        }
+        valid = (right - left > procW * 0.25 && bottom - top > procH * 0.25);
+      }
+
+      if (!valid) {
+        return {
+          detected: false,
+          left: 8, top: 8, right: 92, bottom: 92,
+          sizeName: classifyChekiDimension(srcWidth * 0.84, srcHeight * 0.84)
+        };
+      }
+
+      // 加上 1.2% 安全邊距，確保完整保留拍立得原本白邊
+      const pad = 1.2;
+      const pctLeft = Math.max(1, Math.min(85, (left / procW) * 100 - pad));
+      const pctTop = Math.max(1, Math.min(85, (top / procH) * 100 - pad));
+      const pctRight = Math.min(99, Math.max(pctLeft + 20, (right / procW) * 100 + pad));
+      const pctBottom = Math.min(99, Math.max(pctTop + 20, (bottom / procH) * 100 + pad));
+
+      const realW = ((pctRight - pctLeft) / 100) * srcWidth;
+      const realH = ((pctBottom - pctTop) / 100) * srcHeight;
+
+      return {
+        detected: true,
+        left: Math.round(pctLeft * 10) / 10,
+        top: Math.round(pctTop * 10) / 10,
+        right: Math.round(pctRight * 10) / 10,
+        bottom: Math.round(pctBottom * 10) / 10,
+        sizeName: classifyChekiDimension(realW, realH)
+      };
     }
 
     function initDB() {
@@ -594,7 +792,6 @@
           if (albumReq.result && Array.isArray(albumReq.result.value) && albumReq.result.value.length > 0) {
             albums = albumReq.result.value;
           }
-          // 自動將卡片中存在的相簿同步進相簿清單
           cards.forEach(c => {
             getCardAlbums(c).forEach(a => {
               if (a && !albums.includes(a)) albums.push(a);
@@ -854,7 +1051,7 @@
       renderCurrentTab();
     }
 
-    // --- 批次勾選現有 Cheki 加入/移出相簿 (Batch Album Picker) ---
+    // --- 批次勾選現有 Cheki 加入/移出相簿 ---
     function openBatchAlbumPicker(albumName) {
       if (!albumName || albumName === 'ALL') return;
       batchTargetAlbum = albumName;
@@ -942,7 +1139,7 @@
       renderCurrentTab();
     }
 
-    // --- 單張卡片快速調動相簿 (Quick Move Albums Modal) ---
+    // --- 單張卡片快速調動相簿 ---
     function openQuickMoveAlbumsModal() {
       const card = cards.find(c => c.id === inspectingCardId);
       if (!card) return;
@@ -1003,7 +1200,7 @@
       updateHeaderStats();
     }
 
-    // --- TAB 2: BINDER (含相簿篩選 + 當前相簿隨意加入工具列 + 偶像張數篩選) ---
+    // --- TAB 2: BINDER ---
     function renderBinder() {
       const pills = document.getElementById('albumFilterPills');
       pills.innerHTML = '';
@@ -1017,7 +1214,6 @@
         pills.appendChild(btn);
       });
 
-      // 當選中特定相簿時，顯示「➕ 加入/調動 Cheki」工具列
       const actionBar = document.getElementById('currentAlbumActionBar');
       if (selectedAlbumFilter !== 'ALL') {
         actionBar.classList.remove('hidden');
@@ -1144,7 +1340,7 @@
       });
     }
 
-    // --- TAB 4: STATS (偶像 Cheki 數量深度統計、主推榮譽卡、月度統計、應援成就) ---
+    // --- TAB 4: STATS ---
     function renderStats() {
       const idolCounts = getIdolCounts();
       const favCount = cards.filter(c => c.fav).length;
@@ -1441,7 +1637,7 @@
       canvas.classList.add(deskThemes[currentDeskThemeIdx]);
     }
 
-    // --- LIVE CAMERA SCANNER ---
+    // --- LIVE CAMERA SCANNER (含即時自動尋邊與尺寸識別迴圈) ---
     async function openLiveCameraScanner() {
       const modal = document.getElementById('liveCameraModal');
       modal.classList.remove('hidden');
@@ -1461,13 +1657,49 @@
         });
         const video = document.getElementById('cameraVideo');
         video.srcObject = cameraStream;
+        video.onloadedmetadata = () => {
+          startLiveEdgeDetectionLoop();
+        };
       } catch (err) {
         closeLiveCameraScanner();
         document.getElementById('cameraDirectInput').click();
       }
     }
 
+    function startLiveEdgeDetectionLoop() {
+      if (liveDetectInterval) clearInterval(liveDetectInterval);
+      const video = document.getElementById('cameraVideo');
+      const box = document.getElementById('liveDetectBox');
+      const badge = document.getElementById('liveDetectBadge');
+      const sizeLabel = document.getElementById('liveDetectSizeLabel');
+
+      liveDetectInterval = setInterval(() => {
+        if (!video || !video.videoWidth || !video.videoHeight) return;
+        const res = detectChekiBoundsFromSource(video, video.videoWidth, video.videoHeight);
+        if (res.detected) {
+          lastLiveDetectedBounds = res;
+          box.classList.remove('hidden');
+          box.style.left = `${res.left}%`;
+          box.style.top = `${res.top}%`;
+          box.style.width = `${res.right - res.left}%`;
+          box.style.height = `${res.bottom - res.top}%`;
+          sizeLabel.textContent = `🎯 ${res.sizeName}`;
+          badge.textContent = `✅ 已自動鎖定：${res.sizeName}`;
+          badge.className = 'px-3 py-1 rounded-full bg-emerald-500 text-zinc-950 text-[11px] font-black truncate text-center';
+        } else {
+          lastLiveDetectedBounds = null;
+          box.classList.add('hidden');
+          badge.textContent = '🔍 將 Cheki 置於深色背景即可自動抓邊...';
+          badge.className = 'px-3 py-1 rounded-full bg-zinc-800 text-white text-[11px] font-bold truncate text-center';
+        }
+      }, 220);
+    }
+
     function stopCameraStream() {
+      if (liveDetectInterval) {
+        clearInterval(liveDetectInterval);
+        liveDetectInterval = null;
+      }
       if (cameraStream) {
         cameraStream.getTracks().forEach(t => t.stop());
         cameraStream = null;
@@ -1492,34 +1724,103 @@
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const autoSnap = document.getElementById('autoSnapCropToggle')?.checked;
+      const savedBounds = lastLiveDetectedBounds ? { ...lastLiveDetectedBounds } : null;
       const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
       closeLiveCameraScanner();
-      compressAndSetImage(dataUrl, true);
+
+      // 將拍下的原圖載入並自動套用剛才偵測到的 Cheki 邊框
+      compressAndSetImage(dataUrl, true, savedBounds, autoSnap);
     }
 
-    // --- FREE CROPPER ---
-    function openCropperModal() {
-      if (!currentUploadDataUrl) return;
+    // --- FREE CROPPER & AUTO EDGE DETECTION ---
+    function openCropperModal(autoRunDetect = false, presetBounds = null) {
+      if (!rawUploadDataUrl && !currentUploadDataUrl) return;
       const modal = document.getElementById('cropperModal');
       const img = document.getElementById('cropTargetImg');
       img.onload = () => {
-        cropRect = { left: 8, top: 8, right: 92, bottom: 92 };
-        updateCropBoxUI();
+        if (presetBounds && presetBounds.detected) {
+          cropRect = {
+            left: presetBounds.left,
+            top: presetBounds.top,
+            right: presetBounds.right,
+            bottom: presetBounds.bottom
+          };
+          updateCropBoxUI();
+        } else if (autoRunDetect) {
+          runAutoDetectOnCropperImage();
+        } else {
+          updateCropBoxUI();
+        }
       };
-      img.src = currentUploadDataUrl;
+      img.src = rawUploadDataUrl || currentUploadDataUrl;
       modal.classList.remove('hidden');
+    }
+
+    function runAutoDetectOnCropperImage() {
+      const img = document.getElementById('cropTargetImg');
+      if (!img || !img.naturalWidth) return;
+      const res = detectChekiBoundsFromSource(img, img.naturalWidth, img.naturalHeight);
+      cropRect = {
+        left: res.left,
+        top: res.top,
+        right: res.right,
+        bottom: res.bottom
+      };
+      updateCropBoxUI(res.detected ? `🎯 已自動吸附：${res.sizeName}` : `📏 預設範圍：${res.sizeName}`);
+    }
+
+    function setCropPresetRatio(wRatio, hRatio) {
+      const img = document.getElementById('cropTargetImg');
+      if (!img || !img.naturalWidth) return;
+      const targetAspect = wRatio / hRatio;
+      const imgAspect = img.naturalWidth / img.naturalHeight;
+
+      let boxWPercent, boxHPercent;
+      if (imgAspect > targetAspect) {
+        boxHPercent = 82;
+        boxWPercent = (boxHPercent * targetAspect) / imgAspect;
+      } else {
+        boxWPercent = 82;
+        boxHPercent = (boxWPercent * imgAspect) / targetAspect;
+      }
+      boxWPercent = Math.min(92, Math.max(25, boxWPercent));
+      boxHPercent = Math.min(92, Math.max(25, boxHPercent));
+
+      cropRect = {
+        left: Math.round((50 - boxWPercent / 2) * 10) / 10,
+        right: Math.round((50 + boxWPercent / 2) * 10) / 10,
+        top: Math.round((50 - boxHPercent / 2) * 10) / 10,
+        bottom: Math.round((50 + boxHPercent / 2) * 10) / 10
+      };
+      updateCropBoxUI();
+    }
+
+    function setCropFullImage() {
+      cropRect = { left: 1, top: 1, right: 99, bottom: 99 };
+      updateCropBoxUI('🔲 已選取全圖 100%');
     }
 
     function closeCropperModal() {
       document.getElementById('cropperModal').classList.add('hidden');
     }
 
-    function updateCropBoxUI() {
+    function updateCropBoxUI(customLabel) {
       const box = document.getElementById('cropBox');
       box.style.left = `${cropRect.left}%`;
       box.style.top = `${cropRect.top}%`;
       box.style.width = `${cropRect.right - cropRect.left}%`;
       box.style.height = `${cropRect.bottom - cropRect.top}%`;
+
+      const img = document.getElementById('cropTargetImg');
+      const indicator = document.getElementById('cropSizeIndicator');
+      if (img && img.naturalWidth && indicator) {
+        const wPx = ((cropRect.right - cropRect.left) / 100) * img.naturalWidth;
+        const hPx = ((cropRect.bottom - cropRect.top) / 100) * img.naturalHeight;
+        const sizeDesc = classifyChekiDimension(wPx, hPx);
+        indicator.textContent = customLabel || `📏 識別尺寸：${sizeDesc}`;
+      }
     }
 
     (function initCropHandles() {
@@ -1540,10 +1841,10 @@
         const px = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
         const py = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
 
-        if (activeHandle.includes('w')) cropRect.left = Math.min(px, cropRect.right - 15);
-        if (activeHandle.includes('e')) cropRect.right = Math.max(px, cropRect.left + 15);
-        if (activeHandle.includes('n')) cropRect.top = Math.min(py, cropRect.bottom - 15);
-        if (activeHandle.includes('s')) cropRect.bottom = Math.max(py, cropRect.top + 15);
+        if (activeHandle.includes('w')) cropRect.left = Math.min(px, cropRect.right - 12);
+        if (activeHandle.includes('e')) cropRect.right = Math.max(px, cropRect.left + 12);
+        if (activeHandle.includes('n')) cropRect.top = Math.min(py, cropRect.bottom - 12);
+        if (activeHandle.includes('s')) cropRect.bottom = Math.max(py, cropRect.top + 12);
 
         updateCropBoxUI();
       });
@@ -1552,6 +1853,7 @@
     })();
 
     function applyFreeCrop() {
+      const sourceUrl = rawUploadDataUrl || currentUploadDataUrl;
       const img = new Image();
       img.onload = () => {
         const sx = (cropRect.left / 100) * img.width;
@@ -1565,14 +1867,19 @@
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
 
-        rawUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        rawUploadDataUrl = canvas.toDataURL('image/jpeg', 0.92);
         currentUploadDataUrl = rawUploadDataUrl;
         document.getElementById('brightnessSlider').value = 100;
         document.getElementById('contrastSlider').value = 100;
         document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+
+        const sizeTag = document.getElementById('detectedSizeTag');
+        if (sizeTag) {
+          sizeTag.textContent = `📏 ${classifyChekiDimension(canvas.width, canvas.height)}`;
+        }
         closeCropperModal();
       };
-      img.src = currentUploadDataUrl;
+      img.src = sourceUrl;
     }
 
     function applyImageFilterPreview() {
@@ -1664,7 +1971,7 @@
       a.click();
     }
 
-    // --- ADD / EDIT MODAL (支援自由勾選多個相簿) ---
+    // --- ADD / EDIT MODAL ---
     function renderEditAlbumPills() {
       const container = document.getElementById('editAlbumPillsContainer');
       container.innerHTML = '';
@@ -1758,13 +2065,13 @@
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (ev) => {
-        compressAndSetImage(ev.target.result, true);
+        compressAndSetImage(ev.target.result, true, null, false);
       };
       reader.readAsDataURL(file);
       e.target.value = '';
     }
 
-    function compressAndSetImage(dataUrl, autoOpenCropper = false) {
+    function compressAndSetImage(dataUrl, autoOpenCropper = false, presetBounds = null, autoApplyLiveCrop = false) {
       const img = new Image();
       img.onload = () => {
         const maxSide = 1400;
@@ -1777,13 +2084,37 @@
         canvas.width = w;
         canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        rawUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-        currentUploadDataUrl = rawUploadDataUrl;
+
+        const fullCompressed = canvas.toDataURL('image/jpeg', 0.92);
+
+        // 如果從即時掃描相機拍攝且已自動鎖定邊框，直接自動裁切並顯示尺寸！
+        if (autoApplyLiveCrop && presetBounds && presetBounds.detected) {
+          const sx = (presetBounds.left / 100) * w;
+          const sy = (presetBounds.top / 100) * h;
+          const sw = ((presetBounds.right - presetBounds.left) / 100) * w;
+          const sh = ((presetBounds.bottom - presetBounds.top) / 100) * h;
+          const cropCanvas = document.createElement('canvas');
+          cropCanvas.width = Math.max(1, Math.round(sw));
+          cropCanvas.height = Math.max(1, Math.round(sh));
+          cropCanvas.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, cropCanvas.width, cropCanvas.height);
+
+          rawUploadDataUrl = fullCompressed;
+          currentUploadDataUrl = cropCanvas.toDataURL('image/jpeg', 0.92);
+          cropRect = { left: presetBounds.left, top: presetBounds.top, right: presetBounds.right, bottom: presetBounds.bottom };
+          document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+          document.getElementById('previewContainer').classList.remove('hidden');
+          const sizeTag = document.getElementById('detectedSizeTag');
+          if (sizeTag) sizeTag.textContent = `🎯 自動抓邊完成：${presetBounds.sizeName}`;
+          return;
+        }
+
+        rawUploadDataUrl = fullCompressed;
+        currentUploadDataUrl = fullCompressed;
         document.getElementById('brightnessSlider').value = 100;
         document.getElementById('contrastSlider').value = 100;
         document.getElementById('editPreviewImg').src = currentUploadDataUrl;
         document.getElementById('previewContainer').classList.remove('hidden');
-        if (autoOpenCropper) openCropperModal();
+        if (autoOpenCropper) openCropperModal(true, presetBounds);
       };
       img.src = dataUrl;
     }
@@ -1799,9 +2130,11 @@
         ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.rotate((deg * Math.PI) / 180);
         ctx.drawImage(img, -img.width / 2, -img.height / 2);
-        rawUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        rawUploadDataUrl = canvas.toDataURL('image/jpeg', 0.92);
         currentUploadDataUrl = rawUploadDataUrl;
         document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+        const sizeTag = document.getElementById('detectedSizeTag');
+        if (sizeTag) sizeTag.textContent = `📏 ${classifyChekiDimension(canvas.width, canvas.height)}`;
       };
       img.src = currentUploadDataUrl;
     }
