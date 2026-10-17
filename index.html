@@ -273,7 +273,7 @@
       </div>
     </section>
 
-    <!-- TAB 5: DESK (桌布 - 新增全體 Cheki 超微縮比例滑桿 12%~200% + 自訂背景縮放) -->
+    <!-- TAB 5: DESK (桌布 - 直向與橫向 Cheki 1:1 真實比例一致 + 全體超微縮滑桿 + 自訂背景縮放) -->
     <section id="tab-desk" class="space-y-2">
       <!-- 頂部工具列 -->
       <div class="neo-box bg-white rounded-2xl p-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
@@ -283,7 +283,7 @@
         <button onclick="openDeskBgModal()" class="px-3 py-1.5 rounded-full bg-blue-200 text-xs font-black neo-btn shrink-0">🖼️ 自訂背景</button>
       </div>
 
-      <!-- 📏 新增：桌布「全部 Cheki 統一縮細 / 放大」與「背景縮放」雙控制列 -->
+      <!-- 📏 桌布「全部 Cheki 統一縮細 / 放大」與「背景縮放」雙控制列 -->
       <div class="neo-box bg-white rounded-2xl p-2 space-y-1.5">
         <!-- 第一行：全體 Cheki 尺寸縮放 (最低可縮至 12% 超迷你海報牆！) -->
         <div class="flex items-center justify-between gap-1.5">
@@ -778,6 +778,18 @@
     let currentDeskThemeIdx = 0;
     let calYear = new Date().getFullYear();
     let calMonth = new Date().getMonth();
+
+    // 📐 拍立得直向與橫向標準實體比例常數 (確保直向 145×215px 與橫向 215×145px 完全一致大細！)
+    const CHEKI_SHORT_SIDE_PX = 145;
+    const CHEKI_LONG_SIDE_PX = 215;
+
+    function getDeskCardBaseWidth(card) {
+      return card && card.isLandscape ? CHEKI_LONG_SIDE_PX : CHEKI_SHORT_SIDE_PX;
+    }
+
+    function getDeskCardBaseHeight(card) {
+      return card && card.isLandscape ? CHEKI_SHORT_SIDE_PX : CHEKI_LONG_SIDE_PX;
+    }
 
     // 🖼️ 桌布背景自訂與全體 Cheki 預設縮放狀態
     let deskBgConfig = {
@@ -2143,7 +2155,7 @@
       switchTab('binder');
     }
 
-    // --- TAB 5: DESK (支援超微縮 12%~250% 比例 + 自適應多欄密集排列) ---
+    // --- TAB 5: DESK (直向 Cheki 145px 與橫向 Cheki 215px 自動等比例匹配，實體大細 100% 一致！) ---
     function renderDesk() {
       applyDeskBgVisuals();
       const canvas = document.getElementById('deskCanvas');
@@ -2169,12 +2181,17 @@
         if (typeof card.deskFlipped !== 'boolean') card.deskFlipped = false;
 
         const curScale = card.deskScale || defaultScale;
-        if (card.deskY + 210 > maxBottomY) maxBottomY = card.deskY + 210;
+        const baseW = getDeskCardBaseWidth(card);
+        const baseH = getDeskCardBaseHeight(card);
+
+        if (card.deskY + Math.round(baseH * curScale) + 20 > maxBottomY) {
+          maxBottomY = card.deskY + Math.round(baseH * curScale) + 20;
+        }
 
         const el = document.createElement('div');
         el.dataset.id = card.id;
         el.className = `desk-card-node absolute perspective-1000 select-none touch-none cursor-grab origin-top-left ${selectedDeskCardId === card.id ? 'desk-card-selected' : ''}`;
-        el.style.width = '145px';
+        el.style.width = `${baseW}px`;
         el.style.left = `${card.deskX}px`;
         el.style.top = `${card.deskY}px`;
         el.style.zIndex = card.deskZ || 1;
@@ -2186,7 +2203,7 @@
         el.innerHTML = `
           <div class="desk-flip-inner transform-style-3d relative w-full ${card.deskFlipped ? 'rotate-y-180' : ''}">
             <div class="backface-hidden w-full">
-              <img src="${card.image}" draggable="false" class="w-full h-auto block rounded-lg shadow-xl pointer-events-none">
+              <img src="${card.image}" draggable="false" class="desk-card-img w-full h-auto block rounded-lg shadow-xl pointer-events-none">
             </div>
             <div class="backface-hidden rotate-y-180 absolute inset-0 rounded-xl shadow-xl p-3 flex flex-col justify-between items-center text-center pointer-events-none border border-white/40" style="background-color: ${backColor}; color: ${backColor === '#FFFDF9' ? '#272228' : '#FFFFFF'};">
               <div class="text-[9px] font-bold opacity-85 w-full flex justify-between gap-1">
@@ -2198,6 +2215,17 @@
             </div>
           </div>
         `;
+
+        // 自動偵測圖片真實長寬：若為橫向 (naturalWidth > naturalHeight * 1.05)，即時將寬度設為 215px，令橫向與直向 Cheki 大細完全一致！
+        const imgEl = el.querySelector('.desk-card-img');
+        imgEl.onload = () => {
+          const isLand = imgEl.naturalWidth > imgEl.naturalHeight * 1.05;
+          if (card.isLandscape !== isLand) {
+            card.isLandscape = isLand;
+            el.style.width = `${getDeskCardBaseWidth(card)}px`;
+            saveCardToDB(card);
+          }
+        };
 
         attachDeskCardInteractions(el, card);
         cardsLayer.appendChild(el);
@@ -2258,7 +2286,6 @@
         saveCardToDB(card);
       });
 
-      // 雙指捏合縮放：解鎖最小縮放至 0.12 (12%)，最大 2.5 (250%)
       el.addEventListener('touchstart', (e) => {
         if (e.touches.length === 2) {
           isPinching = true;
@@ -2319,15 +2346,16 @@
     function scatterDeskCards() {
       const canvas = document.getElementById('deskCanvas');
       const rect = canvas.getBoundingClientRect();
-      const avgScale = cards.length ? (cards.reduce((s, c) => s + (c.deskScale || 1), 0) / cards.length) : 1;
-      const cardW = Math.round(145 * avgScale);
-      const cardH = Math.round(190 * avgScale);
-      const maxW = Math.max(20, rect.width - cardW - 15);
-      const maxH = Math.max(40, rect.height - cardH - 15);
 
       cards.forEach((c, i) => {
-        c.deskX = Math.floor(10 + Math.random() * maxW);
-        c.deskY = Math.floor(10 + Math.random() * maxH);
+        const sc = c.deskScale || 1;
+        const cardW = Math.round(getDeskCardBaseWidth(c) * sc);
+        const cardH = Math.round(getDeskCardBaseHeight(c) * sc);
+        const maxW = Math.max(15, rect.width - cardW - 12);
+        const maxH = Math.max(30, rect.height - cardH - 12);
+
+        c.deskX = Math.floor(8 + Math.random() * maxW);
+        c.deskY = Math.floor(8 + Math.random() * maxH);
         c.deskRot = Math.floor(Math.random() * 34) - 17;
         c.deskZ = i + 1;
         saveCardToDB(c);
@@ -2335,30 +2363,37 @@
       renderDesk();
     }
 
-    // 升級版「整齊排列 / 密集重排」：自動根據當前 Cheki 縮放大小計算每列可排幾多張 (最多可排 6~7 欄迷你牆)
+    // 智慧流式密集重排：同時支援直向 (145×215) 與橫向 (215×145) Cheki 自動換行對齊，絕不重疊！
     function neatArrangeDeskCards() {
       if (cards.length === 0) return;
       const canvas = document.getElementById('deskCanvas');
       const cw = canvas.getBoundingClientRect().width || 360;
 
-      // 若全部卡片目前仍為 100% 且數量較多，或者使用者調整過全局大小，按目前縮放自動計算欄位數
       const targetScale = (deskBgConfig.defaultCardScale || 100) / 100;
-      const effectiveW = Math.max(24, Math.round(145 * targetScale));
-      const effectiveH = Math.max(32, Math.round(195 * targetScale));
       const gap = Math.max(6, Math.round(10 * targetScale));
-
-      const cols = Math.max(1, Math.min(7, Math.floor((cw - 16) / (effectiveW + gap))));
-      const totalRowW = cols * effectiveW + (cols - 1) * gap;
-      const startX = Math.max(8, Math.floor((cw - totalRowW) / 2));
+      const padX = 10;
+      let curX = padX;
+      let curY = 12;
+      let rowMaxH = 0;
 
       cards.forEach((c, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
         c.deskScale = targetScale;
-        c.deskX = startX + col * (effectiveW + gap);
-        c.deskY = 14 + row * (effectiveH + gap);
+        const cardW = Math.round(getDeskCardBaseWidth(c) * targetScale);
+        const cardH = Math.round(getDeskCardBaseHeight(c) * targetScale);
+
+        if (curX > padX && curX + cardW > cw - padX) {
+          curX = padX;
+          curY += rowMaxH + gap;
+          rowMaxH = 0;
+        }
+
+        c.deskX = curX;
+        c.deskY = curY;
         c.deskRot = 0;
         c.deskZ = i + 1;
+
+        curX += cardW + gap;
+        if (cardH > rowMaxH) rowMaxH = cardH;
         saveCardToDB(c);
       });
       renderDesk();
@@ -2927,6 +2962,15 @@
       img.src = currentUploadDataUrl;
     }
 
+    function checkImageIsLandscape(dataUrl) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img.naturalWidth > img.naturalHeight * 1.05);
+        img.onerror = () => resolve(false);
+        img.src = dataUrl;
+      });
+    }
+
     async function saveCard() {
       if (!currentUploadDataUrl) {
         alert('請先拍攝或選擇一張拍立得相片！');
@@ -2937,6 +2981,7 @@
       const locationName = document.getElementById('cardLocationInput').value.trim();
       const chosenAlbums = [...editingSelectedAlbums];
       const note = document.getElementById('cardNoteInput').value;
+      const isLandscape = await checkImageIsLandscape(currentUploadDataUrl);
 
       if (locationName && typeof editingLat !== 'number') {
         const match = PRESET_VENUES.find(v => v.name.toLowerCase().includes(locationName.toLowerCase()));
@@ -2956,6 +3001,7 @@
             lat: editingLat,
             lng: editingLng,
             image: currentUploadDataUrl,
+            isLandscape,
             backColor: selectedBackColor
           };
           setCardAlbums(cards[idx], chosenAlbums);
@@ -2971,6 +3017,7 @@
           lat: editingLat,
           lng: editingLng,
           image: currentUploadDataUrl,
+          isLandscape,
           backColor: selectedBackColor,
           fav: false,
           deskX: 30 + (cards.length * 35) % 160,
@@ -3051,6 +3098,7 @@
               lng: typeof raw.lng === 'number' ? raw.lng : null,
               note: raw.note || raw.memo || '',
               image: raw.image || raw.img || raw.dataUrl || '',
+              isLandscape: Boolean(raw.isLandscape),
               backColor: raw.backColor || '#60A5FA',
               fav: Boolean(raw.fav || raw.favorite),
               deskX: typeof raw.deskX === 'number' ? raw.deskX : 45 + (count * 35) % 150,
