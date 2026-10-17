@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Inter:wght@400;500;600;700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
-  <!-- Leaflet Interactive Map CSS & JS (免費開源地圖引擎，免 API Key) -->
+  <!-- Leaflet Interactive Map CSS & JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
@@ -238,7 +238,7 @@
       <!-- 主推 / 第一名偶像榮譽大卡 -->
       <div id="topOshiHighlightCard" class="hidden neo-box bg-gradient-to-br from-blue-50 via-pink-50 to-amber-50 rounded-2xl p-3.5"></div>
 
-      <!-- 🗺️ 應援足跡互動總覽地圖 (新增！) -->
+      <!-- 🗺️ 應援足跡互動總覽地圖 -->
       <div class="neo-box bg-white rounded-2xl p-3.5 space-y-2.5">
         <div class="flex items-center justify-between border-b-2 border-zinc-100 pb-2">
           <div>
@@ -274,21 +274,53 @@
       </div>
     </section>
 
-    <!-- TAB 5: DESK (桌布) -->
-    <section id="tab-desk" class="space-y-2.5">
+    <!-- TAB 5: DESK (桌布 - 支援自訂相片背景 + 背景縮放與位置調整) -->
+    <section id="tab-desk" class="space-y-2">
+      <!-- 頂部工具列 -->
       <div class="neo-box bg-white rounded-2xl p-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
         <button onclick="scatterDeskCards()" class="px-3 py-1.5 rounded-full bg-cheki-accent text-white text-xs font-black neo-btn shrink-0">🎲 隨機灑落</button>
         <button onclick="neatArrangeDeskCards()" class="px-3 py-1.5 rounded-full bg-white text-xs font-black neo-btn shrink-0">🗂️ 整齊排列</button>
-        <button onclick="cycleDeskTheme()" class="px-3 py-1.5 rounded-full bg-pink-100 text-xs font-black neo-btn shrink-0">🎨 換桌布</button>
+        <button onclick="cycleDeskTheme()" class="px-3 py-1.5 rounded-full bg-pink-100 text-xs font-black neo-btn shrink-0">🎨 預設主題</button>
+        <button onclick="openDeskBgModal()" class="px-3 py-1.5 rounded-full bg-blue-200 text-xs font-black neo-btn shrink-0">🖼️ 自訂背景</button>
       </div>
 
+      <!-- 🔍 桌布背景快速縮放與換圖控制列 (新增！) -->
+      <div class="neo-box bg-blue-50/90 rounded-2xl px-3 py-1.5 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-1 shrink-0">
+          <span class="text-[11px] font-black text-blue-900">🖼️ 背景縮放</span>
+          <span id="deskBgZoomValueText" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-white border border-blue-300 text-blue-700">100%</span>
+        </div>
+        <div class="flex items-center gap-1 flex-1 max-w-[165px]">
+          <button onclick="stepDeskBgZoom(-15)" class="w-6 h-6 rounded-lg bg-white border border-cheki-dark font-black text-xs flex items-center justify-center shrink-0 active:scale-90">➖</button>
+          <input id="deskBgQuickSlider" type="range" min="20" max="300" value="100" oninput="onDeskBgZoomChange(this.value)" class="w-full accent-blue-500 h-1.5">
+          <button onclick="stepDeskBgZoom(15)" class="w-6 h-6 rounded-lg bg-white border border-cheki-dark font-black text-xs flex items-center justify-center shrink-0 active:scale-90">➕</button>
+        </div>
+        <div class="flex items-center gap-1 shrink-0">
+          <label class="px-2 py-1 rounded-xl bg-amber-200 border border-cheki-dark text-[10px] font-black cursor-pointer flex items-center gap-0.5">
+            📁 揀相片
+            <input type="file" accept="image/*" class="hidden" onchange="handleDeskCustomBgUpload(event)">
+          </label>
+          <button onclick="resetDeskBgTransform()" class="px-1.5 py-1 rounded-xl bg-white border border-cheki-dark text-[10px] font-black" title="重設背景位置與縮放">🎯</button>
+        </div>
+      </div>
+
+      <!-- 選中卡片資訊與翻面列 -->
       <div class="neo-box bg-pink-100/90 rounded-2xl px-3 py-2 flex items-center justify-between gap-2">
         <span id="deskSelectedName" class="font-black text-sm truncate max-w-[100px]">點擊相片操作</span>
         <span class="px-2.5 py-0.5 rounded-full bg-white border border-cheki-dark text-[11px] font-bold text-zinc-700 shrink-0">💡 點擊相片翻面 / 雙指縮放</span>
         <button onclick="flipSelectedDeskCard()" class="px-3 py-1 rounded-full bg-white neo-btn text-xs font-black flex items-center gap-1 shrink-0">🔄 翻面</button>
       </div>
 
-      <div id="deskCanvas" oncontextmenu="return false;" class="desk-dots-brown neo-box rounded-3xl relative w-full h-[68vh] overflow-hidden touch-none"></div>
+      <!-- 桌布畫布 (內建底層可縮放平移背景層 + 頂層拍立得卡片層) -->
+      <div id="deskCanvas" oncontextmenu="return false;" class="desk-dots-brown neo-box rounded-3xl relative w-full h-[64vh] overflow-hidden touch-none">
+        <!-- 自訂背景圖片與遮罩層 -->
+        <div id="deskCustomBgLayer" class="hidden absolute inset-0 pointer-events-none overflow-hidden z-0">
+          <img id="deskCustomBgImg" src="" draggable="false" class="w-full h-full object-contain origin-center transition-transform duration-75 pointer-events-none">
+          <div id="deskCustomBgDimmer" class="absolute inset-0 bg-black/0 pointer-events-none"></div>
+        </div>
+        <!-- 拍立得卡片容器層 -->
+        <div id="deskCardsLayer" class="absolute inset-0 z-10 pointer-events-auto"></div>
+      </div>
     </section>
 
   </main>
@@ -313,7 +345,86 @@
     </button>
   </nav>
 
-  <!-- INSPECT MODAL (詳細檢視視窗 - 支援查看地圖標示與一鍵調動相簿) -->
+  <!-- 🖼️ DESK CUSTOM BACKGROUND & ZOOM MODAL (自訂桌布背景與進階縮放移位視窗) -->
+  <div id="deskBgModal" class="hidden fixed inset-0 z-[75] bg-black/75 flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white w-full max-w-sm rounded-3xl neo-box p-4 space-y-3.5 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+        <h3 class="font-black text-base">🖼️ 自定義桌布背景與縮放</h3>
+        <button onclick="closeDeskBgModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black">✕</button>
+      </div>
+
+      <!-- 1. 選取相片來源 -->
+      <div class="space-y-2">
+        <p class="text-xs font-black text-zinc-700">1️⃣ 選擇自訂背景相片：</p>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="py-2.5 px-2 rounded-xl bg-cheki-accent text-white neo-btn font-black text-xs text-center cursor-pointer flex items-center justify-center gap-1">
+            📱 從手機相簿揀相
+            <input type="file" accept="image/*" class="hidden" onchange="handleDeskCustomBgUpload(event)">
+          </label>
+          <button type="button" onclick="togglePickChekiAsBgList()" class="py-2.5 px-2 rounded-xl bg-amber-200 neo-btn font-black text-xs flex items-center justify-center gap-1">
+            🎴 從已存 Cheki 揀選
+          </button>
+        </div>
+
+        <!-- 從現有 Cheki 挑選作為背景的清單 -->
+        <div id="pickChekiAsBgBox" class="hidden border-2 border-cheki-dark rounded-2xl p-2 bg-pink-50/60 max-h-44 overflow-y-auto grid grid-cols-4 gap-1.5"></div>
+      </div>
+
+      <!-- 2. 背景縮放、平移與暗度微調 -->
+      <div class="neo-box bg-blue-50/70 rounded-2xl p-3 space-y-2.5">
+        <div class="flex justify-between items-center">
+          <span class="text-xs font-black">2️⃣ 背景縮小 / 放大 / 位置微調</span>
+          <button type="button" onclick="resetDeskBgTransform()" class="px-2 py-0.5 rounded-lg bg-white border border-cheki-dark text-[10px] font-black">🎯 重設為 100%</button>
+        </div>
+
+        <div class="space-y-1">
+          <div class="flex justify-between text-[11px] font-bold">
+            <span>🔍 縮放比例 (Zoom)</span>
+            <span id="modalBgZoomLabel" class="font-black text-blue-600">100%</span>
+          </div>
+          <input id="modalBgZoomSlider" type="range" min="20" max="300" value="100" oninput="onDeskBgZoomChange(this.value)" class="w-full accent-blue-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <div class="flex justify-between text-[10px] font-bold mb-0.5">
+              <span>↔️ 左右移動 (X)</span>
+            </div>
+            <input id="modalBgPanXSlider" type="range" min="-250" max="250" value="0" oninput="onDeskBgPanChange()" class="w-full accent-pink-500">
+          </div>
+          <div>
+            <div class="flex justify-between text-[10px] font-bold mb-0.5">
+              <span>↕️ 上下移動 (Y)</span>
+            </div>
+            <input id="modalBgPanYSlider" type="range" min="-250" max="250" value="0" oninput="onDeskBgPanChange()" class="w-full accent-pink-500">
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <div class="flex justify-between text-[11px] font-bold">
+            <span>🕶️ 背景暗度遮罩（凸顯桌布上的 Cheki）</span>
+            <span id="modalBgDimLabel" class="font-black">0%</span>
+          </div>
+          <input id="modalBgDimSlider" type="range" min="0" max="70" value="0" oninput="onDeskBgDimChange(this.value)" class="w-full accent-zinc-700">
+        </div>
+      </div>
+
+      <!-- 3. 切換回內建主題 -->
+      <div class="space-y-1.5">
+        <p class="text-xs font-black text-zinc-700">3️⃣ 或切換為內建圖案桌布（同樣支援縮放！）：</p>
+        <div class="grid grid-cols-4 gap-1.5">
+          <button type="button" onclick="selectPresetDeskTheme(0)" class="py-2 rounded-xl bg-[#3E2723] text-white text-[10px] font-black border-2 border-cheki-dark">🍫 波點啡</button>
+          <button type="button" onclick="selectPresetDeskTheme(1)" class="py-2 rounded-xl bg-[#E3F2FD] text-blue-900 text-[10px] font-black border-2 border-cheki-dark">💙 應援藍</button>
+          <button type="button" onclick="selectPresetDeskTheme(2)" class="py-2 rounded-xl bg-[#FCE4EC] text-pink-900 text-[10px] font-black border-2 border-cheki-dark">🌸 格紋粉</button>
+          <button type="button" onclick="selectPresetDeskTheme(3)" class="py-2 rounded-xl bg-[#D7CCC8] text-zinc-900 text-[10px] font-black border-2 border-cheki-dark">🪵 淺木紋</button>
+        </div>
+      </div>
+
+      <button type="button" onclick="closeDeskBgModal()" class="w-full py-2.5 rounded-2xl bg-emerald-300 neo-btn font-black text-xs">✓ 完成設定</button>
+    </div>
+  </div>
+
+  <!-- INSPECT MODAL -->
   <div id="inspectModal" oncontextmenu="return false;" class="hidden fixed inset-0 z-50 bg-black/90 flex flex-col justify-between p-4">
     <div class="flex items-center justify-between bg-white px-3 py-2 rounded-2xl neo-box">
       <button onclick="closeInspectModal()" class="font-black text-sm px-2 py-1">✕ 關閉</button>
@@ -342,7 +453,6 @@
           </div>
         </div>
       </div>
-      <!-- 所屬相簿與地圖位置徽章列 -->
       <div id="inspectAlbumsBadges" class="flex flex-wrap justify-center gap-1.5 mt-2.5"></div>
       <div id="inspectLocationBadgeBox" class="mt-1.5"></div>
       <p class="text-white/70 text-xs font-bold mt-1.5">👆 點擊相片可 3D 翻面 ｜ 點上方「📁 調動」可隨意換相簿</p>
@@ -392,7 +502,7 @@
     </div>
   </div>
 
-  <!-- ADD / EDIT MODAL (新增 📍 互動地圖標示與場地搜尋功能) -->
+  <!-- ADD / EDIT MODAL -->
   <div id="editCardModal" class="hidden fixed inset-0 z-[60] bg-black/75 flex items-center justify-center p-3 overflow-y-auto">
     <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-4 space-y-3 max-h-[92vh] overflow-y-auto">
       <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
@@ -400,7 +510,6 @@
         <button onclick="closeEditModal()" class="w-8 h-8 rounded-full bg-white neo-btn font-black">✕</button>
       </div>
 
-      <!-- 3種清楚分離的拍攝/選取按鈕 -->
       <div class="space-y-2">
         <button type="button" onclick="openLiveCameraScanner()" class="w-full py-2.5 rounded-xl bg-cheki-accent text-white neo-btn text-center font-black text-xs flex items-center justify-center gap-1.5">
           📸 開啟 AI 自動尋邊掃描相機（自動偵測邊緣與尺寸）
@@ -417,7 +526,6 @@
           </label>
         </div>
 
-        <!-- 預覽與裁切/旋轉/畫質微調工具列 -->
         <div id="previewContainer" oncontextmenu="return false;" class="hidden flex flex-col items-center bg-zinc-900 rounded-2xl p-2.5 space-y-2">
           <div class="flex items-center justify-between w-full px-1">
             <span id="detectedSizeTag" class="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 border border-emerald-400/40">📏 已自動對齊 Cheki 邊緣</span>
@@ -427,7 +535,6 @@
             <button type="button" onclick="openCropperModal(false)" class="flex-1 py-1.5 rounded-xl bg-emerald-300 neo-btn text-xs font-black">✂️ 微調邊框與尺寸</button>
             <button type="button" onclick="rotateUploadImage(90)" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-black">↻ 旋轉 90°</button>
           </div>
-          <!-- 畫質微調 (亮度與對比度) -->
           <div class="w-full bg-zinc-800 rounded-xl p-2 space-y-1.5 text-white">
             <div class="flex items-center justify-between text-[10px] font-bold">
               <span>☀️ 亮度微調</span>
@@ -454,7 +561,7 @@
           <input id="cardDateInput" type="date" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold text-xs bg-white">
         </div>
 
-        <!-- 📍 新增：拍攝地點與互動地圖標示區塊 -->
+        <!-- 📍 拍攝地點與互動地圖標示區塊 -->
         <div class="neo-box bg-blue-50/70 rounded-2xl p-2.5 space-y-2">
           <div class="flex items-center justify-between">
             <label class="text-xs font-black flex items-center gap-1">📍 拍攝地點 / 地圖標示</label>
@@ -469,10 +576,8 @@
             <button type="button" onclick="searchPlaceOnMap()" class="px-2.5 py-1.5 rounded-xl bg-amber-200 neo-btn text-[11px] font-black shrink-0">🔍 搜尋定位</button>
           </div>
 
-          <!-- 常用場地一鍵快速標示按鈕 -->
           <div id="quickVenuePills" class="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5"></div>
 
-          <!-- 互動小地圖容器 (點擊地圖即可插針標示) -->
           <div id="editMapWrapper" class="hidden space-y-1.5 pt-1">
             <div id="editPickerMap" class="w-full h-44 rounded-xl border-2 border-cheki-dark overflow-hidden bg-blue-100"></div>
             <div class="flex items-center justify-between text-[10px] font-bold text-zinc-600 px-1">
@@ -657,6 +762,17 @@
     let calYear = new Date().getFullYear();
     let calMonth = new Date().getMonth();
 
+    // 🖼️ 桌布背景自訂與縮放狀態 (永久儲存於 IndexedDB meta)
+    let deskBgConfig = {
+      mode: 'preset', // 'preset' | 'custom'
+      themeIdx: 0,
+      customImage: '',
+      zoom: 100, // 20% ~ 300%
+      panX: 0,
+      panY: 0,
+      dim: 0
+    };
+
     // 📍 地圖標示狀態與預設熱門應援場地座標庫
     let editingLat = null;
     let editingLng = null;
@@ -711,12 +827,189 @@
     }
 
     // =========================================================================
-    // 📍 互動地圖選點與場地搜尋功能 (Leaflet + OpenStreetMap Nominatim)
+    // 🖼️ 桌布自訂相片背景 & 背景縮放平移系統
+    // =========================================================================
+    function applyDeskBgVisuals() {
+      const canvas = document.getElementById('deskCanvas');
+      const customLayer = document.getElementById('deskCustomBgLayer');
+      const customImg = document.getElementById('deskCustomBgImg');
+      const dimmer = document.getElementById('deskCustomBgDimmer');
+      if (!canvas) return;
+
+      // 移除所有預設主題 class
+      deskThemes.forEach(t => canvas.classList.remove(t));
+      currentDeskThemeIdx = deskBgConfig.themeIdx || 0;
+      canvas.classList.add(deskThemes[currentDeskThemeIdx]);
+
+      const zoomRatio = (deskBgConfig.zoom || 100) / 100;
+
+      if (deskBgConfig.mode === 'custom' && deskBgConfig.customImage) {
+        customLayer.classList.remove('hidden');
+        customImg.src = deskBgConfig.customImage;
+        customImg.style.transform = `translate(${deskBgConfig.panX || 0}px, ${deskBgConfig.panY || 0}px) scale(${zoomRatio})`;
+        dimmer.style.backgroundColor = `rgba(0, 0, 0, ${(deskBgConfig.dim || 0) / 100})`;
+        canvas.style.backgroundSize = '';
+        canvas.style.backgroundPosition = '';
+      } else {
+        customLayer.classList.add('hidden');
+        // 內建圖案主題同樣支援背景放大與縮小！
+        const basePx = currentDeskThemeIdx === 2 ? 28 : 32;
+        const scaledPx = Math.max(8, Math.round(basePx * zoomRatio));
+        if (currentDeskThemeIdx !== 3) {
+          canvas.style.backgroundSize = `${scaledPx}px ${scaledPx}px`;
+          canvas.style.backgroundPosition = `${deskBgConfig.panX || 0}px ${deskBgConfig.panY || 0}px`;
+        } else {
+          canvas.style.backgroundSize = '';
+          canvas.style.backgroundPosition = '';
+        }
+      }
+
+      // 同步更新介面上的縮放數值與滑桿
+      const zVal = Math.round(deskBgConfig.zoom || 100);
+      const quickSlider = document.getElementById('deskBgQuickSlider');
+      const quickText = document.getElementById('deskBgZoomValueText');
+      const modalZoomSlider = document.getElementById('modalBgZoomSlider');
+      const modalZoomLabel = document.getElementById('modalBgZoomLabel');
+      const modalPanX = document.getElementById('modalBgPanXSlider');
+      const modalPanY = document.getElementById('modalBgPanYSlider');
+      const modalDimSlider = document.getElementById('modalBgDimSlider');
+      const modalDimLabel = document.getElementById('modalBgDimLabel');
+
+      if (quickSlider) quickSlider.value = zVal;
+      if (quickText) quickText.textContent = `${zVal}%`;
+      if (modalZoomSlider) modalZoomSlider.value = zVal;
+      if (modalZoomLabel) modalZoomLabel.textContent = `${zVal}%`;
+      if (modalPanX) modalPanX.value = deskBgConfig.panX || 0;
+      if (modalPanY) modalPanY.value = deskBgConfig.panY || 0;
+      if (modalDimSlider) modalDimSlider.value = deskBgConfig.dim || 0;
+      if (modalDimLabel) modalDimLabel.textContent = `${deskBgConfig.dim || 0}%`;
+    }
+
+    function onDeskBgZoomChange(val) {
+      deskBgConfig.zoom = Math.min(300, Math.max(20, Number(val) || 100));
+      applyDeskBgVisuals();
+      saveDeskBgConfigToDB();
+    }
+
+    function stepDeskBgZoom(delta) {
+      const next = Math.min(300, Math.max(20, (deskBgConfig.zoom || 100) + delta));
+      onDeskBgZoomChange(next);
+    }
+
+    function onDeskBgPanChange() {
+      const px = Number(document.getElementById('modalBgPanXSlider')?.value || 0);
+      const py = Number(document.getElementById('modalBgPanYSlider')?.value || 0);
+      deskBgConfig.panX = px;
+      deskBgConfig.panY = py;
+      applyDeskBgVisuals();
+      saveDeskBgConfigToDB();
+    }
+
+    function onDeskBgDimChange(val) {
+      deskBgConfig.dim = Number(val) || 0;
+      applyDeskBgVisuals();
+      saveDeskBgConfigToDB();
+    }
+
+    function resetDeskBgTransform() {
+      deskBgConfig.zoom = 100;
+      deskBgConfig.panX = 0;
+      deskBgConfig.panY = 0;
+      applyDeskBgVisuals();
+      saveDeskBgConfigToDB();
+    }
+
+    function handleDeskCustomBgUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxSide = 1600;
+          let w = img.width, h = img.height;
+          if (w > maxSide || h > maxSide) {
+            if (w > h) { h = Math.round(h * (maxSide / w)); w = maxSide; }
+            else { w = Math.round(w * (maxSide / h)); h = maxSide; }
+          }
+          const c = document.createElement('canvas');
+          c.width = w;
+          c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          deskBgConfig.customImage = c.toDataURL('image/jpeg', 0.88);
+          deskBgConfig.mode = 'custom';
+          deskBgConfig.zoom = 100;
+          deskBgConfig.panX = 0;
+          deskBgConfig.panY = 0;
+          applyDeskBgVisuals();
+          saveDeskBgConfigToDB();
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    }
+
+    function openDeskBgModal() {
+      applyDeskBgVisuals();
+      document.getElementById('pickChekiAsBgBox').classList.add('hidden');
+      document.getElementById('deskBgModal').classList.remove('hidden');
+    }
+
+    function closeDeskBgModal() {
+      document.getElementById('deskBgModal').classList.add('hidden');
+    }
+
+    function togglePickChekiAsBgList() {
+      const box = document.getElementById('pickChekiAsBgBox');
+      box.classList.toggle('hidden');
+      if (!box.classList.contains('hidden')) {
+        if (cards.length === 0) {
+          box.innerHTML = `<div class="col-span-4 text-center py-4 text-xs text-zinc-400 font-bold">目前尚無已儲存的 Cheki</div>`;
+        } else {
+          box.innerHTML = cards.map(c => `
+            <div onclick="setExistingChekiAsDeskBg(${c.id})" class="cursor-pointer rounded-lg border-2 border-transparent hover:border-cheki-accent bg-white p-1 flex items-center justify-center aspect-[3/4]">
+              <img src="${c.image}" draggable="false" class="max-h-full max-w-full object-contain pointer-events-none">
+            </div>
+          `).join('');
+        }
+      }
+    }
+
+    function setExistingChekiAsDeskBg(cardId) {
+      const card = cards.find(c => c.id === cardId);
+      if (!card) return;
+      deskBgConfig.customImage = card.image;
+      deskBgConfig.mode = 'custom';
+      deskBgConfig.zoom = 115;
+      deskBgConfig.panX = 0;
+      deskBgConfig.panY = 0;
+      applyDeskBgVisuals();
+      saveDeskBgConfigToDB();
+    }
+
+    function selectPresetDeskTheme(idx) {
+      deskBgConfig.mode = 'preset';
+      deskBgConfig.themeIdx = idx;
+      currentDeskThemeIdx = idx;
+      applyDeskBgVisuals();
+      saveDeskBgConfigToDB();
+    }
+
+    function cycleDeskTheme() {
+      deskBgConfig.mode = 'preset';
+      currentDeskThemeIdx = ((deskBgConfig.themeIdx || 0) + 1) % deskThemes.length;
+      deskBgConfig.themeIdx = currentDeskThemeIdx;
+      applyDeskBgVisuals();
+      saveDeskBgConfigToDB();
+    }
+
+    // =========================================================================
+    // 📍 互動地圖選點與場地搜尋功能
     // =========================================================================
     function renderQuickVenuePills() {
       const box = document.getElementById('quickVenuePills');
       if (!box) return;
-      // 結合使用者過去輸入過的地點與預設應援場地
       const customVenues = [];
       cards.forEach(c => {
         if (c.locationName && typeof c.lat === 'number' && typeof c.lng === 'number') {
@@ -759,7 +1052,7 @@
     }
 
     function initOrUpdateEditMap() {
-      const defaultLat = typeof editingLat === 'number' ? editingLat : 35.6812; // 預設東京
+      const defaultLat = typeof editingLat === 'number' ? editingLat : 35.6812;
       const defaultLng = typeof editingLng === 'number' ? editingLng : 139.7671;
 
       if (!editMapInstance) {
@@ -824,7 +1117,6 @@
         alert('請先輸入場地或城市名稱（例如：福岡、KANDA SQUARE HALL）！');
         return;
       }
-      // 先比對內建場地庫
       const preset = PRESET_VENUES.find(v => v.name.toLowerCase().includes(q.toLowerCase()) || q.toLowerCase().includes(v.name.split(' ')[0].toLowerCase()));
       if (preset) {
         setEditLocationPin(preset.lat, preset.lng, true);
@@ -1022,16 +1314,21 @@
         const tx = db.transaction(['cards', 'meta'], 'readonly');
         const cardReq = tx.objectStore('cards').getAll();
         const albumReq = tx.objectStore('meta').get('albums');
+        const deskBgReq = tx.objectStore('meta').get('deskBgConfig');
         tx.oncomplete = () => {
           cards = (cardReq.result || []).sort((a, b) => b.createdAt - a.createdAt);
           if (albumReq.result && Array.isArray(albumReq.result.value) && albumReq.result.value.length > 0) {
             albums = albumReq.result.value;
+          }
+          if (deskBgReq.result && deskBgReq.result.value) {
+            deskBgConfig = { ...deskBgConfig, ...deskBgReq.result.value };
           }
           cards.forEach(c => {
             getCardAlbums(c).forEach(a => {
               if (a && !albums.includes(a)) albums.push(a);
             });
           });
+          applyDeskBgVisuals();
           updateHeaderStats();
           renderCurrentTab();
           resolve();
@@ -1059,6 +1356,15 @@
       return new Promise((resolve) => {
         const tx = db.transaction('meta', 'readwrite');
         tx.objectStore('meta').put({ key: 'albums', value: albums });
+        tx.oncomplete = resolve;
+      });
+    }
+
+    function saveDeskBgConfigToDB() {
+      return new Promise((resolve) => {
+        if (!db) return resolve();
+        const tx = db.transaction('meta', 'readwrite');
+        tx.objectStore('meta').put({ key: 'deskBgConfig', value: deskBgConfig });
         tx.oncomplete = resolve;
       });
     }
@@ -1577,7 +1883,7 @@
       });
     }
 
-    // --- TAB 4: STATS (含 🗺️ 應援足跡互動地圖 + 偶像排行 + 月份統計) ---
+    // --- TAB 4: STATS ---
     function renderStats() {
       const idolCounts = getIdolCounts();
       const favCount = cards.filter(c => c.fav).length;
@@ -1610,12 +1916,10 @@
         topOshiCard.classList.add('hidden');
       }
 
-      // 渲染應援足跡互動地圖
       setTimeout(() => {
         renderStatsFootprintMap();
       }, 80);
 
-      // 渲染場地統計列表
       const locMap = {};
       cards.forEach(c => {
         const loc = (c.locationName || '').trim();
@@ -1634,7 +1938,6 @@
         `).join('');
       }
 
-      // 渲染各偶像排行榜
       const board = document.getElementById('idolStatsLeaderboard');
       if (idolCounts.length === 0) {
         board.innerHTML = `<p class="text-center py-6 text-zinc-400 font-bold text-xs">尚無拍立得資料，快去新增第一張 Cheki 吧！</p>`;
@@ -1763,10 +2066,14 @@
       switchTab('binder');
     }
 
-    // --- TAB 5: DESK ---
+    // --- TAB 5: DESK (支援底層自訂背景縮放 + 頂層拍立得卡片操作) ---
     function renderDesk() {
+      applyDeskBgVisuals();
       const canvas = document.getElementById('deskCanvas');
-      canvas.innerHTML = '';
+      const cardsLayer = document.getElementById('deskCardsLayer');
+      if (!canvas || !cardsLayer) return;
+      cardsLayer.innerHTML = '';
+
       const rect = canvas.getBoundingClientRect();
       const cw = rect.width || 360;
       const ch = rect.height || 480;
@@ -1783,7 +2090,7 @@
 
         const el = document.createElement('div');
         el.dataset.id = card.id;
-        el.className = `absolute perspective-1000 select-none touch-none cursor-grab ${selectedDeskCardId === card.id ? 'desk-card-selected' : ''}`;
+        el.className = `desk-card-node absolute perspective-1000 select-none touch-none cursor-grab ${selectedDeskCardId === card.id ? 'desk-card-selected' : ''}`;
         el.style.width = '145px';
         el.style.left = `${card.deskX}px`;
         el.style.top = `${card.deskY}px`;
@@ -1810,7 +2117,7 @@
         `;
 
         attachDeskCardInteractions(el, card);
-        canvas.appendChild(el);
+        cardsLayer.appendChild(el);
       });
     }
 
@@ -1903,7 +2210,7 @@
       card.deskZ = maxZ + 1;
       el.style.zIndex = card.deskZ;
 
-      document.querySelectorAll('#deskCanvas > div').forEach(node => {
+      document.querySelectorAll('#deskCardsLayer > .desk-card-node').forEach(node => {
         node.classList.toggle('desk-card-selected', Number(node.dataset.id) === card.id);
       });
       document.getElementById('deskSelectedName').textContent = card.member || '未命名';
@@ -1914,7 +2221,7 @@
       const card = cards.find(c => c.id === selectedDeskCardId);
       if (!card) return;
       card.deskFlipped = !card.deskFlipped;
-      const el = document.querySelector(`#deskCanvas > div[data-id="${card.id}"] .desk-flip-inner`);
+      const el = document.querySelector(`#deskCardsLayer > div[data-id="${card.id}"] .desk-flip-inner`);
       if (el) el.classList.toggle('rotate-y-180', card.deskFlipped);
       saveCardToDB(card);
     }
@@ -1946,13 +2253,6 @@
         saveCardToDB(c);
       });
       renderDesk();
-    }
-
-    function cycleDeskTheme() {
-      const canvas = document.getElementById('deskCanvas');
-      canvas.classList.remove(deskThemes[currentDeskThemeIdx]);
-      currentDeskThemeIdx = (currentDeskThemeIdx + 1) % deskThemes.length;
-      canvas.classList.add(deskThemes[currentDeskThemeIdx]);
     }
 
     // --- LIVE CAMERA SCANNER ---
@@ -2268,7 +2568,6 @@
 
       renderInspectAlbumBadges(card);
 
-      // 顯示地點與點擊開啟 Google Maps 連結
       const locBox = document.getElementById('inspectLocationBadgeBox');
       if (card.locationName || (typeof card.lat === 'number' && typeof card.lng === 'number')) {
         const query = (typeof card.lat === 'number' && typeof card.lng === 'number')
@@ -2530,7 +2829,6 @@
       const chosenAlbums = [...editingSelectedAlbums];
       const note = document.getElementById('cardNoteInput').value;
 
-      // 若輸入了預設場地名稱但尚未產生座標，自動配對座標
       if (locationName && typeof editingLat !== 'number') {
         const match = PRESET_VENUES.find(v => v.name.toLowerCase().includes(locationName.toLowerCase()));
         if (match) {
@@ -2582,7 +2880,7 @@
       renderCurrentTab();
     }
 
-    // --- BACKUP & RESTORE ---
+    // --- BACKUP & RESTORE (包含自訂桌布背景與縮放設定一併備份還原) ---
     function openBackupModal() {
       updateHeaderStats();
       document.getElementById('backupModal').classList.remove('hidden');
@@ -2596,6 +2894,7 @@
       const data = JSON.stringify({
         cards,
         albums,
+        deskBgConfig,
         exportedAt: new Date().toISOString()
       });
       const blob = new Blob([data], { type: 'application/json' });
@@ -2616,6 +2915,11 @@
           const parsed = JSON.parse(ev.target.result);
           const importedCards = Array.isArray(parsed) ? parsed : (parsed.cards || parsed.chekis || []);
           const importedAlbums = Array.isArray(parsed.albums) ? parsed.albums : [];
+
+          if (parsed.deskBgConfig && typeof parsed.deskBgConfig === 'object') {
+            deskBgConfig = { ...deskBgConfig, ...parsed.deskBgConfig };
+            await saveDeskBgConfigToDB();
+          }
 
           for (const alb of importedAlbums) {
             if (alb && !albums.includes(alb)) albums.push(alb);
