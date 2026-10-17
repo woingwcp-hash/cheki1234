@@ -34,8 +34,23 @@
     }
   </script>
   <style>
-    * { -webkit-tap-highlight-color: transparent; user-select: none; box-sizing: border-box; }
-    input, textarea { user-select: text; }
+    * {
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
+      -webkit-user-select: none;
+      box-sizing: border-box;
+    }
+    img {
+      -webkit-touch-callout: none !important;
+      -webkit-user-drag: none !important;
+      user-select: none !important;
+    }
+    input, textarea {
+      user-select: text;
+      -webkit-user-select: text;
+      -webkit-touch-callout: default;
+    }
     body { background-color: #FFF7F9; color: #272228; overflow-x: hidden; }
     .neo-box { border: 2.5px solid #272228; box-shadow: 3px 3px 0px #272228; }
     .neo-btn { border: 2px solid #272228; box-shadow: 2px 2px 0px #272228; transition: all 0.1s ease; }
@@ -74,6 +89,7 @@
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     #liveDetectBox { transition: all 0.18s ease-out; }
+    .crop-handle { touch-action: none; }
   </style>
 </head>
 <body class="min-h-screen pb-24 flex flex-col max-w-md mx-auto relative">
@@ -254,7 +270,7 @@
         <button onclick="flipSelectedDeskCard()" class="px-3 py-1 rounded-full bg-white neo-btn text-xs font-black flex items-center gap-1 shrink-0">🔄 翻面</button>
       </div>
 
-      <div id="deskCanvas" class="desk-dots-brown neo-box rounded-3xl relative w-full h-[68vh] overflow-hidden touch-none"></div>
+      <div id="deskCanvas" oncontextmenu="return false;" class="desk-dots-brown neo-box rounded-3xl relative w-full h-[68vh] overflow-hidden touch-none"></div>
     </section>
 
   </main>
@@ -280,7 +296,7 @@
   </nav>
 
   <!-- INSPECT MODAL (詳細檢視視窗 - 支援一鍵快速調動相簿) -->
-  <div id="inspectModal" class="hidden fixed inset-0 z-50 bg-black/90 flex flex-col justify-between p-4">
+  <div id="inspectModal" oncontextmenu="return false;" class="hidden fixed inset-0 z-50 bg-black/90 flex flex-col justify-between p-4">
     <div class="flex items-center justify-between bg-white px-3 py-2 rounded-2xl neo-box">
       <button onclick="closeInspectModal()" class="font-black text-sm px-2 py-1">✕ 關閉</button>
       <span id="inspectMemberTitle" class="font-black text-sm truncate max-w-[120px]"></span>
@@ -296,7 +312,7 @@
       <div onclick="toggleInspectFlip()" class="perspective-1000 cursor-pointer flex items-center justify-center w-full max-h-[65vh]">
         <div id="inspectFlipInner" class="transform-style-3d relative flex items-center justify-center">
           <div class="backface-hidden flex items-center justify-center">
-            <img id="inspectImg" src="" class="max-h-[62vh] max-w-[85vw] object-contain rounded-lg shadow-2xl">
+            <img id="inspectImg" src="" draggable="false" class="max-h-[62vh] max-w-[85vw] object-contain rounded-lg shadow-2xl pointer-events-none">
           </div>
           <div class="backface-hidden rotate-y-180 absolute inset-0 rounded-xl p-5 flex flex-col justify-between shadow-2xl border-2 border-white/40" id="inspectBackCard">
             <div class="text-xs font-bold opacity-80" id="inspectBackDate"></div>
@@ -379,11 +395,11 @@
         </div>
 
         <!-- 預覽與裁切/旋轉/畫質微調工具列 -->
-        <div id="previewContainer" class="hidden flex flex-col items-center bg-zinc-900 rounded-2xl p-2.5 space-y-2">
+        <div id="previewContainer" oncontextmenu="return false;" class="hidden flex flex-col items-center bg-zinc-900 rounded-2xl p-2.5 space-y-2">
           <div class="flex items-center justify-between w-full px-1">
             <span id="detectedSizeTag" class="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 border border-emerald-400/40">📏 已自動對齊 Cheki 邊緣</span>
           </div>
-          <img id="editPreviewImg" src="" class="max-h-52 object-contain rounded-lg">
+          <img id="editPreviewImg" src="" draggable="false" class="max-h-52 object-contain rounded-lg pointer-events-none">
           <div class="flex gap-2 w-full">
             <button type="button" onclick="openCropperModal(false)" class="flex-1 py-1.5 rounded-xl bg-emerald-300 neo-btn text-xs font-black">✂️ 微調邊框與尺寸</button>
             <button type="button" onclick="rotateUploadImage(90)" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-black">↻ 旋轉 90°</button>
@@ -447,7 +463,7 @@
   </div>
 
   <!-- LIVE CAMERA SCANNER MODAL (即時動態自動尋邊與尺寸識別相機) -->
-  <div id="liveCameraModal" class="hidden fixed inset-0 z-[80] bg-black flex flex-col justify-between p-4">
+  <div id="liveCameraModal" oncontextmenu="return false;" class="hidden fixed inset-0 z-[80] bg-black flex flex-col justify-between p-4">
     <div class="flex justify-between items-center text-white z-10 gap-1">
       <button onclick="closeLiveCameraScanner()" class="px-3 py-1.5 rounded-xl bg-zinc-800 border border-zinc-600 text-xs font-black shrink-0">✕ 關閉</button>
       <div id="liveDetectBadge" class="px-3 py-1 rounded-full bg-emerald-600/95 text-[11px] font-black truncate text-center">🔍 正在自動尋找 Cheki 邊邊...</div>
@@ -455,9 +471,9 @@
     </div>
 
     <div id="liveVideoContainer" class="relative flex-1 my-3 rounded-2xl overflow-hidden flex items-center justify-center bg-zinc-950">
-      <video id="cameraVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
+      <video id="cameraVideo" autoplay playsinline muted class="w-full h-full object-cover pointer-events-none"></video>
       
-      <!-- 參考虛線框 (當未偵測到明顯邊界時的預設參考) -->
+      <!-- 參考虛線框 -->
       <div class="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
         <div class="w-60 aspect-[54/86] border border-dashed border-white/40 rounded-xl relative">
           <span class="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-white/80 whitespace-nowrap">將 Cheki 放在深色背景上可自動吸附邊緣</span>
@@ -469,7 +485,6 @@
         <div class="absolute -top-6 left-0 bg-emerald-500 text-zinc-950 text-[10px] font-black px-2 py-0.5 rounded-md whitespace-nowrap shadow" id="liveDetectSizeLabel">
           🎯 標準 Mini (86×54mm)
         </div>
-        <!-- 四角準星裝飾 -->
         <div class="absolute -top-1 -left-1 w-3 h-3 border-t-4 border-l-4 border-white"></div>
         <div class="absolute -top-1 -right-1 w-3 h-3 border-t-4 border-r-4 border-white"></div>
         <div class="absolute -bottom-1 -left-1 w-3 h-3 border-b-4 border-l-4 border-white"></div>
@@ -490,37 +505,41 @@
     </div>
   </div>
 
-  <!-- FREE CROPPER MODAL (含 AI 自動抓邊 + 標準拍立得尺寸鎖定工具列) -->
-  <div id="cropperModal" class="hidden fixed inset-0 z-[90] bg-black/95 flex flex-col justify-between p-3.5 touch-none">
-    <div class="flex justify-between items-center text-white">
-      <button onclick="closeCropperModal()" class="px-3 py-1.5 rounded-xl bg-zinc-800 text-xs font-black">✕ 取消</button>
+  <!-- FREE CROPPER MODAL (已封鎖長按彈窗 + 加大觸控區 + 支援框體平移) -->
+  <div id="cropperModal" oncontextmenu="return false;" class="hidden fixed inset-0 z-[90] bg-black/95 flex flex-col justify-between p-3.5 touch-none select-none">
+    <div class="flex justify-between items-center text-white z-20">
+      <button type="button" onclick="closeCropperModal()" class="px-3 py-1.5 rounded-xl bg-zinc-800 text-xs font-black">✕ 取消</button>
       <div class="text-center">
         <span class="text-xs font-black text-emerald-300 block">✂️ 自動尋邊與尺寸裁切</span>
         <span id="cropSizeIndicator" class="text-[10px] text-white/70 font-bold">偵測尺寸：計算中...</span>
       </div>
-      <button onclick="applyFreeCrop()" class="px-4 py-1.5 rounded-xl bg-emerald-400 text-zinc-900 text-xs font-black">✓ 完成裁切</button>
+      <button type="button" onclick="applyFreeCrop()" class="px-4 py-1.5 rounded-xl bg-emerald-400 text-zinc-900 text-xs font-black">✓ 完成裁切</button>
     </div>
 
-    <div id="cropWorkspace" class="relative flex-1 my-2 flex items-center justify-center overflow-hidden select-none">
-      <div id="cropImgWrapper" class="relative inline-block">
-        <img id="cropTargetImg" src="" class="max-h-[62vh] max-w-[88vw] object-contain block pointer-events-none select-none">
-        <div id="cropBox" class="absolute border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]">
-          <!-- 四角控制點 -->
-          <div data-handle="nw" class="crop-handle absolute -top-3.5 -left-3.5 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full shadow"></div>
-          <div data-handle="ne" class="crop-handle absolute -top-3.5 -right-3.5 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full shadow"></div>
-          <div data-handle="sw" class="crop-handle absolute -bottom-3.5 -left-3.5 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full shadow"></div>
-          <div data-handle="se" class="crop-handle absolute -bottom-3.5 -right-3.5 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full shadow"></div>
-          <!-- 四邊中點控制條 (方便單獨微調上下左右邊線) -->
-          <div data-handle="n" class="crop-handle absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-3 bg-emerald-300 border border-zinc-900 rounded-full"></div>
-          <div data-handle="s" class="crop-handle absolute -bottom-2 left-1/2 -translate-x-1/2 w-8 h-3 bg-emerald-300 border border-zinc-900 rounded-full"></div>
-          <div data-handle="w" class="crop-handle absolute top-1/2 -translate-y-1/2 -left-2 w-3 h-8 bg-emerald-300 border border-zinc-900 rounded-full"></div>
-          <div data-handle="e" class="crop-handle absolute top-1/2 -translate-y-1/2 -right-2 w-3 h-8 bg-emerald-300 border border-zinc-900 rounded-full"></div>
+    <div id="cropWorkspace" oncontextmenu="return false;" class="relative flex-1 my-2 flex items-center justify-center overflow-hidden select-none touch-none">
+      <div id="cropImgWrapper" oncontextmenu="return false;" class="relative inline-block select-none touch-none">
+        <!-- 圖片加上透明防觸控遮罩，徹底杜絕手機瀏覽器長按彈出 2Q==.bin 選單 -->
+        <img id="cropTargetImg" src="" draggable="false" oncontextmenu="return false;" class="max-h-[62vh] max-w-[88vw] object-contain block pointer-events-none select-none">
+        <div class="absolute inset-0 z-10 bg-transparent" oncontextmenu="return false;"></div>
+
+        <!-- 裁切框 (支援直接按住框內平移 + 拉動八個控制點) -->
+        <div id="cropBox" data-handle="move" oncontextmenu="return false;" class="crop-handle absolute z-20 border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] cursor-move touch-none">
+          <!-- 四角控制點 (加大觸控感應區 w-9 h-9) -->
+          <div data-handle="nw" class="crop-handle absolute -top-4 -left-4 w-9 h-9 flex items-center justify-center"><div class="w-6 h-6 bg-white border-2 border-cheki-accent rounded-full shadow-md"></div></div>
+          <div data-handle="ne" class="crop-handle absolute -top-4 -right-4 w-9 h-9 flex items-center justify-center"><div class="w-6 h-6 bg-white border-2 border-cheki-accent rounded-full shadow-md"></div></div>
+          <div data-handle="sw" class="crop-handle absolute -bottom-4 -left-4 w-9 h-9 flex items-center justify-center"><div class="w-6 h-6 bg-white border-2 border-cheki-accent rounded-full shadow-md"></div></div>
+          <div data-handle="se" class="crop-handle absolute -bottom-4 -right-4 w-9 h-9 flex items-center justify-center"><div class="w-6 h-6 bg-white border-2 border-cheki-accent rounded-full shadow-md"></div></div>
+          <!-- 四邊中點控制條 (加大觸控感應區) -->
+          <div data-handle="n" class="crop-handle absolute -top-4 left-1/2 -translate-x-1/2 w-12 h-8 flex items-center justify-center"><div class="w-8 h-3 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
+          <div data-handle="s" class="crop-handle absolute -bottom-4 left-1/2 -translate-x-1/2 w-12 h-8 flex items-center justify-center"><div class="w-8 h-3 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
+          <div data-handle="w" class="crop-handle absolute top-1/2 -translate-y-1/2 -left-4 w-8 h-12 flex items-center justify-center"><div class="w-3 h-8 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
+          <div data-handle="e" class="crop-handle absolute top-1/2 -translate-y-1/2 -right-4 w-8 h-12 flex items-center justify-center"><div class="w-3 h-8 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
         </div>
       </div>
     </div>
 
     <!-- 自動尋邊與標準拍立得尺寸快捷按鈕列 -->
-    <div class="space-y-2">
+    <div class="space-y-2 z-20">
       <div class="grid grid-cols-4 gap-1.5">
         <button type="button" onclick="runAutoDetectOnCropperImage()" class="py-2 px-1 rounded-xl bg-emerald-400 text-zinc-950 font-black text-[11px] flex flex-col items-center justify-center">
           <span>🤖 自動尋邊</span>
@@ -539,7 +558,7 @@
           <span class="text-[9px] opacity-75">100% 範圍</span>
         </button>
       </div>
-      <p class="text-center text-white/60 text-[11px] font-bold">💡 系統已自動嘗試吸附 Cheki 四邊，你亦可拉動圓點微調</p>
+      <p class="text-center text-white/60 text-[11px] font-bold">💡 拉動圓點微調四邊，或按住框中央平移位置</p>
     </div>
   </div>
 
@@ -564,6 +583,14 @@
   </div>
 
   <script>
+    // --- 全局攔截圖片長按彈出系統選單 (防止 Android/iOS 長按彈出下載圖片選單) ---
+    window.addEventListener('contextmenu', (e) => {
+      if (e.target.tagName === 'IMG' || e.target.closest('#cropperModal') || e.target.closest('#deskCanvas') || e.target.closest('#inspectModal')) {
+        e.preventDefault();
+        return false;
+      }
+    }, { passive: false });
+
     // --- IndexedDB Storage Engine ---
     const DB_NAME = 'ChekiPocketDB';
     const DB_VERSION = 1;
@@ -594,7 +621,7 @@
     let cameraStream = null;
     let useFrontCamera = false;
     let liveDetectInterval = null;
-    let lastLiveDetectedBounds = null; // { left, top, right, bottom, sizeName }
+    let lastLiveDetectedBounds = null;
 
     // Cropper state
     let cropRect = { left: 8, top: 8, right: 92, bottom: 92 };
@@ -619,16 +646,12 @@
 
     // =========================================================================
     // 🤖 AI 智慧 Cheki 邊緣與尺寸自動偵測核心演算法
-    // 結合「高亮度白框尋找」與「雙向梯度邊緣投影 (Sobel-like Edge Projection)」
     // =========================================================================
     function classifyChekiDimension(widthPx, heightPx) {
       if (!widthPx || !heightPx) return '自訂尺寸';
       const ratio = widthPx / heightPx;
-      // 標準 instax mini: 54 x 86 mm (比例約 0.628)
       if (ratio >= 0.52 && ratio <= 0.75) return '標準直向 Cheki (86×54mm)';
-      // 橫向 instax mini: 86 x 54 mm (比例約 1.59)
       if (ratio >= 1.32 && ratio <= 1.85) return '標準橫向 Cheki (54×86mm)';
-      // Square 方形: 1:1 (約 0.85 ~ 1.15)
       if (ratio > 0.75 && ratio < 1.32) return '方形 Square Cheki';
       return '寬幅 / 自訂尺寸 Cheki';
     }
@@ -643,11 +666,9 @@
       ctx.drawImage(sourceEl, 0, 0, procW, procH);
       const imgData = ctx.getImageData(0, 0, procW, procH).data;
 
-      // 計算全圖灰階亮度與飽和度（拍立得邊框通常高亮且低飽和度）
       const lum = new Float32Array(procW * procH);
       const whiteScore = new Float32Array(procW * procH);
 
-      // 取四周邊緣 6% 像素作為背景參考值
       let bgLumSum = 0, bgCount = 0;
       for (let y = 0; y < procH; y++) {
         for (let x = 0; x < procW; x++) {
@@ -658,7 +679,6 @@
           const sat = maxC === 0 ? 0 : (maxC - minC) / maxC;
           const idx = y * procW + x;
           lum[idx] = l;
-          // 白色相紙特徵：高亮度 + 低彩度
           whiteScore[idx] = l * (1 - sat * 0.65);
 
           if (x < procW * 0.06 || x > procW * 0.94 || y < procH * 0.06 || y > procH * 0.94) {
@@ -669,10 +689,8 @@
       }
 
       const avgBgScore = bgCount > 0 ? bgLumSum / bgCount : 90;
-      // 動態門檻：比背景亮一定程度，或本身屬於高亮白框
       const threshold = Math.min(215, Math.max(135, avgBgScore + 32));
 
-      // 方法 A：尋找白色拍立得外框的密集連通區域 (Row & Col Density)
       const rowHits = new Uint16Array(procH);
       const colHits = new Uint16Array(procW);
       const marginX = Math.floor(procW * 0.03);
@@ -704,7 +722,6 @@
         if (colHits[x] >= minColPixels) { right = x; break; }
       }
 
-      // 方法 B：若背景也是淺色，改用梯度邊緣峰值搜尋 (Gradient Edge Projection)
       const boxW = right - left;
       const boxH = bottom - top;
       let valid = (left >= 0 && top >= 0 && boxW > procW * 0.22 && boxH > procH * 0.22 && (boxW < procW * 0.94 || boxH < procH * 0.94));
@@ -721,7 +738,6 @@
             vertGrad[x] += gx;
           }
         }
-        // 在上半、下半、左半、右半尋找最強邊緣轉折線
         let maxTopG = 0, maxBotG = 0, maxLeftG = 0, maxRightG = 0;
         for (let y = marginY; y < Math.floor(procH * 0.42); y++) {
           if (horizGrad[y] > maxTopG) { maxTopG = horizGrad[y]; top = y; }
@@ -746,7 +762,6 @@
         };
       }
 
-      // 加上 1.2% 安全邊距，確保完整保留拍立得原本白邊
       const pad = 1.2;
       const pctLeft = Math.max(1, Math.min(85, (left / procW) * 100 - pad));
       const pctTop = Math.max(1, Math.min(85, (top / procH) * 100 - pad));
@@ -966,7 +981,7 @@
         div.innerHTML = `
           <div onclick="openAlbumInBinder('${safeAlb}')" class="cursor-pointer">
             <div class="h-32 rounded-xl bg-pink-50 flex items-center justify-center overflow-hidden mb-2 relative">
-              ${cover ? `<img src="${cover}" class="max-h-full max-w-full object-contain">` : `<span class="text-3xl">📁</span>`}
+              ${cover ? `<img src="${cover}" draggable="false" class="max-h-full max-w-full object-contain pointer-events-none">` : `<span class="text-3xl">📁</span>`}
               <span class="absolute bottom-1.5 right-1.5 text-[10px] font-black px-2 py-0.5 rounded-full bg-white/90 border border-cheki-dark">${albCards.length} 張</span>
             </div>
             <div class="flex justify-between items-center gap-1 px-0.5">
@@ -1093,7 +1108,7 @@
           };
           item.innerHTML = `
             <div class="w-full aspect-[3/4] flex items-center justify-center overflow-hidden rounded-lg bg-zinc-50">
-              <img src="${c.image}" class="max-h-full max-w-full object-contain">
+              <img src="${c.image}" draggable="false" class="max-h-full max-w-full object-contain pointer-events-none">
             </div>
             <p class="font-black text-[11px] truncate w-full text-center mt-1">${c.member || '未命名'}</p>
             <div class="absolute top-2 right-2 w-6 h-6 rounded-full border-2 border-cheki-dark flex items-center justify-center text-xs font-black ${isSelected ? 'bg-cheki-accent text-white' : 'bg-white text-transparent'}">
@@ -1266,7 +1281,7 @@
         item.onclick = () => openInspectModal(card.id);
         item.innerHTML = `
           <div class="w-full aspect-[3/4] flex items-center justify-center p-1 relative">
-            <img src="${card.image}" class="max-h-full max-w-full object-contain rounded-lg shadow-md group-active:scale-95 transition">
+            <img src="${card.image}" draggable="false" class="max-h-full max-w-full object-contain rounded-lg shadow-md group-active:scale-95 transition pointer-events-none">
             ${card.fav ? '<span class="absolute top-2 right-2 text-base drop-shadow">⭐</span>' : ''}
           </div>
           <div class="mt-1 text-center">
@@ -1329,7 +1344,7 @@
         row.className = 'neo-box bg-white rounded-2xl p-2 flex items-center gap-3 cursor-pointer';
         row.onclick = () => openInspectModal(c.id);
         row.innerHTML = `
-          <img src="${c.image}" class="w-12 h-16 object-contain rounded">
+          <img src="${c.image}" draggable="false" class="w-12 h-16 object-contain rounded pointer-events-none">
           <div class="flex-1 min-w-0">
             <p class="font-black text-sm truncate">${c.member}</p>
             <p class="text-xs text-zinc-500 font-bold">${c.date || ''}</p>
@@ -1357,7 +1372,7 @@
         topOshiCard.innerHTML = `
           <div onclick="filterByMemberInBinder('${top.member.replace(/'/g, "\\'")}')" class="flex items-center gap-3.5 cursor-pointer">
             <div class="w-20 h-24 rounded-2xl bg-white neo-btn flex items-center justify-center overflow-hidden shrink-0 p-1">
-              ${top.cover ? `<img src="${top.cover}" class="max-h-full max-w-full object-contain rounded">` : '👑'}
+              ${top.cover ? `<img src="${top.cover}" draggable="false" class="max-h-full max-w-full object-contain rounded pointer-events-none">` : '👑'}
             </div>
             <div class="flex-1 min-w-0 space-y-1">
               <div class="inline-block px-2.5 py-0.5 rounded-full bg-blue-500 text-white text-[10px] font-black">💙 最愛主推 No.1</div>
@@ -1381,7 +1396,7 @@
           return `
             <div onclick="filterByMemberInBinder('${item.member.replace(/'/g, "\\'")}')" class="neo-btn bg-pink-50/60 rounded-2xl p-2.5 flex items-center gap-3 cursor-pointer">
               <div class="w-12 h-14 rounded-xl bg-white border border-pink-200 flex items-center justify-center overflow-hidden shrink-0">
-                ${item.cover ? `<img src="${item.cover}" class="max-h-full max-w-full object-contain">` : '📸'}
+                ${item.cover ? `<img src="${item.cover}" draggable="false" class="max-h-full max-w-full object-contain pointer-events-none">` : '📸'}
               </div>
               <div class="flex-1 min-w-0 space-y-1">
                 <div class="flex justify-between items-center gap-1">
@@ -1637,7 +1652,7 @@
       canvas.classList.add(deskThemes[currentDeskThemeIdx]);
     }
 
-    // --- LIVE CAMERA SCANNER (含即時自動尋邊與尺寸識別迴圈) ---
+    // --- LIVE CAMERA SCANNER ---
     async function openLiveCameraScanner() {
       const modal = document.getElementById('liveCameraModal');
       modal.classList.remove('hidden');
@@ -1730,11 +1745,10 @@
       const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
       closeLiveCameraScanner();
 
-      // 將拍下的原圖載入並自動套用剛才偵測到的 Cheki 邊框
       compressAndSetImage(dataUrl, true, savedBounds, autoSnap);
     }
 
-    // --- FREE CROPPER & AUTO EDGE DETECTION ---
+    // --- FREE CROPPER & AUTO EDGE DETECTION (已徹底封鎖長按彈出圖片選單) ---
     function openCropperModal(autoRunDetect = false, presetBounds = null) {
       if (!rawUploadDataUrl && !currentUploadDataUrl) return;
       const modal = document.getElementById('cropperModal');
@@ -1823,33 +1837,66 @@
       }
     }
 
+    // 強化版裁切觸控控制器：攔截原生長按、支援四角四邊縮放與整框平移
     (function initCropHandles() {
       let activeHandle = null;
+      let startMouseX = 0, startMouseY = 0;
+      let startCropRect = null;
+
+      const workspace = document.getElementById('cropWorkspace');
+      if (workspace) {
+        workspace.addEventListener('touchstart', (e) => {
+          if (e.target.closest('.crop-handle')) {
+            e.preventDefault();
+          }
+        }, { passive: false });
+      }
+
       window.addEventListener('pointerdown', (e) => {
-        const handle = e.target.closest('.crop-handle');
-        if (!handle) return;
+        const handleEl = e.target.closest('.crop-handle');
+        if (!handleEl) return;
         e.preventDefault();
-        activeHandle = handle.dataset.handle;
-      });
+        e.stopPropagation();
+        activeHandle = handleEl.dataset.handle;
+        startMouseX = e.clientX;
+        startMouseY = e.clientY;
+        startCropRect = { ...cropRect };
+        try { handleEl.setPointerCapture(e.pointerId); } catch (_) {}
+      }, { passive: false });
 
       window.addEventListener('pointermove', (e) => {
         if (!activeHandle) return;
+        e.preventDefault();
         const wrapper = document.getElementById('cropImgWrapper');
         const rect = wrapper.getBoundingClientRect();
         if (!rect.width || !rect.height) return;
 
-        const px = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-        const py = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+        if (activeHandle === 'move') {
+          const dxPct = ((e.clientX - startMouseX) / rect.width) * 100;
+          const dyPct = ((e.clientY - startMouseY) / rect.height) * 100;
+          const w = startCropRect.right - startCropRect.left;
+          const h = startCropRect.bottom - startCropRect.top;
+          let newLeft = Math.max(0, Math.min(100 - w, startCropRect.left + dxPct));
+          let newTop = Math.max(0, Math.min(100 - h, startCropRect.top + dyPct));
+          cropRect.left = newLeft;
+          cropRect.right = newLeft + w;
+          cropRect.top = newTop;
+          cropRect.bottom = newTop + h;
+        } else {
+          const px = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+          const py = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
 
-        if (activeHandle.includes('w')) cropRect.left = Math.min(px, cropRect.right - 12);
-        if (activeHandle.includes('e')) cropRect.right = Math.max(px, cropRect.left + 12);
-        if (activeHandle.includes('n')) cropRect.top = Math.min(py, cropRect.bottom - 12);
-        if (activeHandle.includes('s')) cropRect.bottom = Math.max(py, cropRect.top + 12);
+          if (activeHandle.includes('w')) cropRect.left = Math.min(px, cropRect.right - 12);
+          if (activeHandle.includes('e')) cropRect.right = Math.max(px, cropRect.left + 12);
+          if (activeHandle.includes('n')) cropRect.top = Math.min(py, cropRect.bottom - 12);
+          if (activeHandle.includes('s')) cropRect.bottom = Math.max(py, cropRect.top + 12);
+        }
 
         updateCropBoxUI();
-      });
+      }, { passive: false });
 
       window.addEventListener('pointerup', () => { activeHandle = null; });
+      window.addEventListener('pointercancel', () => { activeHandle = null; });
     })();
 
     function applyFreeCrop() {
@@ -2087,7 +2134,6 @@
 
         const fullCompressed = canvas.toDataURL('image/jpeg', 0.92);
 
-        // 如果從即時掃描相機拍攝且已自動鎖定邊框，直接自動裁切並顯示尺寸！
         if (autoApplyLiveCrop && presetBounds && presetBounds.detected) {
           const sx = (presetBounds.left / 100) * w;
           const sy = (presetBounds.top / 100) * h;
