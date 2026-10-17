@@ -108,7 +108,7 @@
   <!-- Main Content Containers -->
   <main class="flex-1 p-3">
 
-    <!-- TAB 1: ALBUMS (相簿 + 偶像統計速覽 + 備份) -->
+    <!-- TAB 1: ALBUMS (相簿 + 自由加入/調動相片 + 偶像統計速覽 + 備份) -->
     <section id="tab-albums" class="hidden space-y-4">
       <!-- 偶像 Cheki 數量快速統計卡 -->
       <div class="neo-box bg-white rounded-2xl p-3.5 space-y-2.5">
@@ -120,8 +120,11 @@
       </div>
 
       <div class="flex justify-between items-center pt-1">
-        <h2 class="font-black text-lg">📚 我的相簿分類</h2>
-        <button onclick="createNewAlbum()" class="px-3 py-1.5 rounded-xl bg-amber-200 neo-btn text-xs font-black">+ 新增相簿</button>
+        <div>
+          <h2 class="font-black text-lg">📚 我的相簿分類</h2>
+          <p class="text-[11px] text-zinc-500 font-bold">點「➕ 加入/調動」可隨意勾選現有 Cheki 入相簿</p>
+        </div>
+        <button onclick="createNewAlbum()" class="px-3 py-1.5 rounded-xl bg-amber-200 neo-btn text-xs font-black shrink-0">+ 新增相簿</button>
       </div>
       <div id="albumsGrid" class="grid grid-cols-2 gap-3"></div>
 
@@ -148,7 +151,7 @@
       </div>
     </section>
 
-    <!-- TAB 2: BINDER (卡冊 - 左側分類獨立滾動，右側最愛固定不重疊) -->
+    <!-- TAB 2: BINDER (卡冊 - 支援在當前相簿直接勾選加入現有 Cheki) -->
     <section id="tab-binder" class="hidden space-y-2.5">
       <!-- 第一列：相簿篩選 + 最愛固定右側 -->
       <div class="flex items-center gap-2 w-full">
@@ -156,6 +159,18 @@
         <div class="h-5 w-[2px] bg-zinc-300 shrink-0"></div>
         <button onclick="toggleFavFilter()" id="favFilterBtn" class="px-3 py-1.5 rounded-full bg-white neo-btn text-xs font-black shrink-0">★ 最愛</button>
       </div>
+
+      <!-- 當選中特定相簿時，顯示「隨意加入/調動現有 Cheki」專屬工具列 -->
+      <div id="currentAlbumActionBar" class="hidden neo-box bg-amber-100/90 rounded-2xl px-3 py-2 flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <p id="currentAlbumTitleText" class="font-black text-xs truncate">📁 相簿管理</p>
+          <p class="text-[10px] text-zinc-600 font-bold">可從現有收藏中自由勾選相片加入或移出此相簿</p>
+        </div>
+        <button onclick="openBatchAlbumPicker(selectedAlbumFilter)" class="px-3 py-1.5 rounded-xl bg-cheki-accent text-white neo-btn text-xs font-black shrink-0">
+          ➕ 加入/調動 Cheki
+        </button>
+      </div>
+
       <!-- 第二列：依偶像名稱快速篩選 (直接顯示每位偶像 Cheki 張數) -->
       <div id="memberFilterPills" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1"></div>
 
@@ -264,23 +279,24 @@
     </button>
   </nav>
 
-  <!-- INSPECT MODAL (詳細檢視視窗) -->
+  <!-- INSPECT MODAL (詳細檢視視窗 - 支援一鍵快速調動相簿) -->
   <div id="inspectModal" class="hidden fixed inset-0 z-50 bg-black/90 flex flex-col justify-between p-4">
     <div class="flex items-center justify-between bg-white px-3 py-2 rounded-2xl neo-box">
       <button onclick="closeInspectModal()" class="font-black text-sm px-2 py-1">✕ 關閉</button>
-      <span id="inspectMemberTitle" class="font-black text-sm truncate max-w-[140px]"></span>
+      <span id="inspectMemberTitle" class="font-black text-sm truncate max-w-[120px]"></span>
       <div class="flex items-center gap-1.5">
-        <button onclick="openEditFromInspect()" class="w-9 h-9 rounded-xl bg-amber-100 neo-btn flex items-center justify-center">✏️</button>
-        <button onclick="toggleInspectFav()" id="inspectFavBtn" class="w-9 h-9 rounded-xl bg-yellow-100 neo-btn flex items-center justify-center">⭐</button>
-        <button onclick="deleteInspectCard()" class="w-9 h-9 rounded-xl bg-rose-100 neo-btn flex items-center justify-center">🗑️</button>
+        <button onclick="openQuickMoveAlbumsModal()" class="px-2.5 h-9 rounded-xl bg-blue-100 neo-btn flex items-center justify-center text-xs font-black" title="調動所屬相簿">📁 調動</button>
+        <button onclick="openEditFromInspect()" class="w-9 h-9 rounded-xl bg-amber-100 neo-btn flex items-center justify-center" title="編輯">✏️</button>
+        <button onclick="toggleInspectFav()" id="inspectFavBtn" class="w-9 h-9 rounded-xl bg-yellow-100 neo-btn flex items-center justify-center" title="最愛">⭐</button>
+        <button onclick="deleteInspectCard()" class="w-9 h-9 rounded-xl bg-rose-100 neo-btn flex items-center justify-center" title="刪除">🗑️</button>
       </div>
     </div>
 
-    <div class="flex-1 flex flex-col items-center justify-center my-4 overflow-hidden">
-      <div onclick="toggleInspectFlip()" class="perspective-1000 cursor-pointer flex items-center justify-center w-full max-h-[70vh]">
+    <div class="flex-1 flex flex-col items-center justify-center my-3 overflow-hidden">
+      <div onclick="toggleInspectFlip()" class="perspective-1000 cursor-pointer flex items-center justify-center w-full max-h-[65vh]">
         <div id="inspectFlipInner" class="transform-style-3d relative flex items-center justify-center">
           <div class="backface-hidden flex items-center justify-center">
-            <img id="inspectImg" src="" class="max-h-[65vh] max-w-[85vw] object-contain rounded-lg shadow-2xl">
+            <img id="inspectImg" src="" class="max-h-[62vh] max-w-[85vw] object-contain rounded-lg shadow-2xl">
           </div>
           <div class="backface-hidden rotate-y-180 absolute inset-0 rounded-xl p-5 flex flex-col justify-between shadow-2xl border-2 border-white/40" id="inspectBackCard">
             <div class="text-xs font-bold opacity-80" id="inspectBackDate"></div>
@@ -289,10 +305,54 @@
           </div>
         </div>
       </div>
-      <p class="text-white/70 text-xs font-bold mt-3">👆 點擊相片可 3D 翻面查看背面筆記</p>
+      <div id="inspectAlbumsBadges" class="flex flex-wrap justify-center gap-1.5 mt-2.5"></div>
+      <p class="text-white/70 text-xs font-bold mt-1.5">👆 點擊相片可 3D 翻面 ｜ 點上方「📁 調動」可隨意換相簿</p>
     </div>
 
     <button onclick="exportInspectImage()" class="w-full py-3 rounded-2xl bg-cheki-accent text-white font-black text-sm neo-box">📥 匯出相片</button>
+  </div>
+
+  <!-- QUICK MOVE / ASSIGN ALBUMS FOR SINGLE CARD MODAL (單張 Cheki 快速調動相簿視窗) -->
+  <div id="quickMoveAlbumsModal" class="hidden fixed inset-0 z-[75] bg-black/75 flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-sm rounded-3xl neo-box p-4 space-y-3">
+      <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+        <h3 class="font-black text-base">📁 自由調動所屬相簿</h3>
+        <button onclick="closeQuickMoveAlbumsModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black">✕</button>
+      </div>
+      <p class="text-xs text-zinc-600 font-bold">可同時勾選多個相簿，或隨時移出、換到其他相簿：</p>
+      <div id="quickMoveAlbumCheckboxes" class="space-y-2 max-h-60 overflow-y-auto py-1"></div>
+      <div class="flex gap-2 pt-1">
+        <button onclick="promptAddNewAlbumInModal('quick')" class="flex-1 py-2.5 rounded-xl bg-amber-200 neo-btn font-black text-xs">+ 新建相簿</button>
+        <button onclick="saveQuickMoveAlbums()" class="flex-1 py-2.5 rounded-xl bg-cheki-accent text-white neo-btn font-black text-xs">✓ 確認儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BATCH PICK CHEKIS INTO ALBUM MODAL (相簿內隨意勾選加入/移除現有 Cheki 視窗) -->
+  <div id="batchAlbumPickerModal" class="hidden fixed inset-0 z-[75] bg-black/80 flex items-center justify-center p-3">
+    <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-4 flex flex-col max-h-[90vh]">
+      <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+        <div>
+          <h3 id="batchAlbumModalTitle" class="font-black text-base">➕ 隨意加入 Cheki 到相簿</h3>
+          <p class="text-[11px] text-zinc-500 font-bold">點擊相片即可勾選加入或取消移出此相簿</p>
+        </div>
+        <button onclick="closeBatchAlbumPicker()" class="w-8 h-8 rounded-full bg-white neo-btn font-black">✕</button>
+      </div>
+
+      <!-- 篩選與全選工具列 -->
+      <div class="flex items-center justify-between gap-2 my-2.5">
+        <input id="batchPickerSearch" type="text" placeholder="搜尋成員或筆記..." oninput="renderBatchPickerGrid()" class="flex-1 px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-xs font-bold bg-white">
+        <button onclick="batchSelectAllVisible(true)" class="px-2.5 py-1.5 rounded-xl bg-blue-100 neo-btn text-[11px] font-black shrink-0">全選</button>
+      </div>
+
+      <!-- 所有現有 Cheki 網格清單 -->
+      <div id="batchPickerGrid" class="flex-1 overflow-y-auto grid grid-cols-3 gap-2.5 py-2 pr-1"></div>
+
+      <div class="pt-3 border-t-2 border-cheki-dark mt-2 flex items-center justify-between gap-2">
+        <span id="batchSelectedCountText" class="text-xs font-black text-cheki-accent">已選取 0 張</span>
+        <button onclick="saveBatchAlbumSelection()" class="px-6 py-2.5 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-box">💾 儲存相簿變更</button>
+      </div>
+    </div>
   </div>
 
   <!-- ADD / EDIT MODAL -->
@@ -349,15 +409,18 @@
           <div id="quickMemberSuggestions" class="flex gap-1.5 overflow-x-auto no-scrollbar pt-1.5"></div>
         </div>
 
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="text-xs font-black block mb-1">拍攝日期</label>
-            <input id="cardDateInput" type="date" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold text-xs">
+        <div>
+          <label class="text-xs font-black block mb-1">拍攝日期</label>
+          <input id="cardDateInput" type="date" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold text-xs bg-white">
+        </div>
+
+        <!-- 升級為可同時勾選多個相簿的標籤選擇器 -->
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-xs font-black">所屬相簿（可自由點選多個相簿）</label>
+            <button type="button" onclick="promptAddNewAlbumInModal('edit')" class="text-[11px] font-black text-cheki-accent underline">+ 新增相簿</button>
           </div>
-          <div>
-            <label class="text-xs font-black block mb-1">所屬相簿</label>
-            <select id="cardAlbumInput" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold text-xs bg-white"></select>
-          </div>
+          <div id="editAlbumPillsContainer" class="flex flex-wrap gap-1.5 p-2 rounded-xl border-2 border-cheki-dark bg-white"></div>
         </div>
 
         <div>
@@ -382,7 +445,7 @@
     </div>
   </div>
 
-  <!-- LIVE CAMERA SCANNER MODAL (App 內建防反光引導掃描相機) -->
+  <!-- LIVE CAMERA SCANNER MODAL -->
   <div id="liveCameraModal" class="hidden fixed inset-0 z-[80] bg-black flex flex-col justify-between p-4">
     <div class="flex justify-between items-center text-white z-10">
       <button onclick="closeLiveCameraScanner()" class="px-3 py-1.5 rounded-xl bg-zinc-800 border border-zinc-600 text-xs font-black">✕ 關閉相機</button>
@@ -406,7 +469,7 @@
     </div>
   </div>
 
-  <!-- FREE CROPPER MODAL (自由拉動四邊裁切器) -->
+  <!-- FREE CROPPER MODAL -->
   <div id="cropperModal" class="hidden fixed inset-0 z-[90] bg-black/95 flex flex-col justify-between p-4 touch-none">
     <div class="flex justify-between items-center text-white">
       <button onclick="closeCropperModal()" class="px-3 py-1.5 rounded-xl bg-zinc-800 text-xs font-black">✕ 取消</button>
@@ -461,6 +524,7 @@
     let selectedMemberFilter = 'ALL';
     let favOnlyFilter = false;
     let editingCardId = null;
+    let editingSelectedAlbums = new Set();
     let rawUploadDataUrl = '';
     let currentUploadDataUrl = '';
     let selectedBackColor = '#60A5FA';
@@ -471,12 +535,38 @@
     let calYear = new Date().getFullYear();
     let calMonth = new Date().getMonth();
 
+    // Batch Album Picker state
+    let batchTargetAlbum = '';
+    let batchSelectedCardIds = new Set();
+
     // Live Camera state
     let cameraStream = null;
     let useFrontCamera = false;
 
     // Cropper state
     let cropRect = { left: 10, top: 10, right: 90, bottom: 90 };
+
+    // --- 多相簿兼容輔助函數 (確保舊版單一 album 與新版 albums 陣列完全相容) ---
+    function getCardAlbums(card) {
+      if (Array.isArray(card.albums) && card.albums.length > 0) {
+        return card.albums;
+      }
+      if (card.album && typeof card.album === 'string') {
+        return [card.album];
+      }
+      return [albums[0] || '預設相簿'];
+    }
+
+    function cardBelongsToAlbum(card, albumName) {
+      if (albumName === 'ALL') return true;
+      return getCardAlbums(card).includes(albumName);
+    }
+
+    function setCardAlbums(card, albumArray) {
+      const clean = [...new Set((albumArray || []).filter(Boolean))];
+      card.albums = clean.length > 0 ? clean : [albums[0] || '預設相簿'];
+      card.album = card.albums[0]; // 同步保留舊欄位以確保 100% 向下相容
+    }
 
     function initDB() {
       return new Promise((resolve, reject) => {
@@ -504,6 +594,12 @@
           if (albumReq.result && Array.isArray(albumReq.result.value) && albumReq.result.value.length > 0) {
             albums = albumReq.result.value;
           }
+          // 自動將卡片中存在的相簿同步進相簿清單
+          cards.forEach(c => {
+            getCardAlbums(c).forEach(a => {
+              if (a && !albums.includes(a)) albums.push(a);
+            });
+          });
           updateHeaderStats();
           renderCurrentTab();
           resolve();
@@ -535,7 +631,7 @@
       });
     }
 
-    // --- 計算偶像 Cheki 統計數據核心函數 (含張數、最愛數、初見/最近日期、代表圖) ---
+    // --- 計算偶像 Cheki 統計數據核心函數 ---
     function getIdolCounts() {
       const map = {};
       cards.forEach(c => {
@@ -626,20 +722,20 @@
     function getFilteredCards() {
       const q = (document.getElementById('searchInput')?.value || '').trim().toLowerCase();
       return cards.filter(c => {
-        if (selectedAlbumFilter !== 'ALL' && c.album !== selectedAlbumFilter) return false;
+        if (!cardBelongsToAlbum(c, selectedAlbumFilter)) return false;
         if (selectedMemberFilter !== 'ALL' && (c.member || '未命名').trim() !== selectedMemberFilter) return false;
         if (favOnlyFilter && !c.fav) return false;
         if (q) {
           const matchMember = (c.member || '').toLowerCase().includes(q);
           const matchNote = (c.note || '').toLowerCase().includes(q);
-          const matchAlbum = (c.album || '').toLowerCase().includes(q);
+          const matchAlbum = getCardAlbums(c).some(a => a.toLowerCase().includes(q));
           return matchMember || matchNote || matchAlbum;
         }
         return true;
       });
     }
 
-    // --- TAB 1: ALBUMS + 偶像快速統計 ---
+    // --- TAB 1: ALBUMS + 隨意加入/管理相片 ---
     function renderAlbums() {
       const quickStatsBox = document.getElementById('albumsQuickIdolStats');
       const idolCounts = getIdolCounts();
@@ -665,26 +761,37 @@
       const grid = document.getElementById('albumsGrid');
       grid.innerHTML = '';
       albums.forEach(alb => {
-        const albCards = cards.filter(c => c.album === alb);
+        const albCards = cards.filter(c => cardBelongsToAlbum(c, alb));
         const cover = albCards[0]?.image || '';
+        const safeAlb = alb.replace(/'/g, "\\'");
         const div = document.createElement('div');
-        div.className = 'neo-box bg-white rounded-2xl p-2.5 cursor-pointer flex flex-col justify-between';
-        div.onclick = () => {
-          selectedAlbumFilter = alb;
-          selectedMemberFilter = 'ALL';
-          switchTab('binder');
-        };
+        div.className = 'neo-box bg-white rounded-2xl p-2.5 flex flex-col justify-between space-y-2';
         div.innerHTML = `
-          <div class="h-36 rounded-xl bg-pink-50 flex items-center justify-center overflow-hidden mb-2">
-            ${cover ? `<img src="${cover}" class="max-h-full max-w-full object-contain">` : `<span class="text-3xl">📁</span>`}
+          <div onclick="openAlbumInBinder('${safeAlb}')" class="cursor-pointer">
+            <div class="h-32 rounded-xl bg-pink-50 flex items-center justify-center overflow-hidden mb-2 relative">
+              ${cover ? `<img src="${cover}" class="max-h-full max-w-full object-contain">` : `<span class="text-3xl">📁</span>`}
+              <span class="absolute bottom-1.5 right-1.5 text-[10px] font-black px-2 py-0.5 rounded-full bg-white/90 border border-cheki-dark">${albCards.length} 張</span>
+            </div>
+            <div class="flex justify-between items-center gap-1 px-0.5">
+              <span class="font-black text-sm truncate">${alb}</span>
+              <div class="flex items-center gap-1 shrink-0" onclick="event.stopPropagation()">
+                <button onclick="renameAlbum('${safeAlb}')" class="text-xs px-1.5 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200" title="改名">✏️</button>
+                ${albums.length > 1 ? `<button onclick="deleteAlbum('${safeAlb}')" class="text-xs px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100" title="刪除相簿">🗑️</button>` : ''}
+              </div>
+            </div>
           </div>
-          <div class="flex justify-between items-center gap-1">
-            <span class="font-black text-sm truncate">${alb}</span>
-            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-pink-100 shrink-0">${albCards.length} 張</span>
-          </div>
+          <button onclick="openBatchAlbumPicker('${safeAlb}')" class="w-full py-1.5 rounded-xl bg-pink-100 hover:bg-pink-200 neo-btn text-[11px] font-black text-cheki-dark flex items-center justify-center gap-1">
+            ➕ 加入 / 調動 Cheki
+          </button>
         `;
         grid.appendChild(div);
       });
+    }
+
+    function openAlbumInBinder(alb) {
+      selectedAlbumFilter = alb;
+      selectedMemberFilter = 'ALL';
+      switchTab('binder');
     }
 
     function filterByMemberInBinder(memberName) {
@@ -695,26 +802,229 @@
 
     function createNewAlbum() {
       const name = prompt('請輸入新相簿名稱：');
-      if (name && name.trim() && !albums.includes(name.trim())) {
-        albums.push(name.trim());
-        saveAlbumsToDB();
-        updateHeaderStats();
-        renderAlbums();
+      if (name && name.trim()) {
+        const clean = name.trim();
+        if (!albums.includes(clean)) {
+          albums.push(clean);
+          saveAlbumsToDB();
+          updateHeaderStats();
+          renderCurrentTab();
+        }
       }
     }
 
-    // --- TAB 2: BINDER (含相簿篩選 + 偶像張數標籤篩選) ---
+    async function renameAlbum(oldName) {
+      const newName = prompt(`將相簿「${oldName}」重新命名為：`, oldName);
+      if (!newName || !newName.trim() || newName.trim() === oldName) return;
+      const clean = newName.trim();
+      const idx = albums.indexOf(oldName);
+      if (idx > -1) albums[idx] = clean;
+
+      for (const c of cards) {
+        const cur = getCardAlbums(c);
+        if (cur.includes(oldName)) {
+          const updated = cur.map(a => a === oldName ? clean : a);
+          setCardAlbums(c, updated);
+          await saveCardToDB(c);
+        }
+      }
+      if (selectedAlbumFilter === oldName) selectedAlbumFilter = clean;
+      await saveAlbumsToDB();
+      renderCurrentTab();
+    }
+
+    async function deleteAlbum(albName) {
+      if (albums.length <= 1) {
+        alert('至少需保留一個相簿！');
+        return;
+      }
+      if (!confirm(`確定要刪除相簿「${albName}」嗎？\n（請放心，相簿內的 Cheki 相片不會被刪除，會自動保留在其他相簿或預設相簿中）`)) return;
+      albums = albums.filter(a => a !== albName);
+      for (const c of cards) {
+        const cur = getCardAlbums(c);
+        if (cur.includes(albName)) {
+          const updated = cur.filter(a => a !== albName);
+          setCardAlbums(c, updated);
+          await saveCardToDB(c);
+        }
+      }
+      if (selectedAlbumFilter === albName) selectedAlbumFilter = 'ALL';
+      await saveAlbumsToDB();
+      updateHeaderStats();
+      renderCurrentTab();
+    }
+
+    // --- 批次勾選現有 Cheki 加入/移出相簿 (Batch Album Picker) ---
+    function openBatchAlbumPicker(albumName) {
+      if (!albumName || albumName === 'ALL') return;
+      batchTargetAlbum = albumName;
+      batchSelectedCardIds = new Set(
+        cards.filter(c => cardBelongsToAlbum(c, albumName)).map(c => c.id)
+      );
+      document.getElementById('batchAlbumModalTitle').textContent = `📁 管理「${albumName}」的相片`;
+      document.getElementById('batchPickerSearch').value = '';
+      renderBatchPickerGrid();
+      document.getElementById('batchAlbumPickerModal').classList.remove('hidden');
+    }
+
+    function closeBatchAlbumPicker() {
+      document.getElementById('batchAlbumPickerModal').classList.add('hidden');
+      batchTargetAlbum = '';
+    }
+
+    function renderBatchPickerGrid() {
+      const grid = document.getElementById('batchPickerGrid');
+      const q = (document.getElementById('batchPickerSearch').value || '').trim().toLowerCase();
+      grid.innerHTML = '';
+
+      const filtered = cards.filter(c => {
+        if (!q) return true;
+        return (c.member || '').toLowerCase().includes(q) || (c.note || '').toLowerCase().includes(q);
+      });
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `<div class="col-span-3 text-center py-10 text-xs font-bold text-zinc-400">沒有找到相片</div>`;
+      } else {
+        filtered.forEach(c => {
+          const isSelected = batchSelectedCardIds.has(c.id);
+          const item = document.createElement('div');
+          item.className = `relative rounded-2xl p-1.5 border-2 cursor-pointer transition flex flex-col items-center ${isSelected ? 'border-cheki-accent bg-pink-100/90 shadow-md' : 'border-zinc-200 bg-white opacity-75'}`;
+          item.onclick = () => {
+            if (batchSelectedCardIds.has(c.id)) batchSelectedCardIds.delete(c.id);
+            else batchSelectedCardIds.add(c.id);
+            renderBatchPickerGrid();
+          };
+          item.innerHTML = `
+            <div class="w-full aspect-[3/4] flex items-center justify-center overflow-hidden rounded-lg bg-zinc-50">
+              <img src="${c.image}" class="max-h-full max-w-full object-contain">
+            </div>
+            <p class="font-black text-[11px] truncate w-full text-center mt-1">${c.member || '未命名'}</p>
+            <div class="absolute top-2 right-2 w-6 h-6 rounded-full border-2 border-cheki-dark flex items-center justify-center text-xs font-black ${isSelected ? 'bg-cheki-accent text-white' : 'bg-white text-transparent'}">
+              ✓
+            </div>
+          `;
+          grid.appendChild(item);
+        });
+      }
+
+      document.getElementById('batchSelectedCountText').textContent = `此相簿已勾選 ${batchSelectedCardIds.size} 張 Cheki`;
+    }
+
+    function batchSelectAllVisible(selectAll) {
+      const q = (document.getElementById('batchPickerSearch').value || '').trim().toLowerCase();
+      cards.forEach(c => {
+        if (!q || (c.member || '').toLowerCase().includes(q) || (c.note || '').toLowerCase().includes(q)) {
+          if (selectAll) batchSelectedCardIds.add(c.id);
+        }
+      });
+      renderBatchPickerGrid();
+    }
+
+    async function saveBatchAlbumSelection() {
+      if (!batchTargetAlbum) return;
+      for (const c of cards) {
+        const curAlbums = new Set(getCardAlbums(c));
+        const shouldBeIn = batchSelectedCardIds.has(c.id);
+        const currentlyIn = curAlbums.has(batchTargetAlbum);
+
+        if (shouldBeIn && !currentlyIn) {
+          curAlbums.add(batchTargetAlbum);
+          setCardAlbums(c, [...curAlbums]);
+          await saveCardToDB(c);
+        } else if (!shouldBeIn && currentlyIn) {
+          curAlbums.delete(batchTargetAlbum);
+          setCardAlbums(c, [...curAlbums]);
+          await saveCardToDB(c);
+        }
+      }
+      closeBatchAlbumPicker();
+      updateHeaderStats();
+      renderCurrentTab();
+    }
+
+    // --- 單張卡片快速調動相簿 (Quick Move Albums Modal) ---
+    function openQuickMoveAlbumsModal() {
+      const card = cards.find(c => c.id === inspectingCardId);
+      if (!card) return;
+      renderQuickMoveCheckboxes(getCardAlbums(card));
+      document.getElementById('quickMoveAlbumsModal').classList.remove('hidden');
+    }
+
+    function closeQuickMoveAlbumsModal() {
+      document.getElementById('quickMoveAlbumsModal').classList.add('hidden');
+    }
+
+    function renderQuickMoveCheckboxes(selectedList) {
+      const box = document.getElementById('quickMoveAlbumCheckboxes');
+      const selSet = new Set(selectedList);
+      box.innerHTML = albums.map(alb => {
+        const checked = selSet.has(alb) ? 'checked' : '';
+        return `
+          <label class="flex items-center justify-between p-2.5 rounded-xl border-2 border-cheki-dark bg-pink-50/50 cursor-pointer">
+            <span class="font-black text-xs">📁 ${alb}</span>
+            <input type="checkbox" value="${alb}" ${checked} class="quick-album-cb w-5 h-5 accent-pink-500">
+          </label>
+        `;
+      }).join('');
+    }
+
+    async function saveQuickMoveAlbums() {
+      const card = cards.find(c => c.id === inspectingCardId);
+      if (!card) return;
+      const checkedAlbums = [...document.querySelectorAll('.quick-album-cb:checked')].map(el => el.value);
+      if (checkedAlbums.length === 0) {
+        alert('請至少勾選一個相簿！');
+        return;
+      }
+      setCardAlbums(card, checkedAlbums);
+      await saveCardToDB(card);
+      closeQuickMoveAlbumsModal();
+      renderInspectAlbumBadges(card);
+      updateHeaderStats();
+      renderCurrentTab();
+    }
+
+    function promptAddNewAlbumInModal(mode) {
+      const name = prompt('請輸入新相簿名稱：');
+      if (!name || !name.trim()) return;
+      const clean = name.trim();
+      if (!albums.includes(clean)) {
+        albums.push(clean);
+        saveAlbumsToDB();
+      }
+      if (mode === 'quick') {
+        const currentChecked = [...document.querySelectorAll('.quick-album-cb:checked')].map(el => el.value);
+        currentChecked.push(clean);
+        renderQuickMoveCheckboxes(currentChecked);
+      } else if (mode === 'edit') {
+        editingSelectedAlbums.add(clean);
+        renderEditAlbumPills();
+      }
+      updateHeaderStats();
+    }
+
+    // --- TAB 2: BINDER (含相簿篩選 + 當前相簿隨意加入工具列 + 偶像張數篩選) ---
     function renderBinder() {
       const pills = document.getElementById('albumFilterPills');
       pills.innerHTML = '';
       ['ALL', ...albums].forEach(alb => {
         const btn = document.createElement('button');
         const active = selectedAlbumFilter === alb;
+        const count = alb === 'ALL' ? cards.length : cards.filter(c => cardBelongsToAlbum(c, alb)).length;
         btn.className = `px-3 py-1.5 rounded-full text-xs font-black neo-btn shrink-0 ${active ? 'bg-cheki-accent text-white' : 'bg-white'}`;
-        btn.textContent = alb === 'ALL' ? '全部相簿' : alb;
+        btn.textContent = alb === 'ALL' ? `全部相簿 (${count})` : `${alb} (${count})`;
         btn.onclick = () => { selectedAlbumFilter = alb; renderBinder(); };
         pills.appendChild(btn);
       });
+
+      // 當選中特定相簿時，顯示「➕ 加入/調動 Cheki」工具列
+      const actionBar = document.getElementById('currentAlbumActionBar');
+      if (selectedAlbumFilter !== 'ALL') {
+        actionBar.classList.remove('hidden');
+        document.getElementById('currentAlbumTitleText').textContent = `📁 當前相簿：${selectedAlbumFilter}`;
+      } else {
+        actionBar.classList.add('hidden');
+      }
 
       const memberPills = document.getElementById('memberFilterPills');
       memberPills.innerHTML = '';
@@ -745,7 +1055,12 @@
       const list = getFilteredCards();
 
       if (list.length === 0) {
-        grid.innerHTML = `<div class="col-span-2 text-center py-12 text-zinc-400 font-bold text-sm">尚無符合條件的拍立得</div>`;
+        grid.innerHTML = `
+          <div class="col-span-2 text-center py-10 space-y-3">
+            <p class="text-zinc-400 font-bold text-sm">此分類尚無拍立得</p>
+            ${selectedAlbumFilter !== 'ALL' ? `<button onclick="openBatchAlbumPicker('${selectedAlbumFilter.replace(/'/g, "\\'")}')" class="px-4 py-2 rounded-xl bg-cheki-accent text-white neo-btn text-xs font-black">➕ 從現有 Cheki 勾選加入此相簿</button>` : ''}
+          </div>
+        `;
         return;
       }
 
@@ -839,7 +1154,6 @@
       document.getElementById('statTotalFavs').textContent = favCount;
       document.getElementById('statTotalAlbums').textContent = albums.length;
 
-      // 1. 渲染主推 / 榜首偶像榮譽大卡
       const topOshiCard = document.getElementById('topOshiHighlightCard');
       if (idolCounts.length > 0) {
         const top = idolCounts[0];
@@ -861,7 +1175,6 @@
         topOshiCard.classList.add('hidden');
       }
 
-      // 2. 渲染各偶像 Cheki 數量排行榜
       const board = document.getElementById('idolStatsLeaderboard');
       if (idolCounts.length === 0) {
         board.innerHTML = `<p class="text-center py-6 text-zinc-400 font-bold text-xs">尚無拍立得資料，快去新增第一張 Cheki 吧！</p>`;
@@ -895,7 +1208,6 @@
         }).join('');
       }
 
-      // 3. 渲染每月拍攝統計
       const monthlyBox = document.getElementById('monthlyStatsList');
       const monthlyCounts = getMonthlyCounts();
       if (monthlyCounts.length === 0) {
@@ -918,7 +1230,6 @@
         }).join('');
       }
 
-      // 4. 渲染應援成就徽章
       const maxSingleIdol = idolCounts[0]?.count || 0;
       const achievements = [
         { icon: '🌱', title: '初次邂逅', desc: '收藏第 1 張拍立得', unlocked: cards.length >= 1 },
@@ -1298,9 +1609,22 @@
       backCard.style.backgroundColor = bg;
       backCard.style.color = bg === '#FFFDF9' ? '#272228' : '#FFFFFF';
 
+      renderInspectAlbumBadges(card);
+
       document.getElementById('inspectFlipInner').classList.remove('rotate-y-180');
       document.getElementById('inspectFavBtn').style.opacity = card.fav ? '1' : '0.4';
       document.getElementById('inspectModal').classList.remove('hidden');
+    }
+
+    function renderInspectAlbumBadges(card) {
+      const box = document.getElementById('inspectAlbumsBadges');
+      if (!box) return;
+      const cardAlbs = getCardAlbums(card);
+      box.innerHTML = cardAlbs.map(a => `
+        <span onclick="openQuickMoveAlbumsModal()" class="cursor-pointer px-2.5 py-0.5 rounded-full bg-white/20 text-white border border-white/40 text-[11px] font-bold">
+          📁 ${a}
+        </span>
+      `).join('');
     }
 
     function closeInspectModal() {
@@ -1340,17 +1664,29 @@
       a.click();
     }
 
-    // --- ADD / EDIT MODAL ---
-    function populateAlbumSelect() {
-      const sel = document.getElementById('cardAlbumInput');
-      sel.innerHTML = '';
-      albums.forEach(a => {
-        const opt = document.createElement('option');
-        opt.value = a;
-        opt.textContent = a;
-        sel.appendChild(opt);
+    // --- ADD / EDIT MODAL (支援自由勾選多個相簿) ---
+    function renderEditAlbumPills() {
+      const container = document.getElementById('editAlbumPillsContainer');
+      container.innerHTML = '';
+      albums.forEach(alb => {
+        const active = editingSelectedAlbums.has(alb);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `px-3 py-1 rounded-full text-xs font-black border-2 border-cheki-dark transition ${active ? 'bg-cheki-accent text-white' : 'bg-zinc-100 text-zinc-600'}`;
+        btn.textContent = `${active ? '✓ ' : ''}${alb}`;
+        btn.onclick = () => {
+          if (editingSelectedAlbums.has(alb)) {
+            if (editingSelectedAlbums.size > 1) editingSelectedAlbums.delete(alb);
+          } else {
+            editingSelectedAlbums.add(alb);
+          }
+          renderEditAlbumPills();
+        };
+        container.appendChild(btn);
       });
+    }
 
+    function populateMemberSuggestions() {
       const sugBox = document.getElementById('quickMemberSuggestions');
       const existingNames = [...new Set(['遠藤まりん', ...cards.map(c => (c.member || '').trim()).filter(Boolean)])];
       sugBox.innerHTML = existingNames.map(name => `
@@ -1364,7 +1700,11 @@
       editingCardId = null;
       rawUploadDataUrl = '';
       currentUploadDataUrl = '';
-      populateAlbumSelect();
+      const defaultAlb = (selectedAlbumFilter !== 'ALL' && albums.includes(selectedAlbumFilter)) ? selectedAlbumFilter : (albums[0] || '預設相簿');
+      editingSelectedAlbums = new Set([defaultAlb]);
+      renderEditAlbumPills();
+      populateMemberSuggestions();
+
       document.getElementById('modalTitle').textContent = '✨ 新增拍立得';
       document.getElementById('cardMemberInput').value = '遠藤まりん';
       document.getElementById('cardDateInput').value = new Date().toISOString().split('T')[0];
@@ -1385,11 +1725,13 @@
       editingCardId = targetId;
       rawUploadDataUrl = card.image;
       currentUploadDataUrl = card.image;
-      populateAlbumSelect();
-      document.getElementById('modalTitle').textContent = '✏️ 編輯拍立得';
+      editingSelectedAlbums = new Set(getCardAlbums(card));
+      renderEditAlbumPills();
+      populateMemberSuggestions();
+
+      document.getElementById('modalTitle').textContent = '✏️ 編輯拍立得與相簿';
       document.getElementById('cardMemberInput').value = card.member || '';
       document.getElementById('cardDateInput').value = card.date || '';
-      document.getElementById('cardAlbumInput').value = card.album || albums[0];
       document.getElementById('cardNoteInput').value = card.note || '';
       document.getElementById('brightnessSlider').value = 100;
       document.getElementById('contrastSlider').value = 100;
@@ -1471,7 +1813,7 @@
       }
       const member = document.getElementById('cardMemberInput').value.trim() || '遠藤まりん';
       const date = document.getElementById('cardDateInput').value;
-      const album = document.getElementById('cardAlbumInput').value || albums[0];
+      const chosenAlbums = [...editingSelectedAlbums];
       const note = document.getElementById('cardNoteInput').value;
 
       if (editingCardId) {
@@ -1479,17 +1821,18 @@
         if (idx > -1) {
           cards[idx] = {
             ...cards[idx],
-            member, date, album, note,
+            member, date, note,
             image: currentUploadDataUrl,
             backColor: selectedBackColor
           };
+          setCardAlbums(cards[idx], chosenAlbums);
           await saveCardToDB(cards[idx]);
         }
       } else {
         const newCard = {
           id: Date.now(),
           createdAt: Date.now(),
-          member, date, album, note,
+          member, date, note,
           image: currentUploadDataUrl,
           backColor: selectedBackColor,
           fav: false,
@@ -1500,6 +1843,7 @@
           deskZ: cards.length + 1,
           deskFlipped: false
         };
+        setCardAlbums(newCard, chosenAlbums);
         cards.unshift(newCard);
         await saveCardToDB(newCard);
       }
@@ -1550,12 +1894,15 @@
 
           let count = 0;
           for (const raw of importedCards) {
+            const rawAlbs = Array.isArray(raw.albums) && raw.albums.length > 0
+              ? raw.albums
+              : [raw.album || albums[0] || '預設相簿'];
+
             const normalized = {
               id: raw.id || (Date.now() + Math.floor(Math.random() * 100000)),
               createdAt: raw.createdAt || Date.now(),
               member: raw.member || raw.idol || raw.name || '遠藤まりん',
               date: raw.date || new Date().toISOString().split('T')[0],
-              album: raw.album || albums[0],
               note: raw.note || raw.memo || '',
               image: raw.image || raw.img || raw.dataUrl || '',
               backColor: raw.backColor || '#60A5FA',
@@ -1567,9 +1914,11 @@
               deskZ: raw.deskZ || (count + 1),
               deskFlipped: Boolean(raw.deskFlipped)
             };
-            if (normalized.album && !albums.includes(normalized.album)) {
-              albums.push(normalized.album);
-            }
+            setCardAlbums(normalized, rawAlbs);
+            getCardAlbums(normalized).forEach(a => {
+              if (a && !albums.includes(a)) albums.push(a);
+            });
+
             if (normalized.image) {
               await saveCardToDB(normalized);
               count++;
