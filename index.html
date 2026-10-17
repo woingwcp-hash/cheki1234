@@ -113,16 +113,32 @@
     <div class="flex items-center gap-1.5 shrink-0">
       <button onclick="switchTab('stats')" class="w-9 h-9 rounded-2xl bg-blue-100 neo-btn flex items-center justify-center text-base" title="偶像Cheki統計與足跡地圖">📊</button>
       <button onclick="openBackupModal()" class="w-9 h-9 rounded-2xl bg-amber-100 neo-btn flex items-center justify-center text-base" title="備份與還原">📦</button>
-      <button onclick="toggleSearchBar()" class="w-9 h-9 rounded-2xl bg-white neo-btn flex items-center justify-center text-base" title="搜尋">🔍</button>
+      <button onclick="toggleSearchBar()" id="topSearchBtn" class="w-9 h-9 rounded-2xl bg-white neo-btn flex items-center justify-center text-base" title="搜尋">🔍</button>
       <button onclick="openAddModal()" class="px-3 py-2 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-btn flex items-center gap-1">✨ 新增</button>
     </div>
   </header>
 
-  <!-- Search Bar -->
-  <div id="searchBar" class="hidden px-3 py-2 bg-pink-50 border-b-2 border-cheki-dark">
-    <div class="flex gap-2">
-      <input id="searchInput" type="text" placeholder="搜尋偶像名稱、地點、活動、背面筆記..." oninput="renderCurrentTab()" class="w-full px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-sm font-bold focus:outline-none">
+  <!-- 🔍 強化版全域智慧搜尋列 (支援桌布、卡冊、日曆即時過濾 + 結果預覽列) -->
+  <div id="searchBar" class="hidden px-3 py-2.5 bg-pink-50 border-b-2 border-cheki-dark space-y-2 sticky top-[61px] z-20 shadow-md">
+    <div class="flex gap-1.5">
+      <input id="searchInput" type="search" placeholder="搜尋偶像名稱、地點、相簿、背面筆記..." oninput="executeSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();executeSearch();this.blur();}" class="flex-1 px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-sm font-bold bg-white focus:outline-none">
+      <button onclick="executeSearch()" class="px-3 py-1.5 rounded-xl bg-cheki-accent text-white neo-btn text-xs font-black shrink-0">搜尋</button>
       <button onclick="clearSearch()" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-bold shrink-0">清除</button>
+    </div>
+
+    <!-- 常用搜尋關鍵字快速點選列 -->
+    <div id="searchQuickTags" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar"></div>
+
+    <!-- 即時搜尋結果統計與縮圖預覽區 -->
+    <div id="searchResultFeedback" class="hidden bg-white rounded-2xl border-2 border-cheki-dark p-2 space-y-2">
+      <div class="flex items-center justify-between gap-2 px-1">
+        <span id="searchResultCountText" class="text-xs font-black text-cheki-accent">🎯 找到 0 張相片</span>
+        <div class="flex gap-1">
+          <button onclick="switchTab('binder')" class="px-2 py-0.5 rounded-lg bg-pink-100 border border-cheki-dark text-[10px] font-black">🎴 卡冊檢視</button>
+          <button onclick="switchTab('desk'); neatArrangeDeskCards();" class="px-2 py-0.5 rounded-lg bg-blue-100 border border-cheki-dark text-[10px] font-black">🪵 桌布排列</button>
+        </div>
+      </div>
+      <div id="searchResultQuickStrip" class="flex gap-2 overflow-x-auto no-scrollbar py-0.5"></div>
     </div>
   </div>
 
@@ -273,7 +289,7 @@
       </div>
     </section>
 
-    <!-- TAB 5: DESK (桌布 - 直向與橫向 Cheki 1:1 真實比例一致 + 全體超微縮滑桿 + 自訂背景縮放) -->
+    <!-- TAB 5: DESK (桌布 - 直向與橫向 Cheki 1:1 真實比例一致 + 全體超微縮滑桿 + 自訂背景縮放 + 支援即時搜尋過濾) -->
     <section id="tab-desk" class="space-y-2">
       <!-- 頂部工具列 -->
       <div class="neo-box bg-white rounded-2xl p-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
@@ -779,7 +795,7 @@
     let calYear = new Date().getFullYear();
     let calMonth = new Date().getMonth();
 
-    // 📐 拍立得直向與橫向標準實體比例常數 (確保直向 145×215px 與橫向 215×145px 完全一致大細！)
+    // 📐 拍立得直向與橫向標準實體比例常數
     const CHEKI_SHORT_SIDE_PX = 145;
     const CHEKI_LONG_SIDE_PX = 215;
 
@@ -854,6 +870,131 @@
       const clean = [...new Set((albumArray || []).filter(Boolean))];
       card.albums = clean.length > 0 ? clean : [albums[0] || '預設相簿'];
       card.album = card.albums[0];
+    }
+
+    // =========================================================================
+    // 🔍 全域智慧搜尋引擎 (支援桌布、卡冊、日曆即時過濾 + 姓名關聯匹配)
+    // =========================================================================
+    function normalizeSearchStr(str) {
+      return (str || '').toString().toLowerCase().replace(/\s+/g, '');
+    }
+
+    function cardMatchesSearchQuery(card, rawQuery) {
+      if (!rawQuery || !rawQuery.trim()) return true;
+      const q = normalizeSearchStr(rawQuery);
+      if (!q) return true;
+
+      const member = normalizeSearchStr(card.member);
+      const note = normalizeSearchStr(card.note);
+      const loc = normalizeSearchStr(card.locationName);
+      const date = normalizeSearchStr(card.date);
+      const albs = getCardAlbums(card).map(a => normalizeSearchStr(a));
+
+      // 1. 直接包含關鍵字
+      if (
+        member.includes(q) ||
+        note.includes(q) ||
+        loc.includes(q) ||
+        date.includes(q) ||
+        albs.some(a => a.includes(q))
+      ) {
+        return true;
+      }
+
+      // 2. 智慧關聯匹配：例如搜尋「遠藤まりん」時，自動同時匹配只寫咗「まりん」的卡片（反之亦然）
+      if (member.length >= 2 && q.includes(member)) {
+        return true;
+      }
+
+      // 3. 多關鍵字分拆搜尋（例如「まりん 福岡」）
+      const tokens = rawQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      if (tokens.length > 1) {
+        const combined = `${member} ${note} ${loc} ${date} ${albs.join(' ')}`;
+        return tokens.every(t => combined.includes(t));
+      }
+
+      return false;
+    }
+
+    function toggleSearchBar() {
+      const sb = document.getElementById('searchBar');
+      const btn = document.getElementById('topSearchBtn');
+      sb.classList.toggle('hidden');
+      const isOpen = !sb.classList.contains('hidden');
+      if (btn) {
+        btn.classList.toggle('bg-pink-200', isOpen);
+        btn.classList.toggle('bg-white', !isOpen);
+      }
+      if (isOpen) {
+        renderSearchQuickTags();
+        document.getElementById('searchInput').focus();
+        executeSearch();
+      }
+    }
+
+    function renderSearchQuickTags() {
+      const box = document.getElementById('searchQuickTags');
+      if (!box) return;
+      const idolList = getIdolCounts().map(i => i.member);
+      const locList = [...new Set(cards.map(c => (c.locationName || '').trim()).filter(Boolean))].slice(0, 4);
+      const tags = [...new Set([...idolList, ...locList])];
+
+      if (tags.length === 0) {
+        box.innerHTML = '';
+        return;
+      }
+      box.innerHTML = `<span class="text-[10px] font-black text-zinc-500 shrink-0">快速點選:</span>` + tags.map(t => `
+        <button type="button" onclick="setQuickSearchQuery('${t.replace(/'/g, "\\'")}')" class="px-2.5 py-0.5 rounded-full bg-white border border-cheki-dark text-[10px] font-black text-zinc-700 shrink-0 active:scale-95">
+          🔍 ${t}
+        </button>
+      `).join('');
+    }
+
+    function setQuickSearchQuery(q) {
+      const input = document.getElementById('searchInput');
+      if (!input) return;
+      input.value = q;
+      executeSearch();
+    }
+
+    function executeSearch() {
+      const q = (document.getElementById('searchInput')?.value || '').trim();
+      const feedbackBox = document.getElementById('searchResultFeedback');
+      const countText = document.getElementById('searchResultCountText');
+      const strip = document.getElementById('searchResultQuickStrip');
+
+      // 如果正在輸入搜尋字眼，而且卡冊原本鎖定咗其他相簿或成員，自動切換為搜尋全庫，避免搵唔到
+      if (q) {
+        const matchedAll = cards.filter(c => cardMatchesSearchQuery(c, q));
+        if (feedbackBox) {
+          feedbackBox.classList.remove('hidden');
+          countText.textContent = `🎯 搜尋「${q}」：共找到 ${matchedAll.length} 張 Cheki`;
+          if (matchedAll.length === 0) {
+            strip.innerHTML = `<p class="text-[11px] text-zinc-400 font-bold py-1 px-1">沒有找到符合「${q}」的拍立得</p>`;
+          } else {
+            strip.innerHTML = matchedAll.map(c => `
+              <div onclick="openInspectModal(${c.id})" class="shrink-0 w-14 flex flex-col items-center cursor-pointer group">
+                <div class="w-14 h-16 rounded-lg bg-pink-50 border border-pink-200 flex items-center justify-center overflow-hidden p-0.5">
+                  <img src="${c.image}" draggable="false" class="max-h-full max-w-full object-contain rounded pointer-events-none">
+                </div>
+                <span class="text-[9px] font-black truncate w-full text-center mt-0.5">${c.member || ''}</span>
+              </div>
+            `).join('');
+          }
+        }
+      } else if (feedbackBox) {
+        feedbackBox.classList.add('hidden');
+      }
+
+      renderCurrentTab();
+    }
+
+    function clearSearch() {
+      const input = document.getElementById('searchInput');
+      if (input) input.value = '';
+      const feedbackBox = document.getElementById('searchResultFeedback');
+      if (feedbackBox) feedbackBox.classList.add('hidden');
+      renderCurrentTab();
     }
 
     // =========================================================================
@@ -1535,30 +1676,13 @@
       else if (currentTab === 'desk') renderDesk();
     }
 
-    function toggleSearchBar() {
-      const sb = document.getElementById('searchBar');
-      sb.classList.toggle('hidden');
-      if (!sb.classList.contains('hidden')) document.getElementById('searchInput').focus();
-    }
-
-    function clearSearch() {
-      document.getElementById('searchInput').value = '';
-      renderCurrentTab();
-    }
-
     function getFilteredCards() {
-      const q = (document.getElementById('searchInput')?.value || '').trim().toLowerCase();
+      const q = (document.getElementById('searchInput')?.value || '').trim();
       return cards.filter(c => {
         if (!cardBelongsToAlbum(c, selectedAlbumFilter)) return false;
         if (selectedMemberFilter !== 'ALL' && (c.member || '未命名').trim() !== selectedMemberFilter) return false;
         if (favOnlyFilter && !c.fav) return false;
-        if (q) {
-          const matchMember = (c.member || '').toLowerCase().includes(q);
-          const matchNote = (c.note || '').toLowerCase().includes(q);
-          const matchLocation = (c.locationName || '').toLowerCase().includes(q);
-          const matchAlbum = getCardAlbums(c).some(a => a.toLowerCase().includes(q));
-          return matchMember || matchNote || matchLocation || matchAlbum;
-        }
+        if (q && !cardMatchesSearchQuery(c, q)) return false;
         return true;
       });
     }
@@ -1588,8 +1712,10 @@
 
       const grid = document.getElementById('albumsGrid');
       grid.innerHTML = '';
+      const q = (document.getElementById('searchInput')?.value || '').trim();
+
       albums.forEach(alb => {
-        const albCards = cards.filter(c => cardBelongsToAlbum(c, alb));
+        const albCards = cards.filter(c => cardBelongsToAlbum(c, alb) && (!q || cardMatchesSearchQuery(c, q)));
         const cover = albCards[0]?.image || '';
         const safeAlb = alb.replace(/'/g, "\\'");
         const div = document.createElement('div');
@@ -1702,13 +1828,10 @@
 
     function renderBatchPickerGrid() {
       const grid = document.getElementById('batchPickerGrid');
-      const q = (document.getElementById('batchPickerSearch').value || '').trim().toLowerCase();
+      const q = (document.getElementById('batchPickerSearch').value || '').trim();
       grid.innerHTML = '';
 
-      const filtered = cards.filter(c => {
-        if (!q) return true;
-        return (c.member || '').toLowerCase().includes(q) || (c.note || '').toLowerCase().includes(q) || (c.locationName || '').toLowerCase().includes(q);
-      });
+      const filtered = cards.filter(c => cardMatchesSearchQuery(c, q));
 
       if (filtered.length === 0) {
         grid.innerHTML = `<div class="col-span-3 text-center py-10 text-xs font-bold text-zinc-400">沒有找到相片</div>`;
@@ -1739,9 +1862,9 @@
     }
 
     function batchSelectAllVisible(selectAll) {
-      const q = (document.getElementById('batchPickerSearch').value || '').trim().toLowerCase();
+      const q = (document.getElementById('batchPickerSearch').value || '').trim();
       cards.forEach(c => {
-        if (!q || (c.member || '').toLowerCase().includes(q) || (c.note || '').toLowerCase().includes(q)) {
+        if (cardMatchesSearchQuery(c, q)) {
           if (selectAll) batchSelectedCardIds.add(c.id);
         }
       });
@@ -1884,7 +2007,8 @@
       if (list.length === 0) {
         grid.innerHTML = `
           <div class="col-span-2 text-center py-10 space-y-3">
-            <p class="text-zinc-400 font-bold text-sm">此分類尚無拍立得</p>
+            <p class="text-zinc-400 font-bold text-sm">此分類或搜尋條件下尚無拍立得</p>
+            ${(selectedAlbumFilter !== 'ALL' || selectedMemberFilter !== 'ALL' || favOnlyFilter) ? `<button onclick="selectedAlbumFilter='ALL';selectedMemberFilter='ALL';favOnlyFilter=false;renderBinder();" class="px-4 py-2 rounded-xl bg-blue-100 neo-btn text-xs font-black">🔄 顯示全部相簿與偶像</button>` : ''}
             ${selectedAlbumFilter !== 'ALL' ? `<button onclick="openBatchAlbumPicker('${selectedAlbumFilter.replace(/'/g, "\\'")}')" class="px-4 py-2 rounded-xl bg-cheki-accent text-white neo-btn text-xs font-black">➕ 從現有 Cheki 勾選加入此相簿</button>` : ''}
           </div>
         `;
@@ -1927,6 +2051,7 @@
       document.getElementById('calendarTitle').textContent = `${calYear} 年 ${calMonth + 1} 月`;
       const daysContainer = document.getElementById('calendarDays');
       daysContainer.innerHTML = '';
+      const q = (document.getElementById('searchInput')?.value || '').trim();
 
       const firstDay = new Date(calYear, calMonth, 1).getDay();
       const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
@@ -1938,7 +2063,7 @@
       const monthPrefix = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
       for (let d = 1; d <= daysInMonth; d++) {
         const dateStr = `${monthPrefix}-${String(d).padStart(2, '0')}`;
-        const dayCards = cards.filter(c => c.date === dateStr);
+        const dayCards = cards.filter(c => c.date === dateStr && (!q || cardMatchesSearchQuery(c, q)));
         const cell = document.createElement('div');
         cell.className = `h-12 rounded-xl border border-zinc-200 flex flex-col items-center justify-between p-1 cursor-pointer ${dayCards.length ? 'bg-pink-100 border-cheki-accent font-black' : 'bg-zinc-50'}`;
         cell.innerHTML = `
@@ -1949,7 +2074,7 @@
         daysContainer.appendChild(cell);
       }
 
-      const monthCards = cards.filter(c => (c.date || '').startsWith(monthPrefix));
+      const monthCards = cards.filter(c => (c.date || '').startsWith(monthPrefix) && (!q || cardMatchesSearchQuery(c, q)));
       renderCalendarDayCards(`${calYear}年${calMonth + 1}月 全部活動紀錄`, monthCards);
     }
 
@@ -2152,10 +2277,11 @@
       document.getElementById('searchInput').value = locName;
       selectedAlbumFilter = 'ALL';
       selectedMemberFilter = 'ALL';
+      executeSearch();
       switchTab('binder');
     }
 
-    // --- TAB 5: DESK (直向 Cheki 145px 與橫向 Cheki 215px 自動等比例匹配，實體大細 100% 一致！) ---
+    // --- TAB 5: DESK (支援即時搜尋過濾 + 直向 145px 與橫向 215px 實體比例一致) ---
     function renderDesk() {
       applyDeskBgVisuals();
       const canvas = document.getElementById('deskCanvas');
@@ -2168,9 +2294,13 @@
       const ch = rect.height || 480;
       const defaultScale = (deskBgConfig.defaultCardScale || 100) / 100;
 
+      // 根據目前搜尋框關鍵字即時過濾桌布上的 Cheki！
+      const q = (document.getElementById('searchInput')?.value || '').trim();
+      const deskCards = q ? cards.filter(c => cardMatchesSearchQuery(c, q)) : cards;
+
       let maxBottomY = ch;
 
-      cards.forEach((card, idx) => {
+      deskCards.forEach((card, idx) => {
         if (typeof card.deskX !== 'number') {
           card.deskX = 20 + ((idx * 45) % Math.max(80, cw - 150));
           card.deskY = 20 + ((idx * 55) % Math.max(100, ch - 190));
@@ -2216,7 +2346,6 @@
           </div>
         `;
 
-        // 自動偵測圖片真實長寬：若為橫向 (naturalWidth > naturalHeight * 1.05)，即時將寬度設為 215px，令橫向與直向 Cheki 大細完全一致！
         const imgEl = el.querySelector('.desk-card-img');
         imgEl.onload = () => {
           const isLand = imgEl.naturalWidth > imgEl.naturalHeight * 1.05;
@@ -2346,8 +2475,10 @@
     function scatterDeskCards() {
       const canvas = document.getElementById('deskCanvas');
       const rect = canvas.getBoundingClientRect();
+      const q = (document.getElementById('searchInput')?.value || '').trim();
+      const targetList = q ? cards.filter(c => cardMatchesSearchQuery(c, q)) : cards;
 
-      cards.forEach((c, i) => {
+      targetList.forEach((c, i) => {
         const sc = c.deskScale || 1;
         const cardW = Math.round(getDeskCardBaseWidth(c) * sc);
         const cardH = Math.round(getDeskCardBaseHeight(c) * sc);
@@ -2363,9 +2494,11 @@
       renderDesk();
     }
 
-    // 智慧流式密集重排：同時支援直向 (145×215) 與橫向 (215×145) Cheki 自動換行對齊，絕不重疊！
     function neatArrangeDeskCards() {
-      if (cards.length === 0) return;
+      const q = (document.getElementById('searchInput')?.value || '').trim();
+      const targetList = q ? cards.filter(c => cardMatchesSearchQuery(c, q)) : cards;
+      if (targetList.length === 0) return;
+
       const canvas = document.getElementById('deskCanvas');
       const cw = canvas.getBoundingClientRect().width || 360;
 
@@ -2376,7 +2509,7 @@
       let curY = 12;
       let rowMaxH = 0;
 
-      cards.forEach((c, i) => {
+      targetList.forEach((c, i) => {
         c.deskScale = targetScale;
         const cardW = Math.round(getDeskCardBaseWidth(c) * targetScale);
         const cardH = Math.round(getDeskCardBaseHeight(c) * targetScale);
@@ -3034,6 +3167,7 @@
 
       closeEditModal();
       updateHeaderStats();
+      renderSearchQuickTags();
       renderCurrentTab();
     }
 
