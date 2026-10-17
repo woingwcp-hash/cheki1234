@@ -53,15 +53,15 @@
       background-image: radial-gradient(#5D4037 20%, transparent 20%);
       background-size: 32px 32px;
     }
-    .desk-pink-grid {
-      background-color: #FCE4EC;
-      background-image: linear-gradient(#F8BBD0 1.5px, transparent 1.5px), linear-gradient(90deg, #F8BBD0 1.5px, transparent 1.5px);
-      background-size: 28px 28px;
-    }
     .desk-blue-pastel {
       background-color: #E3F2FD;
       background-image: radial-gradient(#90CAF9 20%, transparent 20%);
       background-size: 30px 30px;
+    }
+    .desk-pink-grid {
+      background-color: #FCE4EC;
+      background-image: linear-gradient(#F8BBD0 1.5px, transparent 1.5px), linear-gradient(90deg, #F8BBD0 1.5px, transparent 1.5px);
+      background-size: 28px 28px;
     }
     .desk-wood-light {
       background-color: #D7CCC8;
@@ -90,6 +90,7 @@
       </div>
     </div>
     <div class="flex items-center gap-1.5 shrink-0">
+      <button onclick="switchTab('stats')" class="w-9 h-9 rounded-2xl bg-blue-100 neo-btn flex items-center justify-center text-base" title="偶像Cheki統計">📊</button>
       <button onclick="openBackupModal()" class="w-9 h-9 rounded-2xl bg-amber-100 neo-btn flex items-center justify-center text-base" title="備份與還原">📦</button>
       <button onclick="toggleSearchBar()" class="w-9 h-9 rounded-2xl bg-white neo-btn flex items-center justify-center text-base" title="搜尋">🔍</button>
       <button onclick="openAddModal()" class="px-3 py-2 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-btn flex items-center gap-1">✨ 新增</button>
@@ -99,7 +100,7 @@
   <!-- Search Bar -->
   <div id="searchBar" class="hidden px-3 py-2 bg-pink-50 border-b-2 border-cheki-dark">
     <div class="flex gap-2">
-      <input id="searchInput" type="text" placeholder="搜尋成員名稱、活動、備註..." oninput="renderCurrentTab()" class="w-full px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-sm font-bold focus:outline-none">
+      <input id="searchInput" type="text" placeholder="搜尋偶像名稱、活動、背面筆記..." oninput="renderCurrentTab()" class="w-full px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-sm font-bold focus:outline-none">
       <button onclick="clearSearch()" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-bold shrink-0">清除</button>
     </div>
   </div>
@@ -107,9 +108,18 @@
   <!-- Main Content Containers -->
   <main class="flex-1 p-3">
 
-    <!-- TAB 1: ALBUMS (相簿) -->
+    <!-- TAB 1: ALBUMS (相簿 + 偶像統計速覽 + 備份) -->
     <section id="tab-albums" class="hidden space-y-4">
-      <div class="flex justify-between items-center">
+      <!-- 偶像 Cheki 數量快速統計卡 -->
+      <div class="neo-box bg-white rounded-2xl p-3.5 space-y-2.5">
+        <div class="flex justify-between items-center">
+          <h3 class="font-black text-sm flex items-center gap-1.5">👑 偶像 Cheki 數量統計</h3>
+          <button onclick="switchTab('stats')" class="px-2.5 py-1 rounded-full bg-pink-100 border border-cheki-dark text-[11px] font-black text-cheki-accent">完整統計報告 ▶</button>
+        </div>
+        <div id="albumsQuickIdolStats" class="space-y-2"></div>
+      </div>
+
+      <div class="flex justify-between items-center pt-1">
         <h2 class="font-black text-lg">📚 我的相簿分類</h2>
         <button onclick="createNewAlbum()" class="px-3 py-1.5 rounded-xl bg-amber-200 neo-btn text-xs font-black">+ 新增相簿</button>
       </div>
@@ -138,17 +148,21 @@
       </div>
     </section>
 
-    <!-- TAB 2: BINDER (卡冊) -->
-    <section id="tab-binder" class="hidden space-y-3">
+    <!-- TAB 2: BINDER (卡冊 - 左側分類獨立滾動，右側最愛固定不重疊) -->
+    <section id="tab-binder" class="hidden space-y-2.5">
+      <!-- 第一列：相簿篩選 + 最愛固定右側 -->
       <div class="flex items-center gap-2 w-full">
         <div id="albumFilterPills" class="flex-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 pr-1"></div>
         <div class="h-5 w-[2px] bg-zinc-300 shrink-0"></div>
         <button onclick="toggleFavFilter()" id="favFilterBtn" class="px-3 py-1.5 rounded-full bg-white neo-btn text-xs font-black shrink-0">★ 最愛</button>
       </div>
-      <div id="binderGrid" class="grid grid-cols-2 gap-3"></div>
+      <!-- 第二列：依偶像名稱快速篩選 (直接顯示每位偶像 Cheki 張數) -->
+      <div id="memberFilterPills" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1"></div>
+
+      <div id="binderGrid" class="grid grid-cols-2 gap-3 pt-1"></div>
     </section>
 
-    <!-- TAB 3: CALENDAR (日曆) -->
+    <!-- TAB 3: CALENDAR (日曆時光軸) -->
     <section id="tab-calendar" class="hidden space-y-3">
       <div class="neo-box bg-white rounded-2xl p-3">
         <div class="flex justify-between items-center mb-3">
@@ -164,7 +178,54 @@
       <div id="calendarDayList" class="space-y-2"></div>
     </section>
 
-    <!-- TAB 4: DESK (桌布) -->
+    <!-- TAB 4: STATS (偶像 Cheki 數量深度統計與應援成就系統) -->
+    <section id="tab-stats" class="hidden space-y-4">
+      <!-- 總覽數據四宮格 -->
+      <div class="grid grid-cols-4 gap-2">
+        <div class="neo-box bg-pink-100 rounded-2xl p-2.5 text-center">
+          <p class="text-[10px] font-bold text-zinc-600">總 Cheki 數</p>
+          <p id="statTotalCards" class="font-black text-xl text-cheki-accent mt-0.5">0</p>
+        </div>
+        <div class="neo-box bg-blue-100 rounded-2xl p-2.5 text-center">
+          <p class="text-[10px] font-bold text-zinc-600">偶像人數</p>
+          <p id="statTotalIdols" class="font-black text-xl text-blue-600 mt-0.5">0</p>
+        </div>
+        <div class="neo-box bg-amber-100 rounded-2xl p-2.5 text-center">
+          <p class="text-[10px] font-bold text-zinc-600">最愛珍藏</p>
+          <p id="statTotalFavs" class="font-black text-xl text-amber-600 mt-0.5">0</p>
+        </div>
+        <div class="neo-box bg-emerald-100 rounded-2xl p-2.5 text-center">
+          <p class="text-[10px] font-bold text-zinc-600">相簿分類</p>
+          <p id="statTotalAlbums" class="font-black text-xl text-emerald-700 mt-0.5">0</p>
+        </div>
+      </div>
+
+      <!-- 主推 / 第一名偶像榮譽大卡 -->
+      <div id="topOshiHighlightCard" class="hidden neo-box bg-gradient-to-br from-blue-50 via-pink-50 to-amber-50 rounded-2xl p-3.5"></div>
+
+      <!-- 各偶像 Cheki 數量詳細統計排行榜 -->
+      <div class="neo-box bg-white rounded-2xl p-3.5 space-y-3">
+        <div class="flex items-center justify-between border-b-2 border-zinc-100 pb-2">
+          <h3 class="font-black text-base">📊 各偶像 Cheki 數量統計</h3>
+          <span class="text-[11px] font-bold text-zinc-400">點擊偶像可檢視相片</span>
+        </div>
+        <div id="idolStatsLeaderboard" class="space-y-2.5"></div>
+      </div>
+
+      <!-- 每月拍攝 Cheki 數量統計 -->
+      <div class="neo-box bg-white rounded-2xl p-3.5 space-y-3">
+        <h3 class="font-black text-base border-b-2 border-zinc-100 pb-2">🗓️ 每月 Cheki 拍攝數量統計</h3>
+        <div id="monthlyStatsList" class="space-y-2"></div>
+      </div>
+
+      <!-- 應援成就徽章解鎖系統 -->
+      <div class="neo-box bg-white rounded-2xl p-3.5 space-y-3">
+        <h3 class="font-black text-base border-b-2 border-zinc-100 pb-2">🏆 應援成就徽章</h3>
+        <div id="achievementsGrid" class="grid grid-cols-2 gap-2.5"></div>
+      </div>
+    </section>
+
+    <!-- TAB 5: DESK (桌布) -->
     <section id="tab-desk" class="space-y-2.5">
       <div class="neo-box bg-white rounded-2xl p-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
         <button onclick="scatterDeskCards()" class="px-3 py-1.5 rounded-full bg-cheki-accent text-white text-xs font-black neo-btn shrink-0">🎲 隨機灑落</button>
@@ -183,20 +244,23 @@
 
   </main>
 
-  <!-- Bottom Navigation -->
-  <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t-2 border-cheki-dark px-6 py-2 flex justify-between items-center z-30">
-    <button onclick="switchTab('albums')" id="nav-albums" class="flex flex-col items-center gap-0.5 text-zinc-400 font-bold text-xs">
-      <span class="text-xl">📚</span><span>相簿</span>
+  <!-- Bottom Navigation (5個主要分頁 + 中央快速新增按鈕) -->
+  <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t-2 border-cheki-dark px-3 py-2 flex justify-between items-center z-30">
+    <button onclick="switchTab('albums')" id="nav-albums" class="flex flex-col items-center gap-0.5 text-zinc-400 font-bold text-[11px] w-14">
+      <span class="text-lg">📚</span><span>相簿</span>
     </button>
-    <button onclick="switchTab('binder')" id="nav-binder" class="flex flex-col items-center gap-0.5 text-zinc-400 font-bold text-xs">
-      <span class="text-xl">🎴</span><span>卡冊</span>
+    <button onclick="switchTab('binder')" id="nav-binder" class="flex flex-col items-center gap-0.5 text-zinc-400 font-bold text-[11px] w-14">
+      <span class="text-lg">🎴</span><span>卡冊</span>
     </button>
-    <button onclick="openAddModal()" class="w-12 h-12 -mt-5 rounded-full bg-cheki-accent text-white neo-box flex items-center justify-center text-2xl font-black">+</button>
-    <button onclick="switchTab('calendar')" id="nav-calendar" class="flex flex-col items-center gap-0.5 text-zinc-400 font-bold text-xs">
-      <span class="text-xl">📅</span><span>日曆</span>
+    <button onclick="openAddModal()" class="w-12 h-12 -mt-5 rounded-full bg-cheki-accent text-white neo-box flex items-center justify-center text-2xl font-black shrink-0">+</button>
+    <button onclick="switchTab('calendar')" id="nav-calendar" class="flex flex-col items-center gap-0.5 text-zinc-400 font-bold text-[11px] w-14">
+      <span class="text-lg">📅</span><span>日曆</span>
     </button>
-    <button onclick="switchTab('desk')" id="nav-desk" class="flex flex-col items-center gap-0.5 text-cheki-accent font-black text-xs">
-      <span class="text-xl">🪵</span><span>桌布</span>
+    <button onclick="switchTab('stats')" id="nav-stats" class="flex flex-col items-center gap-0.5 text-zinc-400 font-bold text-[11px] w-14">
+      <span class="text-lg">📊</span><span>統計</span>
+    </button>
+    <button onclick="switchTab('desk')" id="nav-desk" class="flex flex-col items-center gap-0.5 text-cheki-accent font-black text-[11px] w-14">
+      <span class="text-lg">🪵</span><span>桌布</span>
     </button>
   </nav>
 
@@ -242,28 +306,37 @@
       <!-- 3種清楚分離的拍攝/選取按鈕 -->
       <div class="space-y-2">
         <button type="button" onclick="openLiveCameraScanner()" class="w-full py-2.5 rounded-xl bg-cheki-accent text-white neo-btn text-center font-black text-xs flex items-center justify-center gap-1.5">
-          📸 開啟專業掃描相機（防反光引導 + 對齊框）
+          📸 開啟專業掃描相機（防反光水平引導 + 對齊框）
         </button>
 
         <div class="grid grid-cols-2 gap-2">
-          <!-- 強制開啟手機原生相機 capture="environment" -->
           <label class="py-2.5 rounded-xl bg-pink-200 neo-btn text-center font-black text-xs cursor-pointer flex items-center justify-center gap-1">
             📷 系統相機拍照
             <input id="cameraDirectInput" type="file" accept="image/*" capture="environment" class="hidden" onchange="handlePhotoUpload(event)">
           </label>
-          <!-- 開啟相簿選取 -->
           <label class="py-2.5 rounded-xl bg-amber-100 neo-btn text-center font-black text-xs cursor-pointer flex items-center justify-center gap-1">
             🖼️ 從相簿選取
             <input id="photoGalleryInput" type="file" accept="image/*" class="hidden" onchange="handlePhotoUpload(event)">
           </label>
         </div>
 
-        <!-- 預覽與裁切/旋轉工具列 -->
+        <!-- 預覽與裁切/旋轉/畫質微調工具列 -->
         <div id="previewContainer" class="hidden flex flex-col items-center bg-zinc-900 rounded-2xl p-2.5 space-y-2">
           <img id="editPreviewImg" src="" class="max-h-52 object-contain rounded-lg">
           <div class="flex gap-2 w-full">
             <button type="button" onclick="openCropperModal()" class="flex-1 py-1.5 rounded-xl bg-emerald-300 neo-btn text-xs font-black">✂️ 自由裁切邊框</button>
             <button type="button" onclick="rotateUploadImage(90)" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-black">↻ 旋轉 90°</button>
+          </div>
+          <!-- 畫質微調 (亮度與對比度) -->
+          <div class="w-full bg-zinc-800 rounded-xl p-2 space-y-1.5 text-white">
+            <div class="flex items-center justify-between text-[10px] font-bold">
+              <span>☀️ 亮度微調</span>
+              <input id="brightnessSlider" type="range" min="80" max="130" value="100" oninput="applyImageFilterPreview()" class="w-36 accent-pink-400">
+            </div>
+            <div class="flex items-center justify-between text-[10px] font-bold">
+              <span>◐ 對比微調</span>
+              <input id="contrastSlider" type="range" min="80" max="135" value="100" oninput="applyImageFilterPreview()" class="w-36 accent-pink-400">
+            </div>
           </div>
         </div>
       </div>
@@ -271,8 +344,9 @@
       <!-- Metadata Inputs -->
       <div class="space-y-2.5">
         <div>
-          <label class="text-xs font-black block mb-1">成員 / 偶像名稱 *</label>
+          <label class="text-xs font-black block mb-1">成員 / 偶像名稱 *（點選下方標籤可快速帶入並歸類統計）</label>
           <input id="cardMemberInput" type="text" placeholder="例如：遠藤まりん" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold text-sm">
+          <div id="quickMemberSuggestions" class="flex gap-1.5 overflow-x-auto no-scrollbar pt-1.5"></div>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
@@ -318,10 +392,9 @@
 
     <div class="relative flex-1 my-3 rounded-2xl overflow-hidden flex items-center justify-center bg-zinc-950">
       <video id="cameraVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
-      <!-- 拍立得比例對齊框 -->
       <div class="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
         <div class="w-64 aspect-[54/86] border-2 border-dashed border-pink-400 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] relative">
-          <span class="absolute -top-6 left-1/2 -translate-x-1/2 text-[11px] font-black text-pink-300 whitespace-nowrap">將 Cheki 放入虛線框內（可微傾避開頭頂燈光反光）</span>
+          <span class="absolute -top-6 left-1/2 -translate-x-1/2 text-[11px] font-black text-pink-300 whitespace-nowrap">將 Cheki 放入虛線框內（微傾可避開反光）</span>
         </div>
       </div>
     </div>
@@ -344,9 +417,7 @@
     <div id="cropWorkspace" class="relative flex-1 my-4 flex items-center justify-center overflow-hidden select-none">
       <div id="cropImgWrapper" class="relative inline-block">
         <img id="cropTargetImg" src="" class="max-h-[68vh] max-w-[88vw] object-contain block pointer-events-none select-none">
-        <!-- 裁切框覆蓋層 -->
         <div id="cropBox" class="absolute border-2 border-pink-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
-          <!-- 四角與四邊控制點 -->
           <div data-handle="nw" class="crop-handle absolute -top-3 -left-3 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full"></div>
           <div data-handle="ne" class="crop-handle absolute -top-3 -right-3 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full"></div>
           <div data-handle="sw" class="crop-handle absolute -bottom-3 -left-3 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full"></div>
@@ -387,8 +458,10 @@
     let albums = ['預設相簿', '遠藤まりん', '現場活動'];
     let currentTab = 'desk';
     let selectedAlbumFilter = 'ALL';
+    let selectedMemberFilter = 'ALL';
     let favOnlyFilter = false;
     let editingCardId = null;
+    let rawUploadDataUrl = '';
     let currentUploadDataUrl = '';
     let selectedBackColor = '#60A5FA';
     let inspectingCardId = null;
@@ -403,7 +476,7 @@
     let useFrontCamera = false;
 
     // Cropper state
-    let cropRect = { left: 10, top: 10, right: 90, bottom: 90 }; // percentages
+    let cropRect = { left: 10, top: 10, right: 90, bottom: 90 };
 
     function initDB() {
       return new Promise((resolve, reject) => {
@@ -462,9 +535,54 @@
       });
     }
 
+    // --- 計算偶像 Cheki 統計數據核心函數 (含張數、最愛數、初見/最近日期、代表圖) ---
+    function getIdolCounts() {
+      const map = {};
+      cards.forEach(c => {
+        const name = (c.member || '未命名').trim() || '未命名';
+        if (!map[name]) {
+          map[name] = {
+            member: name,
+            count: 0,
+            favCount: 0,
+            cover: c.image || '',
+            firstDate: c.date || '',
+            latestDate: c.date || ''
+          };
+        }
+        map[name].count += 1;
+        if (c.fav) map[name].favCount += 1;
+        if (!map[name].cover && c.image) map[name].cover = c.image;
+        if (c.date) {
+          if (!map[name].firstDate || c.date < map[name].firstDate) map[name].firstDate = c.date;
+          if (!map[name].latestDate || c.date > map[name].latestDate) map[name].latestDate = c.date;
+        }
+      });
+
+      return Object.values(map)
+        .map(item => ({
+          ...item,
+          percent: cards.length ? Math.round((item.count / cards.length) * 100) : 0
+        }))
+        .sort((a, b) => b.count - a.count);
+    }
+
+    function getMonthlyCounts() {
+      const monthMap = {};
+      cards.forEach(c => {
+        const m = (c.date || '').slice(0, 7) || '未知月份';
+        monthMap[m] = (monthMap[m] || 0) + 1;
+      });
+      return Object.entries(monthMap)
+        .map(([month, count]) => ({ month, count }))
+        .sort((a, b) => b.month.localeCompare(a.month));
+    }
+
     function updateHeaderStats() {
       const favCount = cards.filter(c => c.fav).length;
-      document.getElementById('headerStats').textContent = `總計 ${cards.length} 張 · ★ ${favCount} 張最愛 · ${albums.length} 個相簿`;
+      const idolList = getIdolCounts();
+      const topIdolText = idolList.length > 0 ? ` · 👑 ${idolList[0].member} (${idolList[0].count}張)` : '';
+      document.getElementById('headerStats').textContent = `總計 ${cards.length} 張 · ★ ${favCount} 最愛${topIdolText}`;
       const backupCountEl = document.getElementById('backupCountText');
       if (backupCountEl) backupCountEl.textContent = cards.length;
     }
@@ -472,7 +590,7 @@
     // --- Tab Switching ---
     function switchTab(tab) {
       currentTab = tab;
-      ['albums', 'binder', 'calendar', 'desk'].forEach(t => {
+      ['albums', 'binder', 'calendar', 'stats', 'desk'].forEach(t => {
         document.getElementById(`tab-${t}`).classList.toggle('hidden', t !== tab);
         const navBtn = document.getElementById(`nav-${t}`);
         if (t === tab) {
@@ -490,6 +608,7 @@
       if (currentTab === 'albums') renderAlbums();
       else if (currentTab === 'binder') renderBinder();
       else if (currentTab === 'calendar') renderCalendar();
+      else if (currentTab === 'stats') renderStats();
       else if (currentTab === 'desk') renderDesk();
     }
 
@@ -508,6 +627,7 @@
       const q = (document.getElementById('searchInput')?.value || '').trim().toLowerCase();
       return cards.filter(c => {
         if (selectedAlbumFilter !== 'ALL' && c.album !== selectedAlbumFilter) return false;
+        if (selectedMemberFilter !== 'ALL' && (c.member || '未命名').trim() !== selectedMemberFilter) return false;
         if (favOnlyFilter && !c.fav) return false;
         if (q) {
           const matchMember = (c.member || '').toLowerCase().includes(q);
@@ -519,8 +639,29 @@
       });
     }
 
-    // --- TAB 1: ALBUMS ---
+    // --- TAB 1: ALBUMS + 偶像快速統計 ---
     function renderAlbums() {
+      const quickStatsBox = document.getElementById('albumsQuickIdolStats');
+      const idolCounts = getIdolCounts();
+      if (idolCounts.length === 0) {
+        quickStatsBox.innerHTML = `<p class="text-xs text-zinc-400 font-bold py-1">尚無拍立得紀錄，新增後將自動統計各成員張數！</p>`;
+      } else {
+        quickStatsBox.innerHTML = idolCounts.slice(0, 5).map((item, idx) => {
+          const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '💙';
+          return `
+            <div onclick="filterByMemberInBinder('${item.member.replace(/'/g, "\\'")}')" class="cursor-pointer space-y-1 p-1.5 rounded-xl hover:bg-pink-50 transition">
+              <div class="flex justify-between items-center text-xs font-black">
+                <span>${medal} ${item.member}</span>
+                <span class="text-cheki-accent">${item.count} 張 Cheki (${item.percent}%)</span>
+              </div>
+              <div class="w-full h-2 rounded-full bg-pink-100 overflow-hidden border border-pink-200">
+                <div class="h-full bg-cheki-accent rounded-full" style="width: ${item.percent}%"></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
       const grid = document.getElementById('albumsGrid');
       grid.innerHTML = '';
       albums.forEach(alb => {
@@ -530,6 +671,7 @@
         div.className = 'neo-box bg-white rounded-2xl p-2.5 cursor-pointer flex flex-col justify-between';
         div.onclick = () => {
           selectedAlbumFilter = alb;
+          selectedMemberFilter = 'ALL';
           switchTab('binder');
         };
         div.innerHTML = `
@@ -545,6 +687,12 @@
       });
     }
 
+    function filterByMemberInBinder(memberName) {
+      selectedAlbumFilter = 'ALL';
+      selectedMemberFilter = memberName;
+      switchTab('binder');
+    }
+
     function createNewAlbum() {
       const name = prompt('請輸入新相簿名稱：');
       if (name && name.trim() && !albums.includes(name.trim())) {
@@ -555,7 +703,7 @@
       }
     }
 
-    // --- TAB 2: BINDER ---
+    // --- TAB 2: BINDER (含相簿篩選 + 偶像張數標籤篩選) ---
     function renderBinder() {
       const pills = document.getElementById('albumFilterPills');
       pills.innerHTML = '';
@@ -563,10 +711,31 @@
         const btn = document.createElement('button');
         const active = selectedAlbumFilter === alb;
         btn.className = `px-3 py-1.5 rounded-full text-xs font-black neo-btn shrink-0 ${active ? 'bg-cheki-accent text-white' : 'bg-white'}`;
-        btn.textContent = alb === 'ALL' ? '全部相片' : alb;
+        btn.textContent = alb === 'ALL' ? '全部相簿' : alb;
         btn.onclick = () => { selectedAlbumFilter = alb; renderBinder(); };
         pills.appendChild(btn);
       });
+
+      const memberPills = document.getElementById('memberFilterPills');
+      memberPills.innerHTML = '';
+      const idolCounts = getIdolCounts();
+      if (idolCounts.length > 0) {
+        const allMemberBtn = document.createElement('button');
+        const isAllMember = selectedMemberFilter === 'ALL';
+        allMemberBtn.className = `px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark shrink-0 ${isAllMember ? 'bg-blue-500 text-white' : 'bg-blue-50 text-zinc-700'}`;
+        allMemberBtn.textContent = `👥 全部偶像 (${cards.length}張)`;
+        allMemberBtn.onclick = () => { selectedMemberFilter = 'ALL'; renderBinder(); };
+        memberPills.appendChild(allMemberBtn);
+
+        idolCounts.forEach(item => {
+          const btn = document.createElement('button');
+          const active = selectedMemberFilter === item.member;
+          btn.className = `px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark shrink-0 ${active ? 'bg-blue-500 text-white' : 'bg-white text-zinc-700'}`;
+          btn.textContent = `${item.member} (${item.count}張)`;
+          btn.onclick = () => { selectedMemberFilter = item.member; renderBinder(); };
+          memberPills.appendChild(btn);
+        });
+      }
 
       const favBtn = document.getElementById('favFilterBtn');
       favBtn.className = `px-3 py-1.5 rounded-full text-xs font-black neo-btn shrink-0 ${favOnlyFilter ? 'bg-amber-300' : 'bg-white'}`;
@@ -576,7 +745,7 @@
       const list = getFilteredCards();
 
       if (list.length === 0) {
-        grid.innerHTML = `<div class="col-span-2 text-center py-12 text-zinc-400 font-bold text-sm">尚無拍立得，點擊右上角「✨ 新增」或「📦 備份」匯入吧！</div>`;
+        grid.innerHTML = `<div class="col-span-2 text-center py-12 text-zinc-400 font-bold text-sm">尚無符合條件的拍立得</div>`;
         return;
       }
 
@@ -660,7 +829,119 @@
       });
     }
 
-    // --- TAB 4: DESK ---
+    // --- TAB 4: STATS (偶像 Cheki 數量深度統計、主推榮譽卡、月度統計、應援成就) ---
+    function renderStats() {
+      const idolCounts = getIdolCounts();
+      const favCount = cards.filter(c => c.fav).length;
+
+      document.getElementById('statTotalCards').textContent = cards.length;
+      document.getElementById('statTotalIdols').textContent = idolCounts.length;
+      document.getElementById('statTotalFavs').textContent = favCount;
+      document.getElementById('statTotalAlbums').textContent = albums.length;
+
+      // 1. 渲染主推 / 榜首偶像榮譽大卡
+      const topOshiCard = document.getElementById('topOshiHighlightCard');
+      if (idolCounts.length > 0) {
+        const top = idolCounts[0];
+        topOshiCard.classList.remove('hidden');
+        topOshiCard.innerHTML = `
+          <div onclick="filterByMemberInBinder('${top.member.replace(/'/g, "\\'")}')" class="flex items-center gap-3.5 cursor-pointer">
+            <div class="w-20 h-24 rounded-2xl bg-white neo-btn flex items-center justify-center overflow-hidden shrink-0 p-1">
+              ${top.cover ? `<img src="${top.cover}" class="max-h-full max-w-full object-contain rounded">` : '👑'}
+            </div>
+            <div class="flex-1 min-w-0 space-y-1">
+              <div class="inline-block px-2.5 py-0.5 rounded-full bg-blue-500 text-white text-[10px] font-black">💙 最愛主推 No.1</div>
+              <h4 class="font-black text-lg truncate">${top.member}</h4>
+              <p class="text-xs font-black text-cheki-accent">累積收藏：<span class="text-base">${top.count}</span> 張 Cheki（佔比 ${top.percent}%）</p>
+              <p class="text-[11px] text-zinc-600 font-bold">⭐ 最愛：${top.favCount} 張 ｜ 📅 最新：${top.latestDate || '未標註'}</p>
+            </div>
+          </div>
+        `;
+      } else {
+        topOshiCard.classList.add('hidden');
+      }
+
+      // 2. 渲染各偶像 Cheki 數量排行榜
+      const board = document.getElementById('idolStatsLeaderboard');
+      if (idolCounts.length === 0) {
+        board.innerHTML = `<p class="text-center py-6 text-zinc-400 font-bold text-xs">尚無拍立得資料，快去新增第一張 Cheki 吧！</p>`;
+      } else {
+        board.innerHTML = idolCounts.map((item, idx) => {
+          const rankBadge = idx === 0 ? '🥇 No.1' : idx === 1 ? '🥈 No.2' : idx === 2 ? '🥉 No.3' : `#${idx + 1}`;
+          const barColor = idx === 0 ? 'bg-cheki-accent' : idx === 1 ? 'bg-blue-400' : 'bg-amber-400';
+          return `
+            <div onclick="filterByMemberInBinder('${item.member.replace(/'/g, "\\'")}')" class="neo-btn bg-pink-50/60 rounded-2xl p-2.5 flex items-center gap-3 cursor-pointer">
+              <div class="w-12 h-14 rounded-xl bg-white border border-pink-200 flex items-center justify-center overflow-hidden shrink-0">
+                ${item.cover ? `<img src="${item.cover}" class="max-h-full max-w-full object-contain">` : '📸'}
+              </div>
+              <div class="flex-1 min-w-0 space-y-1">
+                <div class="flex justify-between items-center gap-1">
+                  <div class="flex items-center gap-1.5 truncate">
+                    <span class="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-200 border border-cheki-dark shrink-0">${rankBadge}</span>
+                    <span class="font-black text-sm truncate">${item.member}</span>
+                  </div>
+                  <span class="font-black text-sm text-cheki-accent shrink-0">${item.count} 張</span>
+                </div>
+                <div class="w-full h-2.5 rounded-full bg-white border border-cheki-dark overflow-hidden">
+                  <div class="h-full ${barColor}" style="width: ${item.percent}%"></div>
+                </div>
+                <div class="flex justify-between text-[10px] text-zinc-500 font-bold">
+                  <span>⭐ 最愛 ${item.favCount} 張 · 最新 ${item.latestDate || '-'}</span>
+                  <span>佔總數 ${item.percent}%</span>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // 3. 渲染每月拍攝統計
+      const monthlyBox = document.getElementById('monthlyStatsList');
+      const monthlyCounts = getMonthlyCounts();
+      if (monthlyCounts.length === 0) {
+        monthlyBox.innerHTML = `<p class="text-center py-4 text-zinc-400 font-bold text-xs">尚無月份紀錄</p>`;
+      } else {
+        const maxM = Math.max(...monthlyCounts.map(m => m.count), 1);
+        monthlyBox.innerHTML = monthlyCounts.slice(0, 6).map(m => {
+          const w = Math.max(8, Math.round((m.count / maxM) * 100));
+          return `
+            <div class="space-y-1">
+              <div class="flex justify-between text-xs font-black">
+                <span>🗓️ ${m.month}</span>
+                <span class="text-blue-600">${m.count} 張</span>
+              </div>
+              <div class="w-full h-2 rounded-full bg-blue-50 border border-blue-200 overflow-hidden">
+                <div class="h-full bg-blue-400 rounded-full" style="width: ${w}%"></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // 4. 渲染應援成就徽章
+      const maxSingleIdol = idolCounts[0]?.count || 0;
+      const achievements = [
+        { icon: '🌱', title: '初次邂逅', desc: '收藏第 1 張拍立得', unlocked: cards.length >= 1 },
+        { icon: '💙', title: '十全十美', desc: '累積收藏達 10 張', unlocked: cards.length >= 10 },
+        { icon: '🔥', title: '熱情應援', desc: '單一偶像達 30 張', unlocked: maxSingleIdol >= 30 },
+        { icon: '🌟', title: '百張紀念', desc: '累積收藏達 100 張', unlocked: cards.length >= 100 },
+        { icon: '👑', title: '一筋傳說', desc: '單一偶像達 200 張', unlocked: maxSingleIdol >= 200 },
+        { icon: '💎', title: '殿堂級收藏家', desc: '累積收藏突破 280 張', unlocked: cards.length >= 280 }
+      ];
+
+      const achGrid = document.getElementById('achievementsGrid');
+      achGrid.innerHTML = achievements.map(a => `
+        <div class="rounded-2xl p-2.5 border-2 border-cheki-dark flex items-center gap-2.5 ${a.unlocked ? 'bg-amber-100' : 'bg-zinc-100 opacity-50'}">
+          <span class="text-2xl">${a.icon}</span>
+          <div class="min-w-0">
+            <p class="font-black text-xs truncate">${a.title}</p>
+            <p class="text-[10px] text-zinc-600 font-bold">${a.desc}</p>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // --- TAB 5: DESK ---
     function renderDesk() {
       const canvas = document.getElementById('deskCanvas');
       canvas.innerHTML = '';
@@ -871,7 +1152,6 @@
         video.srcObject = cameraStream;
       } catch (err) {
         closeLiveCameraScanner();
-        // Fallback to native system camera input if browser blocks getUserMedia
         document.getElementById('cameraDirectInput').click();
       }
     }
@@ -974,11 +1254,32 @@
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
 
-        currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        rawUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        currentUploadDataUrl = rawUploadDataUrl;
+        document.getElementById('brightnessSlider').value = 100;
+        document.getElementById('contrastSlider').value = 100;
         document.getElementById('editPreviewImg').src = currentUploadDataUrl;
         closeCropperModal();
       };
       img.src = currentUploadDataUrl;
+    }
+
+    function applyImageFilterPreview() {
+      if (!rawUploadDataUrl) return;
+      const b = Number(document.getElementById('brightnessSlider').value || 100);
+      const c = Number(document.getElementById('contrastSlider').value || 100);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.filter = `brightness(${b}%) contrast(${c}%)`;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+      };
+      img.src = rawUploadDataUrl;
     }
 
     // --- INSPECT MODAL ---
@@ -1049,16 +1350,27 @@
         opt.textContent = a;
         sel.appendChild(opt);
       });
+
+      const sugBox = document.getElementById('quickMemberSuggestions');
+      const existingNames = [...new Set(['遠藤まりん', ...cards.map(c => (c.member || '').trim()).filter(Boolean)])];
+      sugBox.innerHTML = existingNames.map(name => `
+        <button type="button" onclick="document.getElementById('cardMemberInput').value='${name.replace(/'/g, "\\'")}'" class="px-2.5 py-0.5 rounded-full bg-pink-100 border border-pink-300 text-[11px] font-bold shrink-0">
+          ${name}
+        </button>
+      `).join('');
     }
 
     function openAddModal() {
       editingCardId = null;
+      rawUploadDataUrl = '';
       currentUploadDataUrl = '';
       populateAlbumSelect();
       document.getElementById('modalTitle').textContent = '✨ 新增拍立得';
       document.getElementById('cardMemberInput').value = '遠藤まりん';
       document.getElementById('cardDateInput').value = new Date().toISOString().split('T')[0];
       document.getElementById('cardNoteInput').value = '';
+      document.getElementById('brightnessSlider').value = 100;
+      document.getElementById('contrastSlider').value = 100;
       document.getElementById('previewContainer').classList.add('hidden');
       selectBackColor('#60A5FA');
       document.getElementById('editCardModal').classList.remove('hidden');
@@ -1071,6 +1383,7 @@
       closeInspectModal();
 
       editingCardId = targetId;
+      rawUploadDataUrl = card.image;
       currentUploadDataUrl = card.image;
       populateAlbumSelect();
       document.getElementById('modalTitle').textContent = '✏️ 編輯拍立得';
@@ -1078,6 +1391,8 @@
       document.getElementById('cardDateInput').value = card.date || '';
       document.getElementById('cardAlbumInput').value = card.album || albums[0];
       document.getElementById('cardNoteInput').value = card.note || '';
+      document.getElementById('brightnessSlider').value = 100;
+      document.getElementById('contrastSlider').value = 100;
       document.getElementById('editPreviewImg').src = card.image;
       document.getElementById('previewContainer').classList.remove('hidden');
       selectBackColor(card.backColor || '#60A5FA');
@@ -1120,7 +1435,10 @@
         canvas.width = w;
         canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        rawUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        currentUploadDataUrl = rawUploadDataUrl;
+        document.getElementById('brightnessSlider').value = 100;
+        document.getElementById('contrastSlider').value = 100;
         document.getElementById('editPreviewImg').src = currentUploadDataUrl;
         document.getElementById('previewContainer').classList.remove('hidden');
         if (autoOpenCropper) openCropperModal();
@@ -1139,7 +1457,8 @@
         ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.rotate((deg * Math.PI) / 180);
         ctx.drawImage(img, -img.width / 2, -img.height / 2);
-        currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        rawUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        currentUploadDataUrl = rawUploadDataUrl;
         document.getElementById('editPreviewImg').src = currentUploadDataUrl;
       };
       img.src = currentUploadDataUrl;
