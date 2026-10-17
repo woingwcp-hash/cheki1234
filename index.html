@@ -132,18 +132,16 @@
           </button>
           <label class="py-2.5 px-3 rounded-xl bg-amber-200 neo-btn font-black text-xs flex items-center justify-center gap-1 cursor-pointer text-center">
             ⬆️ 匯入還原
-            <input type="file" accept=".json" class="hidden" onchange="importAllData(event)">
+            <input type="file" accept=".json,application/json" class="hidden" onchange="importAllData(event)">
           </label>
         </div>
       </div>
     </section>
 
-    <!-- TAB 2: BINDER (卡冊 - 已修復按鈕重疊問題) -->
+    <!-- TAB 2: BINDER (卡冊) -->
     <section id="tab-binder" class="hidden space-y-3">
       <div class="flex items-center gap-2 w-full">
-        <!-- 左側相簿分類獨立橫向滾動，絕不與右側最愛按鈕重疊 -->
         <div id="albumFilterPills" class="flex-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 pr-1"></div>
-        <!-- 分隔線與固定在右側的最愛按鈕 -->
         <div class="h-5 w-[2px] bg-zinc-300 shrink-0"></div>
         <button onclick="toggleFavFilter()" id="favFilterBtn" class="px-3 py-1.5 rounded-full bg-white neo-btn text-xs font-black shrink-0">★ 最愛</button>
       </div>
@@ -168,21 +166,18 @@
 
     <!-- TAB 4: DESK (桌布) -->
     <section id="tab-desk" class="space-y-2.5">
-      <!-- Desk Toolbar -->
       <div class="neo-box bg-white rounded-2xl p-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
         <button onclick="scatterDeskCards()" class="px-3 py-1.5 rounded-full bg-cheki-accent text-white text-xs font-black neo-btn shrink-0">🎲 隨機灑落</button>
         <button onclick="neatArrangeDeskCards()" class="px-3 py-1.5 rounded-full bg-white text-xs font-black neo-btn shrink-0">🗂️ 整齊排列</button>
         <button onclick="cycleDeskTheme()" class="px-3 py-1.5 rounded-full bg-pink-100 text-xs font-black neo-btn shrink-0">🎨 換桌布</button>
       </div>
 
-      <!-- Selected Card Info Bar -->
       <div class="neo-box bg-pink-100/90 rounded-2xl px-3 py-2 flex items-center justify-between gap-2">
         <span id="deskSelectedName" class="font-black text-sm truncate max-w-[100px]">點擊相片操作</span>
         <span class="px-2.5 py-0.5 rounded-full bg-white border border-cheki-dark text-[11px] font-bold text-zinc-700 shrink-0">💡 點擊相片翻面 / 雙指縮放</span>
         <button onclick="flipSelectedDeskCard()" class="px-3 py-1 rounded-full bg-white neo-btn text-xs font-black flex items-center gap-1 shrink-0">🔄 翻面</button>
       </div>
 
-      <!-- Desk Canvas Area -->
       <div id="deskCanvas" class="desk-dots-brown neo-box rounded-3xl relative w-full h-[68vh] overflow-hidden touch-none"></div>
     </section>
 
@@ -220,11 +215,9 @@
     <div class="flex-1 flex flex-col items-center justify-center my-4 overflow-hidden">
       <div onclick="toggleInspectFlip()" class="perspective-1000 cursor-pointer flex items-center justify-center w-full max-h-[70vh]">
         <div id="inspectFlipInner" class="transform-style-3d relative flex items-center justify-center">
-          <!-- Front -->
           <div class="backface-hidden flex items-center justify-center">
             <img id="inspectImg" src="" class="max-h-[65vh] max-w-[85vw] object-contain rounded-lg shadow-2xl">
           </div>
-          <!-- Back -->
           <div class="backface-hidden rotate-y-180 absolute inset-0 rounded-xl p-5 flex flex-col justify-between shadow-2xl border-2 border-white/40" id="inspectBackCard">
             <div class="text-xs font-bold opacity-80" id="inspectBackDate"></div>
             <div class="font-marker text-xl font-black text-center whitespace-pre-wrap break-words my-auto" id="inspectBackNote"></div>
@@ -246,18 +239,32 @@
         <button onclick="closeEditModal()" class="w-8 h-8 rounded-full bg-white neo-btn font-black">✕</button>
       </div>
 
-      <!-- Upload & Rotate Section -->
+      <!-- 3種清楚分離的拍攝/選取按鈕 -->
       <div class="space-y-2">
-        <div class="flex gap-2">
-          <label class="flex-1 py-2.5 rounded-xl bg-pink-200 neo-btn text-center font-black text-xs cursor-pointer">
-            📷 拍攝 / 選取相片
-            <input id="photoInput" type="file" accept="image/*" class="hidden" onchange="handlePhotoUpload(event)">
+        <button type="button" onclick="openLiveCameraScanner()" class="w-full py-2.5 rounded-xl bg-cheki-accent text-white neo-btn text-center font-black text-xs flex items-center justify-center gap-1.5">
+          📸 開啟專業掃描相機（防反光引導 + 對齊框）
+        </button>
+
+        <div class="grid grid-cols-2 gap-2">
+          <!-- 強制開啟手機原生相機 capture="environment" -->
+          <label class="py-2.5 rounded-xl bg-pink-200 neo-btn text-center font-black text-xs cursor-pointer flex items-center justify-center gap-1">
+            📷 系統相機拍照
+            <input id="cameraDirectInput" type="file" accept="image/*" capture="environment" class="hidden" onchange="handlePhotoUpload(event)">
           </label>
-          <button type="button" onclick="rotateUploadImage(90)" id="rotateBtn" class="hidden px-3 py-2 rounded-xl bg-white neo-btn text-xs font-black">↻ 旋轉 90°</button>
+          <!-- 開啟相簿選取 -->
+          <label class="py-2.5 rounded-xl bg-amber-100 neo-btn text-center font-black text-xs cursor-pointer flex items-center justify-center gap-1">
+            🖼️ 從相簿選取
+            <input id="photoGalleryInput" type="file" accept="image/*" class="hidden" onchange="handlePhotoUpload(event)">
+          </label>
         </div>
 
-        <div id="previewContainer" class="hidden flex flex-col items-center bg-zinc-900 rounded-2xl p-2">
-          <img id="editPreviewImg" src="" class="max-h-56 object-contain rounded-lg">
+        <!-- 預覽與裁切/旋轉工具列 -->
+        <div id="previewContainer" class="hidden flex flex-col items-center bg-zinc-900 rounded-2xl p-2.5 space-y-2">
+          <img id="editPreviewImg" src="" class="max-h-52 object-contain rounded-lg">
+          <div class="flex gap-2 w-full">
+            <button type="button" onclick="openCropperModal()" class="flex-1 py-1.5 rounded-xl bg-emerald-300 neo-btn text-xs font-black">✂️ 自由裁切邊框</button>
+            <button type="button" onclick="rotateUploadImage(90)" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-black">↻ 旋轉 90°</button>
+          </div>
         </div>
       </div>
 
@@ -301,7 +308,57 @@
     </div>
   </div>
 
-  <!-- BACKUP / RESTORE MODAL (備份與還原視窗) -->
+  <!-- LIVE CAMERA SCANNER MODAL (App 內建防反光引導掃描相機) -->
+  <div id="liveCameraModal" class="hidden fixed inset-0 z-[80] bg-black flex flex-col justify-between p-4">
+    <div class="flex justify-between items-center text-white z-10">
+      <button onclick="closeLiveCameraScanner()" class="px-3 py-1.5 rounded-xl bg-zinc-800 border border-zinc-600 text-xs font-black">✕ 關閉相機</button>
+      <div id="tiltStatusBadge" class="px-3 py-1 rounded-full bg-emerald-600/90 text-xs font-black">✨ 請將拍立得對準框線</div>
+      <button onclick="switchCameraFacing()" class="px-3 py-1.5 rounded-xl bg-zinc-800 border border-zinc-600 text-xs font-black">🔄 鏡頭</button>
+    </div>
+
+    <div class="relative flex-1 my-3 rounded-2xl overflow-hidden flex items-center justify-center bg-zinc-950">
+      <video id="cameraVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
+      <!-- 拍立得比例對齊框 -->
+      <div class="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
+        <div class="w-64 aspect-[54/86] border-2 border-dashed border-pink-400 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] relative">
+          <span class="absolute -top-6 left-1/2 -translate-x-1/2 text-[11px] font-black text-pink-300 whitespace-nowrap">將 Cheki 放入虛線框內（可微傾避開頭頂燈光反光）</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-center pb-2">
+      <button onclick="captureLivePhoto()" class="w-16 h-16 rounded-full bg-white border-4 border-cheki-accent flex items-center justify-center shadow-lg active:scale-90 transition">
+        <div class="w-12 h-12 rounded-full bg-cheki-accent"></div>
+      </button>
+    </div>
+  </div>
+
+  <!-- FREE CROPPER MODAL (自由拉動四邊裁切器) -->
+  <div id="cropperModal" class="hidden fixed inset-0 z-[90] bg-black/95 flex flex-col justify-between p-4 touch-none">
+    <div class="flex justify-between items-center text-white">
+      <button onclick="closeCropperModal()" class="px-3 py-1.5 rounded-xl bg-zinc-800 text-xs font-black">✕ 取消</button>
+      <span class="text-xs font-black text-pink-300">✂️ 拖曳四邊圓點裁切多餘背景</span>
+      <button onclick="applyFreeCrop()" class="px-4 py-1.5 rounded-xl bg-emerald-400 text-zinc-900 text-xs font-black">✓ 完成裁切</button>
+    </div>
+
+    <div id="cropWorkspace" class="relative flex-1 my-4 flex items-center justify-center overflow-hidden select-none">
+      <div id="cropImgWrapper" class="relative inline-block">
+        <img id="cropTargetImg" src="" class="max-h-[68vh] max-w-[88vw] object-contain block pointer-events-none select-none">
+        <!-- 裁切框覆蓋層 -->
+        <div id="cropBox" class="absolute border-2 border-pink-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
+          <!-- 四角與四邊控制點 -->
+          <div data-handle="nw" class="crop-handle absolute -top-3 -left-3 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full"></div>
+          <div data-handle="ne" class="crop-handle absolute -top-3 -right-3 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full"></div>
+          <div data-handle="sw" class="crop-handle absolute -bottom-3 -left-3 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full"></div>
+          <div data-handle="se" class="crop-handle absolute -bottom-3 -right-3 w-7 h-7 bg-white border-2 border-cheki-accent rounded-full"></div>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-center text-white/70 text-xs font-bold">💡 提示：拉動四角白色圓點，剛好包住你原本的 Cheki 白邊即可</p>
+  </div>
+
+  <!-- BACKUP / RESTORE MODAL -->
   <div id="backupModal" class="hidden fixed inset-0 z-[70] bg-black/75 flex items-center justify-center p-4">
     <div class="bg-white w-full max-w-sm rounded-3xl neo-box p-4 space-y-3.5">
       <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
@@ -340,6 +397,13 @@
     let currentDeskThemeIdx = 0;
     let calYear = new Date().getFullYear();
     let calMonth = new Date().getMonth();
+
+    // Live Camera state
+    let cameraStream = null;
+    let useFrontCamera = false;
+
+    // Cropper state
+    let cropRect = { left: 10, top: 10, right: 90, bottom: 90 }; // percentages
 
     function initDB() {
       return new Promise((resolve, reject) => {
@@ -596,7 +660,7 @@
       });
     }
 
-    // --- TAB 4: DESK (單擊直接翻面 + 自由拖曳 + 雙指縮放旋轉) ---
+    // --- TAB 4: DESK ---
     function renderDesk() {
       const canvas = document.getElementById('deskCanvas');
       canvas.innerHTML = '';
@@ -628,11 +692,9 @@
 
         el.innerHTML = `
           <div class="desk-flip-inner transform-style-3d relative w-full ${card.deskFlipped ? 'rotate-y-180' : ''}">
-            <!-- 正面：原本自帶框的 Cheki 相片 -->
             <div class="backface-hidden w-full">
               <img src="${card.image}" draggable="false" class="w-full h-auto block rounded-lg shadow-xl pointer-events-none">
             </div>
-            <!-- 背面：筆記與簽名備註卡 -->
             <div class="backface-hidden rotate-y-180 absolute inset-0 rounded-xl shadow-xl p-3 flex flex-col justify-between items-center text-center pointer-events-none border border-white/40" style="background-color: ${backColor}; color: ${backColor === '#FFFDF9' ? '#272228' : '#FFFFFF'};">
               <div class="text-[10px] font-bold opacity-80 w-full text-left">${card.date || ''}</div>
               <div class="font-marker font-bold text-sm leading-snug line-clamp-5 break-words my-auto px-1">${backText}</div>
@@ -690,7 +752,6 @@
         isDragging = false;
         try { el.releasePointerCapture(e.pointerId); } catch (_) {}
 
-        // 單擊（移動距離 < 6px）直接翻轉 Cheki 正背面
         if (movedDistance < 6 && !isPinching) {
           card.deskFlipped = !card.deskFlipped;
           const inner = el.querySelector('.desk-flip-inner');
@@ -788,6 +849,138 @@
       canvas.classList.add(deskThemes[currentDeskThemeIdx]);
     }
 
+    // --- LIVE CAMERA SCANNER ---
+    async function openLiveCameraScanner() {
+      const modal = document.getElementById('liveCameraModal');
+      modal.classList.remove('hidden');
+      await startCameraStream();
+    }
+
+    async function startCameraStream() {
+      stopCameraStream();
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: useFrontCamera ? 'user' : { ideal: 'environment' },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        });
+        const video = document.getElementById('cameraVideo');
+        video.srcObject = cameraStream;
+      } catch (err) {
+        closeLiveCameraScanner();
+        // Fallback to native system camera input if browser blocks getUserMedia
+        document.getElementById('cameraDirectInput').click();
+      }
+    }
+
+    function stopCameraStream() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream = null;
+      }
+    }
+
+    function closeLiveCameraScanner() {
+      stopCameraStream();
+      document.getElementById('liveCameraModal').classList.add('hidden');
+    }
+
+    function switchCameraFacing() {
+      useFrontCamera = !useFrontCamera;
+      startCameraStream();
+    }
+
+    function captureLivePhoto() {
+      const video = document.getElementById('cameraVideo');
+      if (!video.videoWidth) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      closeLiveCameraScanner();
+      compressAndSetImage(dataUrl, true);
+    }
+
+    // --- FREE CROPPER ---
+    function openCropperModal() {
+      if (!currentUploadDataUrl) return;
+      const modal = document.getElementById('cropperModal');
+      const img = document.getElementById('cropTargetImg');
+      img.onload = () => {
+        cropRect = { left: 8, top: 8, right: 92, bottom: 92 };
+        updateCropBoxUI();
+      };
+      img.src = currentUploadDataUrl;
+      modal.classList.remove('hidden');
+    }
+
+    function closeCropperModal() {
+      document.getElementById('cropperModal').classList.add('hidden');
+    }
+
+    function updateCropBoxUI() {
+      const box = document.getElementById('cropBox');
+      box.style.left = `${cropRect.left}%`;
+      box.style.top = `${cropRect.top}%`;
+      box.style.width = `${cropRect.right - cropRect.left}%`;
+      box.style.height = `${cropRect.bottom - cropRect.top}%`;
+    }
+
+    (function initCropHandles() {
+      let activeHandle = null;
+      window.addEventListener('pointerdown', (e) => {
+        const handle = e.target.closest('.crop-handle');
+        if (!handle) return;
+        e.preventDefault();
+        activeHandle = handle.dataset.handle;
+      });
+
+      window.addEventListener('pointermove', (e) => {
+        if (!activeHandle) return;
+        const wrapper = document.getElementById('cropImgWrapper');
+        const rect = wrapper.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+
+        const px = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+        const py = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+
+        if (activeHandle.includes('w')) cropRect.left = Math.min(px, cropRect.right - 15);
+        if (activeHandle.includes('e')) cropRect.right = Math.max(px, cropRect.left + 15);
+        if (activeHandle.includes('n')) cropRect.top = Math.min(py, cropRect.bottom - 15);
+        if (activeHandle.includes('s')) cropRect.bottom = Math.max(py, cropRect.top + 15);
+
+        updateCropBoxUI();
+      });
+
+      window.addEventListener('pointerup', () => { activeHandle = null; });
+    })();
+
+    function applyFreeCrop() {
+      const img = new Image();
+      img.onload = () => {
+        const sx = (cropRect.left / 100) * img.width;
+        const sy = (cropRect.top / 100) * img.height;
+        const sw = ((cropRect.right - cropRect.left) / 100) * img.width;
+        const sh = ((cropRect.bottom - cropRect.top) / 100) * img.height;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(sw));
+        canvas.height = Math.max(1, Math.round(sh));
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+        currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+        closeCropperModal();
+      };
+      img.src = currentUploadDataUrl;
+    }
+
     // --- INSPECT MODAL ---
     function openInspectModal(id) {
       const card = cards.find(c => c.id === id);
@@ -867,7 +1060,6 @@
       document.getElementById('cardDateInput').value = new Date().toISOString().split('T')[0];
       document.getElementById('cardNoteInput').value = '';
       document.getElementById('previewContainer').classList.add('hidden');
-      document.getElementById('rotateBtn').classList.add('hidden');
       selectBackColor('#60A5FA');
       document.getElementById('editCardModal').classList.remove('hidden');
     }
@@ -888,7 +1080,6 @@
       document.getElementById('cardNoteInput').value = card.note || '';
       document.getElementById('editPreviewImg').src = card.image;
       document.getElementById('previewContainer').classList.remove('hidden');
-      document.getElementById('rotateBtn').classList.remove('hidden');
       selectBackColor(card.backColor || '#60A5FA');
       document.getElementById('editCardModal').classList.remove('hidden');
     }
@@ -910,15 +1101,16 @@
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (ev) => {
-        compressAndSetImage(ev.target.result);
+        compressAndSetImage(ev.target.result, true);
       };
       reader.readAsDataURL(file);
+      e.target.value = '';
     }
 
-    function compressAndSetImage(dataUrl) {
+    function compressAndSetImage(dataUrl, autoOpenCropper = false) {
       const img = new Image();
       img.onload = () => {
-        const maxSide = 1200;
+        const maxSide = 1400;
         let w = img.width, h = img.height;
         if (w > maxSide || h > maxSide) {
           if (w > h) { h = Math.round(h * (maxSide / w)); w = maxSide; }
@@ -928,10 +1120,10 @@
         canvas.width = w;
         canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
         document.getElementById('editPreviewImg').src = currentUploadDataUrl;
         document.getElementById('previewContainer').classList.remove('hidden');
-        document.getElementById('rotateBtn').classList.remove('hidden');
+        if (autoOpenCropper) openCropperModal();
       };
       img.src = dataUrl;
     }
@@ -955,7 +1147,7 @@
 
     async function saveCard() {
       if (!currentUploadDataUrl) {
-        alert('請先選擇或拍攝一張拍立得相片！');
+        alert('請先拍攝或選擇一張拍立得相片！');
         return;
       }
       const member = document.getElementById('cardMemberInput').value.trim() || '遠藤まりん';
@@ -998,7 +1190,7 @@
       renderCurrentTab();
     }
 
-    // --- BACKUP & RESTORE (兼容舊版與新版備份格式) ---
+    // --- BACKUP & RESTORE ---
     function openBackupModal() {
       updateHeaderStats();
       document.getElementById('backupModal').classList.remove('hidden');
