@@ -48,6 +48,7 @@
       -webkit-touch-callout: none !important;
       -webkit-user-drag: none !important;
       user-select: none !important;
+      image-rendering: -webkit-optimize-contrast;
     }
     input, textarea {
       user-select: text;
@@ -91,7 +92,6 @@
     }
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    #liveDetectBox { transition: all 0.18s ease-out; }
     .crop-handle { touch-action: none; }
     .leaflet-container { font-family: 'Zen Maru Gothic', sans-serif; z-index: 10; }
   </style>
@@ -504,7 +504,7 @@
       <p class="text-white/70 text-xs font-bold mt-1.5">👆 點擊相片可 3D 翻面 ｜ 點上方「📁 調動」可隨意換相簿</p>
     </div>
 
-    <button onclick="exportInspectImage()" class="w-full py-3 rounded-2xl bg-cheki-accent text-white font-black text-sm neo-box">📥 匯出相片</button>
+    <button onclick="exportInspectImage()" class="w-full py-3 rounded-2xl bg-cheki-accent text-white font-black text-sm neo-box">📥 匯出原畫質相片</button>
   </div>
 
   <!-- QUICK MOVE / ASSIGN ALBUMS FOR SINGLE CARD MODAL -->
@@ -548,7 +548,7 @@
     </div>
   </div>
 
-  <!-- ADD / EDIT MODAL (含 🌤️ 消反光/壓高光濾鏡滑桿) -->
+  <!-- ADD / EDIT MODAL (含 ✨ 清晰銳化 + 🌤️ 消反光/壓高光 + Ultra-HD 畫質引擎) -->
   <div id="editCardModal" class="hidden fixed inset-0 z-[60] bg-black/75 flex items-center justify-center p-3 overflow-y-auto">
     <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-4 space-y-3 max-h-[92vh] overflow-y-auto">
       <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
@@ -557,32 +557,37 @@
       </div>
 
       <div class="space-y-2">
-        <button type="button" onclick="openLiveCameraScanner()" class="w-full py-2.5 rounded-xl bg-cheki-accent text-white neo-btn text-center font-black text-xs flex items-center justify-center gap-1.5">
-          📸 開啟專業防反光掃描相機（2x遠拍 + 雙拍消眩光 + 自動尋邊）
-        </button>
-
         <div class="grid grid-cols-2 gap-2">
-          <label class="py-2.5 rounded-xl bg-pink-200 neo-btn text-center font-black text-xs cursor-pointer flex items-center justify-center gap-1">
-            📷 系統相機拍照
+          <!-- 原生系統相機：直接調用手機最高像素感光元件與微距對焦 -->
+          <label class="py-2.5 px-2 rounded-xl bg-cheki-accent text-white neo-btn text-center font-black text-xs cursor-pointer flex items-center justify-center gap-1">
+            📷 系統相機拍照 (最超清)
             <input id="cameraDirectInput" type="file" accept="image/*" capture="environment" class="hidden" onchange="handlePhotoUpload(event)">
           </label>
-          <label class="py-2.5 rounded-xl bg-amber-100 neo-btn text-center font-black text-xs cursor-pointer flex items-center justify-center gap-1">
-            🖼️ 從相簿選取
+          <label class="py-2.5 px-2 rounded-xl bg-amber-200 neo-btn text-center font-black text-xs cursor-pointer flex items-center justify-center gap-1">
+            🖼️ 從相簿選取原圖
             <input id="photoGalleryInput" type="file" accept="image/*" class="hidden" onchange="handlePhotoUpload(event)">
           </label>
         </div>
 
+        <button type="button" onclick="openLiveCameraScanner()" class="w-full py-2 rounded-xl bg-pink-100 neo-btn text-center font-black text-xs flex items-center justify-center gap-1.5">
+          📸 開啟防反光引導相機（支援 4K 流 + 2x 遠拍 + 雙拍消眩光）
+        </button>
+
         <div id="previewContainer" oncontextmenu="return false;" class="hidden flex flex-col items-center bg-zinc-900 rounded-2xl p-2.5 space-y-2">
           <div class="flex items-center justify-between w-full px-1">
-            <span id="detectedSizeTag" class="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 border border-emerald-400/40">📏 已自動對齊 Cheki 邊緣</span>
+            <span id="detectedSizeTag" class="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 border border-emerald-400/40">💎 Ultra-HD 高清畫質模式</span>
           </div>
-          <img id="editPreviewImg" src="" draggable="false" class="max-h-52 object-contain rounded-lg pointer-events-none">
+          <img id="editPreviewImg" src="" draggable="false" class="max-h-56 object-contain rounded-lg pointer-events-none">
           <div class="flex gap-2 w-full">
-            <button type="button" onclick="openCropperModal(false)" class="flex-1 py-1.5 rounded-xl bg-emerald-300 neo-btn text-xs font-black">📐 四點拉直 / 微調白邊</button>
+            <button type="button" onclick="openCropperModal()" class="flex-1 py-1.5 rounded-xl bg-emerald-300 neo-btn text-xs font-black">📐 四點拉直 / 對齊白邊</button>
             <button type="button" onclick="rotateUploadImage(90)" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-black">↻ 旋轉 90°</button>
           </div>
-          <!-- 畫質微調 (亮度、對比度、🌤️ 消反光/壓高光) -->
-          <div class="w-full bg-zinc-800 rounded-xl p-2 space-y-1.5 text-white">
+          <!-- 畫質微調 (新增 ✨ 清晰銳化 + 🌤️ 消反光 + ☀️ 亮度 + ◐ 對比度) -->
+          <div class="w-full bg-zinc-800 rounded-xl p-2.5 space-y-1.5 text-white">
+            <div class="flex items-center justify-between text-[10px] font-bold">
+              <span class="text-emerald-300">✨ 清晰銳化 (五官/簽名增晰)</span>
+              <input id="sharpenSlider" type="range" min="0" max="100" value="15" oninput="applyImageFilterPreview()" class="w-36 accent-emerald-400">
+            </div>
             <div class="flex items-center justify-between text-[10px] font-bold">
               <span class="text-amber-300">🌤️ 消反光 (壓低眩光亮斑)</span>
               <input id="deglareSlider" type="range" min="0" max="100" value="0" oninput="applyImageFilterPreview()" class="w-36 accent-amber-400">
@@ -669,17 +674,17 @@
     </div>
   </div>
 
-  <!-- 📸 LIVE CAMERA SCANNER MODAL (升級 1x/1.5x/2x 防反光遠拍 + 即時眩光偵測燈 + ✨ 雙拍消眩光合成) -->
+  <!-- 📸 LIVE CAMERA SCANNER MODAL (已移除無用的 AI 綠色跳動框，升級 4K 超清流 + 即時反光提示 + 雙拍消眩光) -->
   <div id="liveCameraModal" oncontextmenu="return false;" class="hidden fixed inset-0 z-[80] bg-black flex flex-col justify-between p-3.5">
     <div class="space-y-1.5 z-10">
       <div class="flex justify-between items-center text-white gap-1">
         <button onclick="closeLiveCameraScanner()" class="px-3 py-1.5 rounded-xl bg-zinc-800 border border-zinc-600 text-xs font-black shrink-0">✕ 關閉</button>
-        <div id="liveDetectBadge" class="px-3 py-1 rounded-full bg-emerald-600/95 text-[11px] font-black truncate text-center">🔍 正在自動尋找 Cheki 邊邊...</div>
+        <div class="px-3 py-1 rounded-full bg-zinc-800 border border-zinc-600 text-[11px] font-black text-pink-300 truncate text-center">💎 4K 超清防反光掃描模式</div>
         <button onclick="switchCameraFacing()" class="px-3 py-1.5 rounded-xl bg-zinc-800 border border-zinc-600 text-xs font-black shrink-0">🔄 鏡頭</button>
       </div>
       <!-- 即時眩光(反光亮斑)偵測提示條 -->
       <div id="glareWarningBadge" class="w-full py-1 px-3 rounded-xl bg-zinc-800/90 text-emerald-300 border border-zinc-700 text-[11px] font-black text-center">
-        ✨ 光線理想（建議開 1.5x 或 2x 拉高手機遠拍，可微傾避開反光）
+        ✨ 光線理想（可微傾手機避開反光，拍後進入四點對齊白邊）
       </div>
     </div>
 
@@ -688,24 +693,13 @@
       <!-- 雙拍消反光第 1 張半透明殘影對齊層 -->
       <img id="dualShotGhostImg" src="" class="hidden absolute inset-0 w-full h-full object-cover opacity-35 pointer-events-none">
 
-      <!-- 拍立得雙層參考框 (外框白邊 + 內框相片窗) -->
+      <!-- 乾淨的靜態拍立得雙層參考框 (已移除無用的 AI 綠色動態框) -->
       <div class="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
-        <div class="w-60 aspect-[54/86] border-2 border-dashed border-white/45 rounded-xl relative flex flex-col items-center">
-          <span class="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-white/90 whitespace-nowrap bg-black/60 px-2 py-0.5 rounded">可微傾 15° 避開反光，拍後四點自動拉直</span>
+        <div class="w-64 aspect-[54/86] border-2 border-dashed border-white/60 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] relative flex flex-col items-center">
+          <span class="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-white/90 whitespace-nowrap bg-black/70 px-2.5 py-0.5 rounded-full">將 Cheki 大致放入框內即可（微傾可避開反光）</span>
           <!-- 內層拍立得畫面參考線 -->
-          <div class="w-[85%] h-[71%] mt-[7.5%] border border-dashed border-pink-300/60 rounded"></div>
+          <div class="w-[85%] h-[71%] mt-[7.5%] border border-dashed border-pink-300/65 rounded"></div>
         </div>
-      </div>
-
-      <!-- AI 即時動態偵測到的 Cheki 綠色邊框與尺寸標籤 -->
-      <div id="liveDetectBox" class="hidden absolute pointer-events-none border-[3px] border-emerald-400 rounded-lg shadow-[0_0_20px_rgba(52,211,153,0.6)]">
-        <div class="absolute -top-6 left-0 bg-emerald-500 text-zinc-950 text-[10px] font-black px-2 py-0.5 rounded-md whitespace-nowrap shadow" id="liveDetectSizeLabel">
-          🎯 標準 Mini (86×54mm)
-        </div>
-        <div class="absolute -top-1 -left-1 w-3 h-3 border-t-4 border-l-4 border-white"></div>
-        <div class="absolute -top-1 -right-1 w-3 h-3 border-t-4 border-r-4 border-white"></div>
-        <div class="absolute -bottom-1 -left-1 w-3 h-3 border-b-4 border-l-4 border-white"></div>
-        <div class="absolute -bottom-1 -right-1 w-3 h-3 border-b-4 border-r-4 border-white"></div>
       </div>
     </div>
 
@@ -713,7 +707,7 @@
       <!-- 1x / 1.5x / 2x 遠距防反光變焦列 + 雙拍合成消反光開關 -->
       <div class="flex items-center justify-between w-full gap-1.5">
         <div class="flex items-center gap-1 bg-zinc-900 p-1 rounded-xl border border-zinc-700">
-          <button type="button" onclick="setCameraZoom(1)" id="camZoomBtn1" class="px-2.5 py-1 rounded-lg text-[11px] font-black bg-emerald-400 text-zinc-950">1x</button>
+          <button type="button" onclick="setCameraZoom(1)" id="camZoomBtn1" class="px-2.5 py-1 rounded-lg text-[11px] font-black bg-emerald-400 text-zinc-950">1x 原生超清</button>
           <button type="button" onclick="setCameraZoom(1.5)" id="camZoomBtn15" class="px-2.5 py-1 rounded-lg text-[11px] font-black text-white">1.5x</button>
           <button type="button" onclick="setCameraZoom(2)" id="camZoomBtn2" class="px-2.5 py-1 rounded-lg text-[11px] font-black text-white">2x 遠拍防反光</button>
         </div>
@@ -723,13 +717,7 @@
         </button>
       </div>
 
-      <div class="flex items-center justify-between w-full px-2">
-        <label class="flex items-center gap-1.5 text-white text-[11px] font-bold cursor-pointer">
-          <input id="autoSnapCropToggle" type="checkbox" class="accent-emerald-400 w-4 h-4">
-          <span>快門直接裁切（不進四點微調）</span>
-        </label>
-        <span id="dualShotStepHint" class="text-[11px] font-black text-amber-300"></span>
-      </div>
+      <div id="dualShotStepHint" class="text-[11px] font-black text-amber-300 min-h-[16px]"></div>
 
       <button onclick="captureLivePhoto()" class="w-16 h-16 rounded-full bg-white border-4 border-emerald-400 flex items-center justify-center shadow-lg active:scale-90 transition">
         <div id="shutterInnerCircle" class="w-12 h-12 rounded-full bg-cheki-accent"></div>
@@ -737,54 +725,50 @@
     </div>
   </div>
 
-  <!-- 📐 4-POINT PERSPECTIVE WARP & FREE CROPPER MODAL (四點獨立拉角梯形拉直 + 3倍放大鏡準星 + ±15° 微調旋轉) -->
+  <!-- 📐 4-POINT PERSPECTIVE WARP & FREE CROPPER MODAL (四點獨立拉角 + 雙線性平滑無鋸齒插值 + 3倍放大鏡準星 + ±15° 微調旋轉) -->
   <div id="cropperModal" oncontextmenu="return false;" class="hidden fixed inset-0 z-[90] bg-black/95 flex flex-col justify-between p-3 touch-none select-none">
     <div class="flex justify-between items-center text-white z-20">
       <button type="button" onclick="closeCropperModal()" class="px-3 py-1.5 rounded-xl bg-zinc-800 text-xs font-black">✕ 取消</button>
       <div class="text-center">
-        <span class="text-xs font-black text-emerald-300 block">📐 四點對齊白邊 & 自動拉直</span>
+        <span class="text-xs font-black text-emerald-300 block">📐 四點對齊白邊 & 超清拉直</span>
         <span id="cropSizeIndicator" class="text-[10px] text-white/70 font-bold">拉動四角圓點對準 Cheki 白邊四角</span>
       </div>
-      <button type="button" onclick="applyFreeCrop()" class="px-4 py-1.5 rounded-xl bg-emerald-400 text-zinc-900 text-xs font-black">✓ 完成拉直</button>
+      <button type="button" onclick="applyFreeCrop()" class="px-4 py-1.5 rounded-xl bg-emerald-400 text-zinc-900 text-xs font-black">✓ 完成裁切</button>
     </div>
 
     <div id="cropWorkspace" oncontextmenu="return false;" class="relative flex-1 my-1.5 flex items-center justify-center overflow-hidden select-none touch-none">
       <!-- 🔍 3倍放大鏡準星 (當手指拉動角位時自動浮現，精準對齊拍立得白邊！) -->
-      <div id="cropLoupe" class="hidden absolute top-2 left-2 z-40 w-24 h-24 rounded-2xl border-2 border-emerald-400 bg-black shadow-2xl overflow-hidden pointer-events-none">
-        <canvas id="cropLoupeCanvas" width="96" height="96" class="w-full h-full block"></canvas>
-        <!-- 十字準星 -->
+      <div id="cropLoupe" class="hidden absolute top-2 left-2 z-40 w-28 h-28 rounded-2xl border-2 border-emerald-400 bg-black shadow-2xl overflow-hidden pointer-events-none">
+        <canvas id="cropLoupeCanvas" width="112" height="112" class="w-full h-full block"></canvas>
         <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div class="w-full h-[1.5px] bg-pink-500/80"></div>
           <div class="h-full w-[1.5px] bg-pink-500/80 absolute"></div>
-          <div class="w-3 h-3 border border-emerald-300 rounded-full absolute"></div>
+          <div class="w-3.5 h-3.5 border border-emerald-300 rounded-full absolute"></div>
         </div>
         <span id="cropLoupeCornerTag" class="absolute bottom-0.5 right-1 text-[9px] font-black text-emerald-300 bg-black/70 px-1 rounded">NW</span>
       </div>
 
       <div id="cropImgWrapper" oncontextmenu="return false;" class="relative inline-block select-none touch-none">
-        <img id="cropTargetImg" src="" draggable="false" oncontextmenu="return false;" class="max-h-[56vh] max-w-[88vw] object-contain block pointer-events-none select-none">
+        <img id="cropTargetImg" src="" draggable="false" oncontextmenu="return false;" class="max-h-[58vh] max-w-[88vw] object-contain block pointer-events-none select-none">
         <div class="absolute inset-0 z-10 bg-transparent" oncontextmenu="return false;"></div>
 
         <!-- SVG 四邊形梯形遮罩 + 拍立得外框線 + 內層相片窗對齊虛線 -->
         <svg id="cropQuadSvg" class="absolute inset-0 w-full h-full z-20 pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-          <!-- 外部半透明黑遮罩 -->
-          <path id="cropMaskPath" fill="rgba(0,0,0,0.62)" fill-rule="evenodd" d="M0,0 L100,0 L100,100 L0,100 Z M8,8 L92,8 L92,92 L8,92 Z"></path>
-          <!-- 拍立得外框白邊對齊綠線 -->
-          <polygon id="cropOuterPoly" points="8,8 92,8 92,92 8,92" fill="none" stroke="#34D399" stroke-width="0.9"></polygon>
-          <!-- 拍立得內層相片窗參考虛線 (幫助對齊上下左右白邊粗幼) -->
-          <polygon id="cropInnerGuidePoly" points="14,15 86,15 86,74 14,74" fill="none" stroke="#F472B6" stroke-width="0.55" stroke-dasharray="2,1.5"></polygon>
+          <path id="cropMaskPath" fill="rgba(0,0,0,0.62)" fill-rule="evenodd" d="M0,0 L100,0 L100,100 L0,100 Z M12,10 L88,10 L88,90 L12,90 Z"></path>
+          <polygon id="cropOuterPoly" points="12,10 88,10 88,90 12,90" fill="none" stroke="#34D399" stroke-width="0.9"></polygon>
+          <polygon id="cropInnerGuidePoly" points="18,17 82,17 82,73 18,73" fill="none" stroke="#F472B6" stroke-width="0.55" stroke-dasharray="2,1.5"></polygon>
         </svg>
 
         <!-- 中央整框平移感應區 -->
         <div id="cropCenterMoveHandle" data-handle="move" class="crop-handle absolute z-20 cursor-move touch-none" style="left:20%;top:20%;width:60%;height:60%;"></div>
 
-        <!-- 4 個可獨立自由拉動的角位圓點 (支援斜拍梯形對齊) -->
+        <!-- 4 個可獨立自由拉動的角位圓點 -->
         <div id="handleNW" data-handle="nw" class="crop-handle absolute z-30 w-10 h-10 -ml-5 -mt-5 flex items-center justify-center"><div class="w-6 h-6 bg-white border-[2.5px] border-cheki-accent rounded-full shadow-lg flex items-center justify-center"><div class="w-1.5 h-1.5 bg-cheki-accent rounded-full"></div></div></div>
         <div id="handleNE" data-handle="ne" class="crop-handle absolute z-30 w-10 h-10 -ml-5 -mt-5 flex items-center justify-center"><div class="w-6 h-6 bg-white border-[2.5px] border-cheki-accent rounded-full shadow-lg flex items-center justify-center"><div class="w-1.5 h-1.5 bg-cheki-accent rounded-full"></div></div></div>
         <div id="handleSE" data-handle="se" class="crop-handle absolute z-30 w-10 h-10 -ml-5 -mt-5 flex items-center justify-center"><div class="w-6 h-6 bg-white border-[2.5px] border-cheki-accent rounded-full shadow-lg flex items-center justify-center"><div class="w-1.5 h-1.5 bg-cheki-accent rounded-full"></div></div></div>
         <div id="handleSW" data-handle="sw" class="crop-handle absolute z-30 w-10 h-10 -ml-5 -mt-5 flex items-center justify-center"><div class="w-6 h-6 bg-white border-[2.5px] border-cheki-accent rounded-full shadow-lg flex items-center justify-center"><div class="w-1.5 h-1.5 bg-cheki-accent rounded-full"></div></div></div>
 
-        <!-- 4 條邊線中點控制條 (可同時推拉整條邊) -->
+        <!-- 4 條邊線中點控制條 -->
         <div id="handleN" data-handle="n" class="crop-handle absolute z-30 w-11 h-8 -ml-5 -mt-4 flex items-center justify-center"><div class="w-7 h-2.5 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
         <div id="handleS" data-handle="s" class="crop-handle absolute z-30 w-11 h-8 -ml-5 -mt-4 flex items-center justify-center"><div class="w-7 h-2.5 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
         <div id="handleW" data-handle="w" class="crop-handle absolute z-30 w-8 h-11 -ml-4 -mt-5 flex items-center justify-center"><div class="w-2.5 h-7 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
@@ -792,34 +776,29 @@
       </div>
     </div>
 
-    <!-- 底部控制區：±15° 微調旋轉滑桿 + 自動尋邊與標準比例快捷鍵 -->
+    <!-- 底部控制區：±15° 微調旋轉滑桿 + 標準比例快捷鍵 -->
     <div class="space-y-2 z-20">
-      <!-- ±15° 精準水平微調滑桿 -->
       <div class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2 text-white">
         <span class="text-[11px] font-black text-pink-300 shrink-0">🔄 微調拉直: <span id="fineRotLabel">0°</span></span>
         <input id="cropFineRotSlider" type="range" min="-15" max="15" step="0.5" value="0" oninput="onCropFineRotateChange(this.value)" class="flex-1 accent-pink-500 h-1.5">
         <button type="button" onclick="onCropFineRotateChange(0)" class="px-2 py-0.5 rounded bg-zinc-700 text-[10px] font-black shrink-0">0° 重設</button>
       </div>
 
-      <div class="grid grid-cols-4 gap-1.5">
-        <button type="button" onclick="runAutoDetectOnCropperImage()" class="py-2 px-1 rounded-xl bg-emerald-400 text-zinc-950 font-black text-[11px] flex flex-col items-center justify-center">
-          <span>🤖 自動尋邊</span>
-          <span class="text-[9px] opacity-80">AI 抓白邊</span>
-        </button>
+      <div class="grid grid-cols-3 gap-1.5">
         <button type="button" onclick="setCropPresetRatio(54, 86)" class="py-2 px-1 rounded-xl bg-pink-200 text-zinc-900 font-black text-[11px] flex flex-col items-center justify-center">
-          <span>📏 直向 Cheki</span>
+          <span>📏 標準直向框</span>
           <span class="text-[9px] opacity-75">54 × 86 mm</span>
         </button>
         <button type="button" onclick="setCropPresetRatio(86, 54)" class="py-2 px-1 rounded-xl bg-blue-200 text-zinc-900 font-black text-[11px] flex flex-col items-center justify-center">
-          <span>📐 橫向 Cheki</span>
+          <span>📐 標準橫向框</span>
           <span class="text-[9px] opacity-75">86 × 54 mm</span>
         </button>
         <button type="button" onclick="setCropFullImage()" class="py-2 px-1 rounded-xl bg-zinc-700 text-white font-black text-[11px] flex flex-col items-center justify-center">
           <span>🔲 原圖全選</span>
-          <span class="text-[9px] opacity-75">100% 範圍</span>
+          <span class="text-[9px] opacity-75">不裁切直接保存</span>
         </button>
       </div>
-      <p class="text-center text-white/65 text-[10px] font-bold">💡 4 隻角可獨立拉動對準斜拍白邊，系統會自動透視拉直還原！</p>
+      <p class="text-center text-white/65 text-[10px] font-bold">💡 拉動 4 個圓點對準白邊四角（左上會浮現 3 倍放大鏡），系統會無損超清拉直！</p>
     </div>
   </div>
 
@@ -864,9 +843,9 @@
     let favOnlyFilter = false;
     let editingCardId = null;
     let editingSelectedAlbums = new Set();
-    let uncroppedOriginalDataUrl = ''; // 保存最原始未裁切底圖（供重新微調與旋轉）
-    let rawUploadDataUrl = '';         // 裁切後、套用濾鏡前的底圖
-    let currentUploadDataUrl = '';     // 最終預覽與儲存圖
+    let uncroppedOriginalDataUrl = ''; // 3200px 超高畫質原始底圖
+    let rawUploadDataUrl = '';         // 裁切拉直後的超清底圖
+    let currentUploadDataUrl = '';     // 套用銳化/濾鏡後的最終圖
     let selectedBackColor = '#60A5FA';
     let inspectingCardId = null;
     let selectedDeskCardId = null;
@@ -925,21 +904,21 @@
     let batchTargetAlbum = '';
     let batchSelectedCardIds = new Set();
 
-    // Live Camera, Zoom, Glare & Dual-Shot Anti-Glare state
+    // Live Camera, Hardware Zoom, Glare & Dual-Shot Anti-Glare state
     let cameraStream = null;
     let useFrontCamera = false;
-    let liveDetectInterval = null;
-    let lastLiveDetectedBounds = null;
+    let liveGlareInterval = null;
     let currentCameraZoom = 1;
+    let hardwareZoomSupported = false;
     let dualShotEnabled = false;
     let dualShotFirstCanvas = null;
 
     // 📐 4-Point Perspective Cropper & Fine Rotation state
     let cropCorners = {
-      nw: { x: 8, y: 8 },
-      ne: { x: 92, y: 8 },
-      se: { x: 92, y: 92 },
-      sw: { x: 8, y: 92 }
+      nw: { x: 14, y: 10 },
+      ne: { x: 86, y: 10 },
+      se: { x: 86, y: 90 },
+      sw: { x: 14, y: 90 }
     };
     let cropFineRotDeg = 0;
     let cropBaseUnrotatedImg = null;
@@ -1311,7 +1290,7 @@
       reader.onload = (ev) => {
         const img = new Image();
         img.onload = () => {
-          const maxSide = 1600;
+          const maxSide = 2000;
           let w = img.width, h = img.height;
           if (w > maxSide || h > maxSide) {
             if (w > h) { h = Math.round(h * (maxSide / w)); w = maxSide; }
@@ -1320,8 +1299,11 @@
           const c = document.createElement('canvas');
           c.width = w;
           c.height = h;
-          c.getContext('2d').drawImage(img, 0, 0, w, h);
-          deskBgConfig.customImage = c.toDataURL('image/jpeg', 0.88);
+          const ctx = c.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, w, h);
+          deskBgConfig.customImage = c.toDataURL('image/jpeg', 0.92);
           deskBgConfig.mode = 'custom';
           deskBgConfig.zoom = 100;
           deskBgConfig.panX = 0;
@@ -1541,157 +1523,13 @@
       );
     }
 
-    // =========================================================================
-    // 🤖 AI 智慧 Cheki 邊緣與尺寸自動偵測 + 即時眩光亮斑檢測演算法
-    // =========================================================================
     function classifyChekiDimension(widthPx, heightPx) {
       if (!widthPx || !heightPx) return '自訂尺寸';
       const ratio = widthPx / heightPx;
-      if (ratio >= 0.52 && ratio <= 0.75) return '標準直向 Cheki (86×54mm)';
-      if (ratio >= 1.32 && ratio <= 1.85) return '標準橫向 Cheki (54×86mm)';
-      if (ratio > 0.75 && ratio < 1.32) return '方形 Square Cheki';
-      return '寬幅 / 自訂尺寸 Cheki';
-    }
-
-    function detectChekiBoundsFromSource(sourceEl, srcWidth, srcHeight) {
-      const procW = 180;
-      const procH = Math.max(60, Math.round((srcHeight / srcWidth) * procW));
-      const canvas = document.createElement('canvas');
-      canvas.width = procW;
-      canvas.height = procH;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(sourceEl, 0, 0, procW, procH);
-      const imgData = ctx.getImageData(0, 0, procW, procH).data;
-
-      const lum = new Float32Array(procW * procH);
-      const whiteScore = new Float32Array(procW * procH);
-
-      let bgLumSum = 0, bgCount = 0;
-      for (let y = 0; y < procH; y++) {
-        for (let x = 0; x < procW; x++) {
-          const i = (y * procW + x) * 4;
-          const r = imgData[i], g = imgData[i + 1], b = imgData[i + 2];
-          const l = 0.299 * r + 0.587 * g + 0.114 * b;
-          const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
-          const sat = maxC === 0 ? 0 : (maxC - minC) / maxC;
-          const idx = y * procW + x;
-          lum[idx] = l;
-          whiteScore[idx] = l * (1 - sat * 0.65);
-
-          if (x < procW * 0.06 || x > procW * 0.94 || y < procH * 0.06 || y > procH * 0.94) {
-            bgLumSum += whiteScore[idx];
-            bgCount++;
-          }
-        }
-      }
-
-      const avgBgScore = bgCount > 0 ? bgLumSum / bgCount : 90;
-      const threshold = Math.min(215, Math.max(135, avgBgScore + 32));
-
-      const rowHits = new Uint16Array(procH);
-      const colHits = new Uint16Array(procW);
-      const marginX = Math.floor(procW * 0.03);
-      const marginY = Math.floor(procH * 0.03);
-
-      for (let y = marginY; y < procH - marginY; y++) {
-        for (let x = marginX; x < procW - marginX; x++) {
-          if (whiteScore[y * procW + x] >= threshold) {
-            rowHits[y]++;
-            colHits[x]++;
-          }
-        }
-      }
-
-      const minRowPixels = Math.max(4, Math.floor(procW * 0.12));
-      const minColPixels = Math.max(4, Math.floor(procH * 0.12));
-
-      let top = -1, bottom = -1, left = -1, right = -1;
-      for (let y = marginY; y < procH - marginY; y++) {
-        if (rowHits[y] >= minRowPixels) { top = y; break; }
-      }
-      for (let y = procH - marginY - 1; y >= marginY; y--) {
-        if (rowHits[y] >= minRowPixels) { bottom = y; break; }
-      }
-      for (let x = marginX; x < procW - marginX; x++) {
-        if (colHits[x] >= minColPixels) { left = x; break; }
-      }
-      for (let x = procW - marginX - 1; x >= marginX; x--) {
-        if (colHits[x] >= minColPixels) { right = x; break; }
-      }
-
-      const boxW = right - left;
-      const boxH = bottom - top;
-      let valid = (left >= 0 && top >= 0 && boxW > procW * 0.22 && boxH > procH * 0.22 && (boxW < procW * 0.94 || boxH < procH * 0.94));
-
-      if (!valid) {
-        const horizGrad = new Float32Array(procH);
-        const vertGrad = new Float32Array(procW);
-        for (let y = marginY; y < procH - marginY; y++) {
-          for (let x = marginX; x < procW - marginX; x++) {
-            const idx = y * procW + x;
-            const gx = Math.abs(lum[idx + 1] - lum[idx - 1]);
-            const gy = Math.abs(lum[idx + procW] - lum[idx - procW]);
-            horizGrad[y] += gy;
-            vertGrad[x] += gx;
-          }
-        }
-        let maxTopG = 0, maxBotG = 0, maxLeftG = 0, maxRightG = 0;
-        for (let y = marginY; y < Math.floor(procH * 0.42); y++) {
-          if (horizGrad[y] > maxTopG) { maxTopG = horizGrad[y]; top = y; }
-        }
-        for (let y = Math.floor(procH * 0.58); y < procH - marginY; y++) {
-          if (horizGrad[y] > maxBotG) { maxBotG = horizGrad[y]; bottom = y; }
-        }
-        for (let x = marginX; x < Math.floor(procW * 0.42); x++) {
-          if (vertGrad[x] > maxLeftG) { maxLeftG = vertGrad[x]; left = x; }
-        }
-        for (let x = Math.floor(procW * 0.58); x < procW - marginX; x++) {
-          if (vertGrad[x] > maxRightG) { maxRightG = vertGrad[x]; right = x; }
-        }
-        valid = (right - left > procW * 0.25 && bottom - top > procH * 0.25);
-      }
-
-      // 偵測內部相片區域是否有刺眼眩光 (Overexposed Glare Blob)
-      const innerX0 = valid ? Math.floor(left + (right - left) * 0.16) : Math.floor(procW * 0.28);
-      const innerX1 = valid ? Math.floor(right - (right - left) * 0.16) : Math.floor(procW * 0.72);
-      const innerY0 = valid ? Math.floor(top + (bottom - top) * 0.15) : Math.floor(procH * 0.22);
-      const innerY1 = valid ? Math.floor(bottom - (bottom - top) * 0.24) : Math.floor(procH * 0.72);
-      let glarePixels = 0, innerTotal = 0;
-      for (let y = Math.max(0, innerY0); y < Math.min(procH, innerY1); y++) {
-        for (let x = Math.max(0, innerX0); x < Math.min(procW, innerX1); x++) {
-          innerTotal++;
-          if (lum[y * procW + x] > 244) glarePixels++;
-        }
-      }
-      const hasGlare = innerTotal > 20 && (glarePixels / innerTotal) > 0.045;
-
-      if (!valid) {
-        return {
-          detected: false,
-          hasGlare,
-          left: 8, top: 8, right: 92, bottom: 92,
-          sizeName: classifyChekiDimension(srcWidth * 0.84, srcHeight * 0.84)
-        };
-      }
-
-      const pad = 1.2;
-      const pctLeft = Math.max(1, Math.min(85, (left / procW) * 100 - pad));
-      const pctTop = Math.max(1, Math.min(85, (top / procH) * 100 - pad));
-      const pctRight = Math.min(99, Math.max(pctLeft + 20, (right / procW) * 100 + pad));
-      const pctBottom = Math.min(99, Math.max(pctTop + 20, (bottom / procH) * 100 + pad));
-
-      const realW = ((pctRight - pctLeft) / 100) * srcWidth;
-      const realH = ((pctBottom - pctTop) / 100) * srcHeight;
-
-      return {
-        detected: true,
-        hasGlare,
-        left: Math.round(pctLeft * 10) / 10,
-        top: Math.round(pctTop * 10) / 10,
-        right: Math.round(pctRight * 10) / 10,
-        bottom: Math.round(pctBottom * 10) / 10,
-        sizeName: classifyChekiDimension(realW, realH)
-      };
+      if (ratio >= 0.52 && ratio <= 0.75) return `標準直向 Cheki (${Math.round(widthPx)}×${Math.round(heightPx)}px)`;
+      if (ratio >= 1.32 && ratio <= 1.85) return `標準橫向 Cheki (${Math.round(widthPx)}×${Math.round(heightPx)}px)`;
+      if (ratio > 0.75 && ratio < 1.32) return `方形 Square Cheki (${Math.round(widthPx)}×${Math.round(heightPx)}px)`;
+      return `超清自訂尺寸 (${Math.round(widthPx)}×${Math.round(heightPx)}px)`;
     }
 
     function initDB() {
@@ -2703,7 +2541,7 @@
     }
 
     // =========================================================================
-    // 📸 LIVE CAMERA SCANNER (含 1x/1.5x/2x 防反光遠拍 + 即時眩光偵測 + ✨ 雙拍消眩光合成)
+    // 📸 LIVE CAMERA SCANNER (4K 超高解析度請求 + 硬體光學變焦支援 + 雙拍消反光)
     // =========================================================================
     async function openLiveCameraScanner() {
       const modal = document.getElementById('liveCameraModal');
@@ -2717,11 +2555,13 @@
     async function startCameraStream() {
       stopCameraStream();
       try {
+        // 優先請求 4K / 2K 最高感光元件解析度與連續自動對焦
         cameraStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: useFrontCamera ? 'user' : { ideal: 'environment' },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
+            width: { ideal: 3840, min: 1280 },
+            height: { ideal: 2160, min: 720 },
+             advanced: [{ focusMode: 'continuous' }]
           },
           audio: false
         });
@@ -2729,7 +2569,7 @@
         video.srcObject = cameraStream;
         video.onloadedmetadata = () => {
           setCameraZoom(currentCameraZoom);
-          startLiveEdgeDetectionLoop();
+          startLiveGlareCheckLoop();
         };
       } catch (err) {
         closeLiveCameraScanner();
@@ -2737,7 +2577,7 @@
       }
     }
 
-    function setCameraZoom(z) {
+    async function setCameraZoom(z) {
       currentCameraZoom = z;
       [1, 1.5, 2].forEach(lvl => {
         const id = lvl === 1.5 ? 'camZoomBtn15' : `camZoomBtn${lvl}`;
@@ -2750,6 +2590,23 @@
       });
 
       const video = document.getElementById('cameraVideo');
+      // 優先嘗試使用手機鏡頭原生硬體光學/無損變焦 (不損失像素！)
+      hardwareZoomSupported = false;
+      if (cameraStream) {
+        const track = cameraStream.getVideoTracks()[0];
+        if (track && typeof track.getCapabilities === 'function') {
+          try {
+            const caps = track.getCapabilities();
+            if (caps.zoom) {
+              const targetZ = Math.min(caps.zoom.max, Math.max(caps.zoom.min, z));
+              await track.applyConstraints({ advanced: [{ zoom: targetZ }] });
+              hardwareZoomSupported = true;
+              if (video) video.style.transform = 'scale(1)';
+              return;
+            }
+          } catch (_) {}
+        }
+      }
       if (video) {
         video.style.transform = `scale(${z})`;
       }
@@ -2775,7 +2632,8 @@
     function captureZoomedVideoFrame(video) {
       const vw = video.videoWidth;
       const vh = video.videoHeight;
-      const z = currentCameraZoom || 1;
+      // 若手機支援硬體變焦，直接擷取 100% 完整高解析度感光元件畫面
+      const z = hardwareZoomSupported ? 1 : (currentCameraZoom || 1);
       const cropW = Math.round(vw / z);
       const cropH = Math.round(vh / z);
       const sx = Math.round((vw - cropW) / 2);
@@ -2784,57 +2642,51 @@
       const canvas = document.createElement('canvas');
       canvas.width = cropW;
       canvas.height = cropH;
-      canvas.getContext('2d', { willReadFrequently: true }).drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
       return canvas;
     }
 
-    function startLiveEdgeDetectionLoop() {
-      if (liveDetectInterval) clearInterval(liveDetectInterval);
+    function startLiveGlareCheckLoop() {
+      if (liveGlareInterval) clearInterval(liveGlareInterval);
       const video = document.getElementById('cameraVideo');
-      const box = document.getElementById('liveDetectBox');
-      const badge = document.getElementById('liveDetectBadge');
-      const sizeLabel = document.getElementById('liveDetectSizeLabel');
       const glareBadge = document.getElementById('glareWarningBadge');
 
-      liveDetectInterval = setInterval(() => {
+      liveGlareInterval = setInterval(() => {
         if (!video || !video.videoWidth || !video.videoHeight) return;
-        const frameCanvas = captureZoomedVideoFrame(video);
-        const res = detectChekiBoundsFromSource(frameCanvas, frameCanvas.width, frameCanvas.height);
+        const sw = 120, sh = 120;
+        const c = document.createElement('canvas');
+        c.width = sw; c.height = sh;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(video, 0, 0, sw, sh);
+        const data = ctx.getImageData(30, 25, 60, 70).data;
 
-        // 更新即時眩光警告燈
+        let glareCount = 0;
+        const total = data.length / 4;
+        for (let i = 0; i < data.length; i += 4) {
+          const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          if (lum > 246) glareCount++;
+        }
+        const hasGlare = (glareCount / total) > 0.05;
+
         if (glareBadge) {
-          if (res.hasGlare) {
-            glareBadge.textContent = '⚠️ 偵測到反光亮斑！請微傾手機 15° 或開 2x 遠拍避開眩光';
+          if (hasGlare) {
+            glareBadge.textContent = '⚠️ 偵測到反光亮斑！請微傾手機 15° 避開眩光';
             glareBadge.className = 'w-full py-1 px-3 rounded-xl bg-amber-500 text-zinc-950 border border-amber-200 text-[11px] font-black text-center animate-pulse';
           } else {
-            glareBadge.textContent = '✨ 光線理想（無明顯反光亮斑，可隨時按快門）';
+            glareBadge.textContent = '✨ 光線理想（無明顯眩光，拍後可四點拉直對齊白邊）';
             glareBadge.className = 'w-full py-1 px-3 rounded-xl bg-zinc-800/90 text-emerald-300 border border-zinc-700 text-[11px] font-black text-center';
           }
         }
-
-        if (res.detected) {
-          lastLiveDetectedBounds = res;
-          box.classList.remove('hidden');
-          box.style.left = `${res.left}%`;
-          box.style.top = `${res.top}%`;
-          box.style.width = `${res.right - res.left}%`;
-          box.style.height = `${res.bottom - res.top}%`;
-          sizeLabel.textContent = `🎯 ${res.sizeName}`;
-          badge.textContent = `✅ 已鎖定：${res.sizeName}`;
-          badge.className = 'px-3 py-1 rounded-full bg-emerald-500 text-zinc-950 text-[11px] font-black truncate text-center';
-        } else {
-          lastLiveDetectedBounds = null;
-          box.classList.add('hidden');
-          badge.textContent = '🔍 將 Cheki 置於深色背景可自動抓邊（斜拍亦可四點拉直）';
-          badge.className = 'px-3 py-1 rounded-full bg-zinc-800 text-white text-[11px] font-bold truncate text-center';
-        }
-      }, 240);
+      }, 300);
     }
 
     function stopCameraStream() {
-      if (liveDetectInterval) {
-        clearInterval(liveDetectInterval);
-        liveDetectInterval = null;
+      if (liveGlareInterval) {
+        clearInterval(liveGlareInterval);
+        liveGlareInterval = null;
       }
       if (cameraStream) {
         cameraStream.getTracks().forEach(t => t.stop());
@@ -2853,7 +2705,6 @@
       startCameraStream();
     }
 
-    // 合成兩張微傾角度拍攝的相片，自動壓除高光反光亮斑
     function blendDualShotAntiGlare(c1, c2) {
       const w = c1.width, h = c1.height;
       const out = document.createElement('canvas');
@@ -2868,7 +2719,6 @@
       for (let i = 0; i < d1.length; i += 4) {
         const l1 = 0.299 * d1[i] + 0.587 * d1[i + 1] + 0.114 * d1[i + 2];
         const l2 = 0.299 * d2[i] + 0.587 * d2[i + 1] + 0.114 * d2[i + 2];
-        // 若其中一張在該處有刺眼反光亮斑，優先取另一張無反光的像素！
         if (Math.abs(l1 - l2) > 22 && Math.max(l1, l2) > 205) {
           if (l1 < l2) {
             dst[i] = d1[i]; dst[i + 1] = d1[i + 1]; dst[i + 2] = d1[i + 2]; dst[i + 3] = 255;
@@ -2891,12 +2741,11 @@
       if (!video.videoWidth) return;
       const frameCanvas = captureZoomedVideoFrame(video);
 
-      // 若開啟了「✨ 雙拍合成消反光」模式
       if (dualShotEnabled) {
         if (!dualShotFirstCanvas) {
           dualShotFirstCanvas = frameCanvas;
           const ghost = document.getElementById('dualShotGhostImg');
-          ghost.src = frameCanvas.toDataURL('image/jpeg', 0.8);
+          ghost.src = frameCanvas.toDataURL('image/jpeg', 0.85);
           ghost.classList.remove('hidden');
           document.getElementById('dualShotStepHint').textContent = '📸 已拍第1張！請微調角度避開反光，再按快門合成';
           return;
@@ -2904,26 +2753,20 @@
           const blended = blendDualShotAntiGlare(dualShotFirstCanvas, frameCanvas);
           dualShotFirstCanvas = null;
           document.getElementById('dualShotGhostImg').classList.add('hidden');
-          const savedBounds = lastLiveDetectedBounds ? { ...lastLiveDetectedBounds } : null;
-          const autoSnap = document.getElementById('autoSnapCropToggle')?.checked;
-          const dataUrl = blended.toDataURL('image/jpeg', 0.92);
+          const dataUrl = blended.toDataURL('image/jpeg', 0.96);
           closeLiveCameraScanner();
-          compressAndSetImage(dataUrl, true, savedBounds, autoSnap);
+          compressAndSetImage(dataUrl, true);
           return;
         }
       }
 
-      const autoSnap = document.getElementById('autoSnapCropToggle')?.checked;
-      const savedBounds = lastLiveDetectedBounds ? { ...lastLiveDetectedBounds } : null;
-      const dataUrl = frameCanvas.toDataURL('image/jpeg', 0.92);
+      const dataUrl = frameCanvas.toDataURL('image/jpeg', 0.96);
       closeLiveCameraScanner();
-
-      compressAndSetImage(dataUrl, true, savedBounds, autoSnap);
+      compressAndSetImage(dataUrl, true);
     }
 
     // =========================================================================
-    // 📐 4-POINT PERSPECTIVE HOMOGRAPHY WARP & MAGNIFIER LOUPE CROPPER
-    // (四點獨立拉角梯形透視拉直 + 3倍放大鏡準星 + ±15° 微調旋轉 + 雙層拍立得對齊線)
+    // 📐 4-POINT PERSPECTIVE HOMOGRAPHY WARP (雙線性平滑無鋸齒插值 + 3倍放大鏡準星)
     // =========================================================================
     function setRectToQuadCorners(left, top, right, bottom) {
       cropCorners = {
@@ -2934,7 +2777,7 @@
       };
     }
 
-    function openCropperModal(autoRunDetect = false, presetBounds = null) {
+    function openCropperModal() {
       const baseSrc = uncroppedOriginalDataUrl || rawUploadDataUrl || currentUploadDataUrl;
       if (!baseSrc) return;
       const modal = document.getElementById('cropperModal');
@@ -2949,14 +2792,8 @@
       baseImg.onload = () => {
         cropBaseUnrotatedImg = baseImg;
         img.onload = () => {
-          if (presetBounds && presetBounds.detected) {
-            setRectToQuadCorners(presetBounds.left, presetBounds.top, presetBounds.right, presetBounds.bottom);
-            updateCropBoxUI();
-          } else if (autoRunDetect) {
-            runAutoDetectOnCropperImage();
-          } else {
-            updateCropBoxUI();
-          }
+          // 預設產生與虛線參考框一致的標準 Cheki 對齊框，方便直接微調四角
+          setCropPresetRatio(54, 86);
         };
         img.src = baseSrc;
       };
@@ -2983,6 +2820,8 @@
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       ctx.fillStyle = '#18181b';
       ctx.fillRect(0, 0, w, h);
       ctx.translate(w / 2, h / 2);
@@ -2990,15 +2829,7 @@
       ctx.drawImage(cropBaseUnrotatedImg, -w / 2, -h / 2);
       const img = document.getElementById('cropTargetImg');
       img.onload = null;
-      img.src = canvas.toDataURL('image/jpeg', 0.92);
-    }
-
-    function runAutoDetectOnCropperImage() {
-      const img = document.getElementById('cropTargetImg');
-      if (!img || !img.naturalWidth) return;
-      const res = detectChekiBoundsFromSource(img, img.naturalWidth, img.naturalHeight);
-      setRectToQuadCorners(res.left, res.top, res.right, res.bottom);
-      updateCropBoxUI(res.detected ? `🎯 已自動吸附白邊：${res.sizeName}` : `📏 預設範圍：${res.sizeName}`);
+      img.src = canvas.toDataURL('image/jpeg', 0.96);
     }
 
     function setCropPresetRatio(wRatio, hRatio) {
@@ -3009,10 +2840,10 @@
 
       let boxWPercent, boxHPercent;
       if (imgAspect > targetAspect) {
-        boxHPercent = 82;
+        boxHPercent = 80;
         boxWPercent = (boxHPercent * targetAspect) / imgAspect;
       } else {
-        boxWPercent = 82;
+        boxWPercent = 80;
         boxHPercent = (boxWPercent * imgAspect) / targetAspect;
       }
       boxWPercent = Math.min(92, Math.max(25, boxWPercent));
@@ -3023,12 +2854,12 @@
       const top = Math.round((50 - boxHPercent / 2) * 10) / 10;
       const bottom = Math.round((50 + boxHPercent / 2) * 10) / 10;
       setRectToQuadCorners(left, top, right, bottom);
-      updateCropBoxUI(`📏 已對齊標準 ${wRatio}×${hRatio}mm 比例（可再微調四角）`);
+      updateCropBoxUI(`📏 標準 ${wRatio}×${hRatio}mm 比例（拉動四角對準白邊）`);
     }
 
     function setCropFullImage() {
-      setRectToQuadCorners(1, 1, 99, 99);
-      updateCropBoxUI('🔲 已選取全圖 100%');
+      setRectToQuadCorners(0.5, 0.5, 99.5, 99.5);
+      updateCropBoxUI('🔲 原圖 100% 範圍（不裁切）');
     }
 
     function closeCropperModal() {
@@ -3049,7 +2880,6 @@
     function updateCropBoxUI(customLabel) {
       const { nw, ne, se, sw } = cropCorners;
 
-      // 更新 SVG 外部遮罩與外框線
       const maskPath = document.getElementById('cropMaskPath');
       const outerPoly = document.getElementById('cropOuterPoly');
       const innerPoly = document.getElementById('cropInnerGuidePoly');
@@ -3060,7 +2890,6 @@
       if (outerPoly) {
         outerPoly.setAttribute('points', `${nw.x},${nw.y} ${ne.x},${ne.y} ${se.x},${se.y} ${sw.x},${sw.y}`);
       }
-      // 計算拍立得內層相片窗虛線 (上邊距 8%、左右邊距 7.5%、下邊距 21%)
       if (innerPoly) {
         const inNW = bilerpQuad(nw, ne, se, sw, 0.075, 0.08);
         const inNE = bilerpQuad(nw, ne, se, sw, 0.925, 0.08);
@@ -3069,7 +2898,6 @@
         innerPoly.setAttribute('points', `${inNW.x.toFixed(1)},${inNW.y.toFixed(1)} ${inNE.x.toFixed(1)},${inNE.y.toFixed(1)} ${inSE.x.toFixed(1)},${inSE.y.toFixed(1)} ${inSW.x.toFixed(1)},${inSW.y.toFixed(1)}`);
       }
 
-      // 更新 4 個角位圓點位置
       const setPos = (id, pt) => {
         const el = document.getElementById(id);
         if (el) { el.style.left = `${pt.x}%`; el.style.top = `${pt.y}%`; }
@@ -3079,13 +2907,11 @@
       setPos('handleSE', se);
       setPos('handleSW', sw);
 
-      // 更新 4 條邊中點控制條位置
       setPos('handleN', lerpPoint(nw, ne, 0.5));
       setPos('handleS', lerpPoint(sw, se, 0.5));
       setPos('handleW', lerpPoint(nw, sw, 0.5));
       setPos('handleE', lerpPoint(ne, se, 0.5));
 
-      // 更新中央平移區
       const centerHandle = document.getElementById('cropCenterMoveHandle');
       if (centerHandle) {
         const minX = Math.max(nw.x, sw.x) + 6;
@@ -3106,7 +2932,7 @@
         const topW = Math.hypot((ne.x - nw.x) * img.naturalWidth, (ne.y - nw.y) * img.naturalHeight) / 100;
         const leftH = Math.hypot((sw.x - nw.x) * img.naturalWidth, (sw.y - nw.y) * img.naturalHeight) / 100;
         const sizeDesc = classifyChekiDimension(topW, leftH);
-        indicator.textContent = customLabel || `📏 識別尺寸：${sizeDesc}`;
+        indicator.textContent = customLabel || `💎 輸出畫質：${sizeDesc}`;
       }
     }
 
@@ -3117,8 +2943,7 @@
       if (!loupe || !canvas || !img || !img.naturalWidth) return;
 
       loupe.classList.remove('hidden');
-      // 若手指在左上角，將放大鏡移到右上角避免遮擋
-      if (pctX < 42 && pctY < 42) {
+      if (pctX < 45 && pctY < 45) {
         loupe.style.left = 'auto';
         loupe.style.right = '8px';
       } else {
@@ -3127,17 +2952,19 @@
       }
 
       const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, 96, 96);
+      ctx.fillRect(0, 0, 112, 112);
 
       const srcX = (pctX / 100) * img.naturalWidth;
       const srcY = (pctY / 100) * img.naturalHeight;
-      const radius = Math.max(24, Math.round(Math.min(img.naturalWidth, img.naturalHeight) * 0.065));
+      const radius = Math.max(28, Math.round(Math.min(img.naturalWidth, img.naturalHeight) * 0.06));
 
       ctx.drawImage(
         img,
         srcX - radius, srcY - radius, radius * 2, radius * 2,
-        0, 0, 96, 96
+        0, 0, 112, 112
       );
       const tag = document.getElementById('cropLoupeCornerTag');
       if (tag) tag.textContent = labelText || '';
@@ -3185,25 +3012,25 @@
           cropCorners[activeHandle] = { x: Math.round(px * 10) / 10, y: Math.round(py * 10) / 10 };
           updateMagnifierLoupe(px, py, activeHandle.toUpperCase());
         } else if (activeHandle === 'n') {
-          cropCorners.nw.y = Math.max(1, Math.min(95, startCorners.nw.y + dyPct));
-          cropCorners.ne.y = Math.max(1, Math.min(95, startCorners.ne.y + dyPct));
+          cropCorners.nw.y = Math.max(0.5, Math.min(95, startCorners.nw.y + dyPct));
+          cropCorners.ne.y = Math.max(0.5, Math.min(95, startCorners.ne.y + dyPct));
           updateMagnifierLoupe((cropCorners.nw.x + cropCorners.ne.x) / 2, cropCorners.nw.y, 'TOP');
         } else if (activeHandle === 's') {
-          cropCorners.sw.y = Math.max(5, Math.min(99, startCorners.sw.y + dyPct));
-          cropCorners.se.y = Math.max(5, Math.min(99, startCorners.se.y + dyPct));
+          cropCorners.sw.y = Math.max(5, Math.min(99.5, startCorners.sw.y + dyPct));
+          cropCorners.se.y = Math.max(5, Math.min(99.5, startCorners.se.y + dyPct));
           updateMagnifierLoupe((cropCorners.sw.x + cropCorners.se.x) / 2, cropCorners.sw.y, 'BOT');
         } else if (activeHandle === 'w') {
-          cropCorners.nw.x = Math.max(1, Math.min(95, startCorners.nw.x + dxPct));
-          cropCorners.sw.x = Math.max(1, Math.min(95, startCorners.sw.x + dxPct));
+          cropCorners.nw.x = Math.max(0.5, Math.min(95, startCorners.nw.x + dxPct));
+          cropCorners.sw.x = Math.max(0.5, Math.min(95, startCorners.sw.x + dxPct));
           updateMagnifierLoupe(cropCorners.nw.x, (cropCorners.nw.y + cropCorners.sw.y) / 2, 'LEFT');
         } else if (activeHandle === 'e') {
-          cropCorners.ne.x = Math.max(5, Math.min(99, startCorners.ne.x + dxPct));
-          cropCorners.se.x = Math.max(5, Math.min(99, startCorners.se.x + dxPct));
+          cropCorners.ne.x = Math.max(5, Math.min(99.5, startCorners.ne.x + dxPct));
+          cropCorners.se.x = Math.max(5, Math.min(99.5, startCorners.se.x + dxPct));
           updateMagnifierLoupe(cropCorners.ne.x, (cropCorners.ne.y + cropCorners.se.y) / 2, 'RIGHT');
         } else if (activeHandle === 'move') {
           ['nw', 'ne', 'se', 'sw'].forEach(k => {
-            cropCorners[k].x = Math.max(1, Math.min(99, startCorners[k].x + dxPct));
-            cropCorners[k].y = Math.max(1, Math.min(99, startCorners[k].y + dyPct));
+            cropCorners[k].x = Math.max(0.5, Math.min(99.5, startCorners[k].x + dxPct));
+            cropCorners[k].y = Math.max(0.5, Math.min(99.5, startCorners[k].y + dyPct));
           });
         }
 
@@ -3219,7 +3046,7 @@
       window.addEventListener('pointercancel', endDrag);
     })();
 
-    // 執行四點透視變形拉直校正 (4-Point Perspective Warp)
+    // 🚀 執行超高清四點透視拉直裁切（支援硬體加速矩形直出 + 雙線性平滑插值 Bilinear Interpolation，最高輸出 2200px）
     function applyFreeCrop() {
       const targetImgEl = document.getElementById('cropTargetImg');
       if (!targetImgEl || !targetImgEl.src) return;
@@ -3238,103 +3065,183 @@
         const leftH = Math.hypot(pSW.x - pNW.x, pSW.y - pNW.y);
         const rightH = Math.hypot(pSE.x - pNE.x, pSE.y - pNE.y);
 
-        const outW = Math.max(40, Math.min(1200, Math.round((topW + botW) / 2)));
-        const outH = Math.max(40, Math.min(1200, Math.round((leftH + rightH) / 2)));
-
-        // 將原圖讀入像素陣列並進行雙線性透視逆映射拉直
-        const srcCanvas = document.createElement('canvas');
-        srcCanvas.width = sw;
-        srcCanvas.height = sh;
-        const sCtx = srcCanvas.getContext('2d', { willReadFrequently: true });
-        sCtx.drawImage(img, 0, 0);
-        const srcData = sCtx.getImageData(0, 0, sw, sh).data;
+        // 提高輸出解析度上限至 2200px，保留完整超清細節！
+        let outW = Math.max(80, Math.round((topW + botW) / 2));
+        let outH = Math.max(80, Math.round((leftH + rightH) / 2));
+        const maxOutSide = 2200;
+        if (outW > maxOutSide || outH > maxOutSide) {
+          if (outW > outH) { outH = Math.round(outH * (maxOutSide / outW)); outW = maxOutSide; }
+          else { outW = Math.round(outW * (maxOutSide / outH)); outH = maxOutSide; }
+        }
 
         const dstCanvas = document.createElement('canvas');
         dstCanvas.width = outW;
         dstCanvas.height = outH;
-        const dCtx = dstCanvas.getContext('2d');
-        const dstImgData = dCtx.createImageData(outW, outH);
-        const dstData = dstImgData.data;
+        const dCtx = dstCanvas.getContext('2d', { willReadFrequently: true });
 
-        for (let y = 0; y < outH; y++) {
-          const v = y / (outH - 1 || 1);
-          const leftX = pNW.x + (pSW.x - pNW.x) * v;
-          const leftY = pNW.y + (pSW.y - pNW.y) * v;
-          const rightX = pNE.x + (pSE.x - pNE.x) * v;
-          const rightY = pNE.y + (pSE.y - pNE.y) * v;
+        // 檢查四個角是否為標準矩形（未進行梯形斜拉）：若是矩形則直接使用瀏覽器最高畫質硬體渲染
+        const isAxisAlignedRect =
+          Math.abs(cropCorners.nw.y - cropCorners.ne.y) < 0.3 &&
+          Math.abs(cropCorners.sw.y - cropCorners.se.y) < 0.3 &&
+          Math.abs(cropCorners.nw.x - cropCorners.sw.x) < 0.3 &&
+          Math.abs(cropCorners.ne.x - cropCorners.se.x) < 0.3;
 
-          for (let x = 0; x < outW; x++) {
-            const u = x / (outW - 1 || 1);
-            const sx = Math.min(sw - 1, Math.max(0, Math.round(leftX + (rightX - leftX) * u)));
-            const sy = Math.min(sh - 1, Math.max(0, Math.round(leftY + (rightY - leftY) * u)));
-            const sIdx = (sy * sw + sx) * 4;
-            const dIdx = (y * outW + x) * 4;
-            dstData[dIdx] = srcData[sIdx];
-            dstData[dIdx + 1] = srcData[sIdx + 1];
-            dstData[dIdx + 2] = srcData[sIdx + 2];
-            dstData[dIdx + 3] = 255;
+        if (isAxisAlignedRect) {
+          dCtx.imageSmoothingEnabled = true;
+          dCtx.imageSmoothingQuality = 'high';
+          dCtx.drawImage(
+            img,
+            pNW.x, pNW.y, Math.max(1, pNE.x - pNW.x), Math.max(1, pSW.y - pNW.y),
+            0, 0, outW, outH
+          );
+        } else {
+          // 若為斜拍梯形，使用「雙線性平滑插值 (Bilinear Interpolation)」徹底消除鋸齒感！
+          const srcCanvas = document.createElement('canvas');
+          srcCanvas.width = sw;
+          srcCanvas.height = sh;
+          const sCtx = srcCanvas.getContext('2d', { willReadFrequently: true });
+          sCtx.drawImage(img, 0, 0);
+          const srcData = sCtx.getImageData(0, 0, sw, sh).data;
+
+          const dstImgData = dCtx.createImageData(outW, outH);
+          const dstData = dstImgData.data;
+
+          for (let y = 0; y < outH; y++) {
+            const v = y / (outH - 1 || 1);
+            const leftX = pNW.x + (pSW.x - pNW.x) * v;
+            const leftY = pNW.y + (pSW.y - pNW.y) * v;
+            const rightX = pNE.x + (pSE.x - pNE.x) * v;
+            const rightY = pNE.y + (pSE.y - pNE.y) * v;
+
+            for (let x = 0; x < outW; x++) {
+              const u = x / (outW - 1 || 1);
+              const fx = Math.min(sw - 1.001, Math.max(0, leftX + (rightX - leftX) * u));
+              const fy = Math.min(sh - 1.001, Math.max(0, leftY + (rightY - leftY) * u));
+
+              const x0 = Math.floor(fx);
+              const y0 = Math.floor(fy);
+              const x1 = Math.min(sw - 1, x0 + 1);
+              const y1 = Math.min(sh - 1, y0 + 1);
+              const dx = fx - x0;
+              const dy = fy - y0;
+
+              const w00 = (1 - dx) * (1 - dy);
+              const w10 = dx * (1 - dy);
+              const w01 = (1 - dx) * dy;
+              const w11 = dx * dy;
+
+              const i00 = (y0 * sw + x0) * 4;
+              const i10 = (y0 * sw + x1) * 4;
+              const i01 = (y1 * sw + x0) * 4;
+              const i11 = (y1 * sw + x1) * 4;
+
+              const dIdx = (y * outW + x) * 4;
+              dstData[dIdx]     = srcData[i00] * w00 + srcData[i10] * w10 + srcData[i01] * w01 + srcData[i11] * w11;
+              dstData[dIdx + 1] = srcData[i00 + 1] * w00 + srcData[i10 + 1] * w10 + srcData[i01 + 1] * w01 + srcData[i11 + 1] * w11;
+              dstData[dIdx + 2] = srcData[i00 + 2] * w00 + srcData[i10 + 2] * w10 + srcData[i01 + 2] * w01 + srcData[i11 + 2] * w11;
+              dstData[dIdx + 3] = 255;
+            }
           }
+          dCtx.putImageData(dstImgData, 0, 0);
         }
 
-        dCtx.putImageData(dstImgData, 0, 0);
-
-        rawUploadDataUrl = dstCanvas.toDataURL('image/jpeg', 0.92);
-        currentUploadDataUrl = rawUploadDataUrl;
+        // 以 0.96 無損級品質儲存裁切後底圖
+        rawUploadDataUrl = dstCanvas.toDataURL('image/jpeg', 0.96);
         document.getElementById('brightnessSlider').value = 100;
         document.getElementById('contrastSlider').value = 100;
         document.getElementById('deglareSlider').value = 0;
-        document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+        document.getElementById('sharpenSlider').value = 15; // 預設加上 15% 微量清晰增晰
 
         const sizeTag = document.getElementById('detectedSizeTag');
         if (sizeTag) {
-          sizeTag.textContent = `📐 已透視拉直：${classifyChekiDimension(outW, outH)}`;
+          sizeTag.textContent = `💎 超清輸出：${classifyChekiDimension(outW, outH)}`;
         }
         closeCropperModal();
+        applyImageFilterPreview();
       };
       img.src = targetImgEl.src;
     }
 
-    // 畫質微調：支援 🌤️ 消反光(壓低高光眩光) + ☀️ 亮度 + ◐ 對比度
+    // 3x3 清晰銳化濾鏡核心 (Unsharp Mask Convolution)
+    function applySharpenFilter(ctx, w, h, amount) {
+      if (amount <= 0) return;
+      const srcImg = ctx.getImageData(0, 0, w, h);
+      const src = srcImg.data;
+      const dstImg = ctx.createImageData(w, h);
+      const dst = dstImg.data;
+      const a = (amount / 100) * 0.65;
+
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const idx = (y * w + x) * 4;
+          const up = ((y - 1) * w + x) * 4;
+          const dn = ((y + 1) * w + x) * 4;
+          const lf = (y * w + (x - 1)) * 4;
+          const rt = (y * w + (x + 1)) * 4;
+
+          for (let c = 0; c < 3; c++) {
+            const center = src[idx + c];
+            const lap = center * 4 - src[up + c] - src[dn + c] - src[lf + c] - src[rt + c];
+            dst[idx + c] = Math.max(0, Math.min(255, Math.round(center + lap * a)));
+          }
+          dst[idx + 3] = 255;
+        }
+      }
+      ctx.putImageData(dstImg, 0, 0);
+    }
+
+    // 畫質微調：支援 ✨ 清晰銳化 + 🌤️ 消反光 + ☀️ 亮度 + ◐ 對比度
+    let filterDebounceTimer = null;
     function applyImageFilterPreview() {
       if (!rawUploadDataUrl) return;
-      const b = Number(document.getElementById('brightnessSlider')?.value || 100);
-      const c = Number(document.getElementById('contrastSlider')?.value || 100);
-      const deglare = Number(document.getElementById('deglareSlider')?.value || 0);
+      if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
 
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.filter = `brightness(${b}%) contrast(${c}%)`;
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        ctx.filter = 'none';
+      filterDebounceTimer = setTimeout(() => {
+        const b = Number(document.getElementById('brightnessSlider')?.value || 100);
+        const c = Number(document.getElementById('contrastSlider')?.value || 100);
+        const deglare = Number(document.getElementById('deglareSlider')?.value || 0);
+        const sharpen = Number(document.getElementById('sharpenSlider')?.value || 0);
 
-        // 若拉動了「🌤️ 消反光 (壓低眩光亮斑)」滑桿，針對高光反光區進行柔和壓縮與色彩還原
-        if (deglare > 0) {
-          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const d = imgData.data;
-          const strength = deglare / 100;
-          for (let i = 0; i < d.length; i += 4) {
-            const r = d[i], g = d[i + 1], bl = d[i + 2];
-            const lum = 0.299 * r + 0.587 * g + 0.114 * bl;
-            if (lum > 175) {
-              const excess = lum - 175;
-              const pull = excess * 0.52 * strength;
-              const factor = (lum - pull) / (lum || 1);
-              d[i] = Math.max(0, Math.min(255, Math.round(r * factor)));
-              d[i + 1] = Math.max(0, Math.min(255, Math.round(g * factor)));
-              d[i + 2] = Math.max(0, Math.min(255, Math.round(bl * factor)));
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.filter = `brightness(${b}%) contrast(${c}%)`;
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          ctx.filter = 'none';
+
+          if (deglare > 0) {
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const d = imgData.data;
+            const strength = deglare / 100;
+            for (let i = 0; i < d.length; i += 4) {
+              const r = d[i], g = d[i + 1], bl = d[i + 2];
+              const lum = 0.299 * r + 0.587 * g + 0.114 * bl;
+              if (lum > 175) {
+                const excess = lum - 175;
+                const pull = excess * 0.52 * strength;
+                const factor = (lum - pull) / (lum || 1);
+                d[i] = Math.max(0, Math.min(255, Math.round(r * factor)));
+                d[i + 1] = Math.max(0, Math.min(255, Math.round(g * factor)));
+                d[i + 2] = Math.max(0, Math.min(255, Math.round(bl * factor)));
+              }
             }
+            ctx.putImageData(imgData, 0, 0);
           }
-          ctx.putImageData(imgData, 0, 0);
-        }
 
-        currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-        document.getElementById('editPreviewImg').src = currentUploadDataUrl;
-      };
-      img.src = rawUploadDataUrl;
+          if (sharpen > 0) {
+            applySharpenFilter(ctx, canvas.width, canvas.height, sharpen);
+          }
+
+          currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+          document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+        };
+        img.src = rawUploadDataUrl;
+      }, 60);
     }
 
     // --- INSPECT MODAL ---
@@ -3478,6 +3385,7 @@
       document.getElementById('brightnessSlider').value = 100;
       document.getElementById('contrastSlider').value = 100;
       document.getElementById('deglareSlider').value = 0;
+      document.getElementById('sharpenSlider').value = 15;
       document.getElementById('previewContainer').classList.add('hidden');
       selectBackColor('#60A5FA');
       document.getElementById('editCardModal').classList.remove('hidden');
@@ -3514,6 +3422,7 @@
       document.getElementById('brightnessSlider').value = 100;
       document.getElementById('contrastSlider').value = 100;
       document.getElementById('deglareSlider').value = 0;
+      document.getElementById('sharpenSlider').value = 0;
       document.getElementById('editPreviewImg').src = card.image;
       document.getElementById('previewContainer').classList.remove('hidden');
       selectBackColor(card.backColor || '#60A5FA');
@@ -3537,16 +3446,17 @@
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (ev) => {
-        compressAndSetImage(ev.target.result, true, null, false);
+        compressAndSetImage(ev.target.result, true);
       };
       reader.readAsDataURL(file);
       e.target.value = '';
     }
 
-    function compressAndSetImage(dataUrl, autoOpenCropper = false, presetBounds = null, autoApplyLiveCrop = false) {
+    // 💎 Ultra-HD 原圖載入器：保留高達 3200px 原始解析度供裁切器使用，徹底解決裁切後模糊問題！
+    function compressAndSetImage(dataUrl, autoOpenCropper = false) {
       const img = new Image();
       img.onload = () => {
-        const maxSide = 1400;
+        const maxSide = 3200;
         let w = img.width, h = img.height;
         if (w > maxSide || h > maxSide) {
           if (w > h) { h = Math.round(h * (maxSide / w)); w = maxSide; }
@@ -3555,39 +3465,27 @@
         const canvas = document.createElement('canvas');
         canvas.width = w;
         canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, w, h);
 
-        const fullCompressed = canvas.toDataURL('image/jpeg', 0.92);
-        uncroppedOriginalDataUrl = fullCompressed;
+        const fullHighRes = canvas.toDataURL('image/jpeg', 0.96);
+        uncroppedOriginalDataUrl = fullHighRes;
+        rawUploadDataUrl = fullHighRes;
+        currentUploadDataUrl = fullHighRes;
 
-        if (autoApplyLiveCrop && presetBounds && presetBounds.detected) {
-          const sx = (presetBounds.left / 100) * w;
-          const sy = (presetBounds.top / 100) * h;
-          const sw = ((presetBounds.right - presetBounds.left) / 100) * w;
-          const sh = ((presetBounds.bottom - presetBounds.top) / 100) * h;
-          const cropCanvas = document.createElement('canvas');
-          cropCanvas.width = Math.max(1, Math.round(sw));
-          cropCanvas.height = Math.max(1, Math.round(sh));
-          cropCanvas.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, cropCanvas.width, cropCanvas.height);
-
-          rawUploadDataUrl = cropCanvas.toDataURL('image/jpeg', 0.92);
-          currentUploadDataUrl = rawUploadDataUrl;
-          setRectToQuadCorners(presetBounds.left, presetBounds.top, presetBounds.right, presetBounds.bottom);
-          document.getElementById('editPreviewImg').src = currentUploadDataUrl;
-          document.getElementById('previewContainer').classList.remove('hidden');
-          const sizeTag = document.getElementById('detectedSizeTag');
-          if (sizeTag) sizeTag.textContent = `🎯 自動抓邊完成：${presetBounds.sizeName}`;
-          return;
-        }
-
-        rawUploadDataUrl = fullCompressed;
-        currentUploadDataUrl = fullCompressed;
         document.getElementById('brightnessSlider').value = 100;
         document.getElementById('contrastSlider').value = 100;
         document.getElementById('deglareSlider').value = 0;
+        document.getElementById('sharpenSlider').value = 15;
         document.getElementById('editPreviewImg').src = currentUploadDataUrl;
         document.getElementById('previewContainer').classList.remove('hidden');
-        if (autoOpenCropper) openCropperModal(true, presetBounds);
+
+        const sizeTag = document.getElementById('detectedSizeTag');
+        if (sizeTag) sizeTag.textContent = `💎 原圖解析度：${w}×${h}px`;
+
+        if (autoOpenCropper) openCropperModal();
       };
       img.src = dataUrl;
     }
@@ -3600,15 +3498,17 @@
         canvas.width = img.height;
         canvas.height = img.width;
         const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.rotate((deg * Math.PI) / 180);
         ctx.drawImage(img, -img.width / 2, -img.height / 2);
-        rawUploadDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        rawUploadDataUrl = canvas.toDataURL('image/jpeg', 0.96);
         uncroppedOriginalDataUrl = rawUploadDataUrl;
         currentUploadDataUrl = rawUploadDataUrl;
         document.getElementById('editPreviewImg').src = currentUploadDataUrl;
         const sizeTag = document.getElementById('detectedSizeTag');
-        if (sizeTag) sizeTag.textContent = `📏 ${classifyChekiDimension(canvas.width, canvas.height)}`;
+        if (sizeTag) sizeTag.textContent = `💎 ${classifyChekiDimension(canvas.width, canvas.height)}`;
       };
       img.src = currentUploadDataUrl;
     }
