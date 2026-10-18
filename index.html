@@ -548,7 +548,7 @@
     </div>
   </div>
 
-  <!-- ADD / EDIT MODAL (升級無損記憶修圖系統：支援「↩️ 還原上一個數值」、「🔄 重設原圖」、即時數值顯示與 `➖`/`➕` 微調) -->
+  <!-- ADD / EDIT MODAL (升級 16 款偶像應援色 + 自訂調色盤 + 無損記憶修圖系統) -->
   <div id="editCardModal" class="hidden fixed inset-0 z-[60] bg-black/75 flex items-center justify-center p-3 overflow-y-auto">
     <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-4 space-y-3 max-h-[92vh] overflow-y-auto">
       <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
@@ -689,15 +689,38 @@
           <textarea id="cardNoteInput" rows="2" placeholder="記錄當日對話、姿勢（例如 T pose）、活動名稱..." class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold text-xs bg-white"></textarea>
         </div>
 
-        <div>
-          <label class="text-xs font-black block mb-1">背面卡紙顏色</label>
-          <div class="flex gap-2" id="backColorPicker">
-            <button type="button" onclick="selectBackColor('#F472B6')" data-color="#F472B6" class="w-8 h-8 rounded-full bg-[#F472B6] border-2 border-cheki-dark"></button>
-            <button type="button" onclick="selectBackColor('#60A5FA')" data-color="#60A5FA" class="w-8 h-8 rounded-full bg-[#60A5FA] border-2 border-cheki-dark"></button>
-            <button type="button" onclick="selectBackColor('#A78BFA')" data-color="#A78BFA" class="w-8 h-8 rounded-full bg-[#A78BFA] border-2 border-cheki-dark"></button>
-            <button type="button" onclick="selectBackColor('#34D399')" data-color="#34D399" class="w-8 h-8 rounded-full bg-[#34D399] border-2 border-cheki-dark"></button>
-            <button type="button" onclick="selectBackColor('#FBBF24')" data-color="#FBBF24" class="w-8 h-8 rounded-full bg-[#FBBF24] border-2 border-cheki-dark"></button>
-            <button type="button" onclick="selectBackColor('#FFFDF9')" data-color="#FFFDF9" class="w-8 h-8 rounded-full bg-[#FFFDF9] border-2 border-cheki-dark"></button>
+        <!-- 🎨 升級版：16 款偶像應援色 + 🌈 無限自訂調色盤 -->
+        <div class="neo-box bg-white rounded-2xl p-2.5 space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-black flex items-center gap-1.5">
+              <span>🎨 背面卡紙應援色</span>
+              <span id="selectedColorNameBadge" class="px-2 py-0.5 rounded-full text-[10px] font-black border border-cheki-dark" style="background-color:#60A5FA;color:#FFFFFF;">💙 天空藍</span>
+            </label>
+            <label class="px-2.5 py-1 rounded-xl bg-gradient-to-r from-pink-200 via-amber-100 to-blue-200 border border-cheki-dark text-[10px] font-black cursor-pointer flex items-center gap-1 shadow-sm active:scale-95">
+              <span>🌈 自訂調色</span>
+              <input id="customBackColorInput" type="color" value="#60A5FA" oninput="selectBackColor(this.value, '自訂應援色')" class="w-4 h-4 border-0 p-0 bg-transparent cursor-pointer">
+            </label>
+          </div>
+
+          <div class="grid grid-cols-8 gap-2 pt-0.5" id="backColorPicker">
+            <!-- 第一排：藍、水色、薄荷綠、綠、粉、桃紅、紅、橙 -->
+            <button type="button" onclick="selectBackColor('#38BDF8', '水色 (淺藍)')" data-color="#38BDF8" title="水色 (淺藍)" class="w-8 h-8 rounded-full bg-[#38BDF8] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#60A5FA', '天空藍')" data-color="#60A5FA" title="天空藍" class="w-8 h-8 rounded-full bg-[#60A5FA] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#2563EB', '皇家深藍')" data-color="#2563EB" title="皇家深藍" class="w-8 h-8 rounded-full bg-[#2563EB] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#2DD4BF', '薄荷綠 (ミント)')" data-color="#2DD4BF" title="薄荷綠 (ミント)" class="w-8 h-8 rounded-full bg-[#2DD4BF] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#34D399', '翠綠色')" data-color="#34D399" title="翠綠色" class="w-8 h-8 rounded-full bg-[#34D399] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#A3E635', '青檸蘋果綠')" data-color="#A3E635" title="青檸蘋果綠" class="w-8 h-8 rounded-full bg-[#A3E635] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#F9A8D4', '櫻花粉')" data-color="#F9A8D4" title="櫻花粉" class="w-8 h-8 rounded-full bg-[#F9A8D4] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#F472B6', '蜜桃粉紅')" data-color="#F472B6" title="蜜桃粉紅" class="w-8 h-8 rounded-full bg-[#F472B6] border-2 border-cheki-dark mx-auto"></button>
+            <!-- 第二排：濃桃紅、熱情紅、活力橙、檸檬黃、薰衣草紫、深紫、純白、曜石黑 -->
+            <button type="button" onclick="selectBackColor('#EC4899', '濃桃紅')" data-color="#EC4899" title="濃桃紅" class="w-8 h-8 rounded-full bg-[#EC4899] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#EF4444', '熱情紅')" data-color="#EF4444" title="熱情紅" class="w-8 h-8 rounded-full bg-[#EF4444] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#FB923C', '活力橙')" data-color="#FB923C" title="活力橙" class="w-8 h-8 rounded-full bg-[#FB923C] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#FDE047', '檸檬黃')" data-color="#FDE047" title="檸檬黃" class="w-8 h-8 rounded-full bg-[#FDE047] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#C084FC', '薰衣草紫')" data-color="#C084FC" title="薰衣草紫" class="w-8 h-8 rounded-full bg-[#C084FC] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#7C3AED', '皇家深紫')" data-color="#7C3AED" title="皇家深紫" class="w-8 h-8 rounded-full bg-[#7C3AED] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#FFFDF9', '經典純白')" data-color="#FFFDF9" title="經典純白" class="w-8 h-8 rounded-full bg-[#FFFDF9] border-2 border-cheki-dark mx-auto"></button>
+            <button type="button" onclick="selectBackColor('#272228', '曜石酷黑')" data-color="#272228" title="曜石酷黑" class="w-8 h-8 rounded-full bg-[#272228] border-2 border-cheki-dark mx-auto"></button>
           </div>
         </div>
       </div>
@@ -864,9 +887,9 @@
     let favOnlyFilter = false;
     let editingCardId = null;
     let editingSelectedAlbums = new Set();
-    let uncroppedOriginalDataUrl = ''; // 3200px 超高畫質原始底圖
-    let rawUploadDataUrl = '';         // 裁切拉直後的無損乾淨底圖（不烘死濾鏡，供隨時調回數值！）
-    let currentUploadDataUrl = '';     // 套用銳化/濾鏡後的最終顯示圖
+    let uncroppedOriginalDataUrl = '';
+    let rawUploadDataUrl = '';
+    let currentUploadDataUrl = '';
     let selectedBackColor = '#60A5FA';
     let inspectingCardId = null;
     let selectedDeskCardId = null;
@@ -875,7 +898,39 @@
     let calYear = new Date().getFullYear();
     let calMonth = new Date().getMonth();
 
-    // 🎛️ 畫質調整歷史紀錄堆疊 (支援「↩️ 還原上一個數值」與無損編輯)
+    // 🎨 16 款偶像應援色名稱對照表 & 智慧深淺文字對比計算器
+    const BACK_COLOR_NAMES = {
+      '#38BDF8': '水色 (淺藍)',
+      '#60A5FA': '天空藍',
+      '#2563EB': '皇家深藍',
+      '#2DD4BF': '薄荷綠 (ミント)',
+      '#34D399': '翠綠色',
+      '#A3E635': '青檸蘋果綠',
+      '#F9A8D4': '櫻花粉',
+      '#F472B6': '蜜桃粉紅',
+      '#EC4899': '濃桃紅',
+      '#EF4444': '熱情紅',
+      '#FB923C': '活力橙',
+      '#FDE047': '檸檬黃',
+      '#C084FC': '薰衣草紫',
+      '#7C3AED': '皇家深紫',
+      '#FFFDF9': '經典純白',
+      '#272228': '曜石酷黑'
+    };
+
+    function getContrastTextColor(hexColor) {
+      if (!hexColor || typeof hexColor !== 'string') return '#FFFFFF';
+      const clean = hexColor.replace('#', '').trim();
+      if (clean.length !== 6) return '#FFFFFF';
+      const r = parseInt(clean.substring(0, 2), 16) || 0;
+      const g = parseInt(clean.substring(2, 4), 16) || 0;
+      const b = parseInt(clean.substring(4, 6), 16) || 0;
+      // YIQ 視覺亮度公式：淺色背景自動配深色墨水字，深色背景自動配白字
+      const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+      return yiq >= 175 ? '#272228' : '#FFFFFF';
+    }
+
+    // 🎛️ 畫質調整歷史紀錄堆疊
     let filterHistoryStack = [];
 
     // 📐 拍立得直向與橫向標準實體比例常數
@@ -966,7 +1021,7 @@
     }
 
     // =========================================================================
-    // 🎛️ 無損記憶修圖控制引擎 (支援「↩️ 上一個數值」、「🔄 還原原圖」、即時數字與跨次編輯記憶)
+    // 🎛️ 無損記憶修圖控制引擎
     // =========================================================================
     function getCurrentFilterConfig() {
       return {
@@ -1038,7 +1093,7 @@
 
     function undoFilterStep() {
       if (filterHistoryStack.length <= 1) return;
-      filterHistoryStack.pop(); // 移除當前狀態
+      filterHistoryStack.pop();
       const prev = filterHistoryStack[filterHistoryStack.length - 1];
       setFilterSlidersUI(prev);
       updateUndoButtonUI();
@@ -1070,7 +1125,7 @@
     }
 
     // =========================================================================
-    // 🔍 全域智慧搜尋引擎 (含自動收折為纖薄單行狀態列，絕不遮擋桌布！)
+    // 🔍 全域智慧搜尋引擎
     // =========================================================================
     function normalizeSearchStr(str) {
       return (str || '').toString().toLowerCase().replace(/\s+/g, '');
@@ -2462,7 +2517,8 @@
         el.style.zIndex = card.deskZ || 1;
         el.style.transform = `rotate(${card.deskRot || 0}deg) scale(${curScale})`;
 
-        const backColor = card.backColor || '#F472B6';
+        const backColor = card.backColor || '#60A5FA';
+        const textColor = getContrastTextColor(backColor);
         const backText = (card.note && card.note.trim()) ? card.note : `${card.member || 'Cheki'}`;
 
         el.innerHTML = `
@@ -2470,7 +2526,7 @@
             <div class="backface-hidden w-full">
               <img src="${card.image}" draggable="false" class="desk-card-img w-full h-auto block rounded-lg shadow-xl pointer-events-none">
             </div>
-            <div class="backface-hidden rotate-y-180 absolute inset-0 rounded-xl shadow-xl p-3 flex flex-col justify-between items-center text-center pointer-events-none border border-white/40" style="background-color: ${backColor}; color: ${backColor === '#FFFDF9' ? '#272228' : '#FFFFFF'};">
+            <div class="backface-hidden rotate-y-180 absolute inset-0 rounded-xl shadow-xl p-3 flex flex-col justify-between items-center text-center pointer-events-none border border-white/40" style="background-color: ${backColor}; color: ${textColor};">
               <div class="text-[9px] font-bold opacity-85 w-full flex justify-between gap-1">
                 <span>${card.date || ''}</span>
                 <span class="truncate">${card.locationName ? `📍${card.locationName}` : ''}</span>
@@ -3265,7 +3321,6 @@
           dCtx.putImageData(dstImgData, 0, 0);
         }
 
-        // 保存乾淨未加濾鏡的底圖至 rawUploadDataUrl，並將 4 個滑桿預設為 0% / 100% 原圖狀態
         rawUploadDataUrl = dstCanvas.toDataURL('image/jpeg', 0.96);
         currentUploadDataUrl = rawUploadDataUrl;
         initFilterHistory({ sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
@@ -3280,7 +3335,6 @@
       img.src = targetImgEl.src;
     }
 
-    // 3x3 清晰銳化濾鏡核心 (Unsharp Mask Convolution)
     function applySharpenFilter(ctx, w, h, amount) {
       if (amount <= 0) return;
       const srcImg = ctx.getImageData(0, 0, w, h);
@@ -3308,7 +3362,6 @@
       ctx.putImageData(dstImg, 0, 0);
     }
 
-    // 畫質微調：每次永遠從乾淨的 `rawUploadDataUrl` 重新計算，確保拉回原位時 100% 還原上一個數值！
     let filterDebounceTimer = null;
     function applyImageFilterPreview() {
       if (!rawUploadDataUrl) return;
@@ -3318,7 +3371,6 @@
         const cfg = getCurrentFilterConfig();
         const { sharpen, deglare, brightness: b, contrast: c } = cfg;
 
-        // 若全部數值皆為預設原圖狀態，直接使用無損 rawUploadDataUrl，完全不經過重複壓縮！
         if (sharpen === 0 && deglare === 0 && b === 100 && c === 100) {
           currentUploadDataUrl = rawUploadDataUrl;
           document.getElementById('editPreviewImg').src = currentUploadDataUrl;
@@ -3380,9 +3432,9 @@
       document.getElementById('inspectBackMember').textContent = card.member || '';
 
       const backCard = document.getElementById('inspectBackCard');
-      const bg = card.backColor || '#F472B6';
+      const bg = card.backColor || '#60A5FA';
       backCard.style.backgroundColor = bg;
-      backCard.style.color = bg === '#FFFDF9' ? '#272228' : '#FFFFFF';
+      backCard.style.color = getContrastTextColor(bg);
 
       renderInspectAlbumBadges(card);
 
@@ -3511,7 +3563,6 @@
       document.getElementById('editCardModal').classList.remove('hidden');
     }
 
-    // 打開「✏️ 編輯拍立得」時，自動載入該卡儲存的無損底圖 `baseImage` 與上次的 `filterConfig`，讓你隨時可以將數值調低或還原！
     function openEditFromInspect() {
       const card = cards.find(c => c.id === inspectingCardId);
       if (!card) return;
@@ -3519,7 +3570,6 @@
       closeInspectModal();
 
       editingCardId = targetId;
-      // 關鍵修復：載入未烘死濾鏡的 baseImage 作為底圖，若舊資料無 baseImage 則使用 image
       rawUploadDataUrl = card.baseImage || card.image;
       uncroppedOriginalDataUrl = card.uncroppedImage || rawUploadDataUrl;
       currentUploadDataUrl = card.image;
@@ -3553,12 +3603,29 @@
       document.getElementById('editCardModal').classList.add('hidden');
     }
 
-    function selectBackColor(color) {
-      selectedBackColor = color;
+    // 🎨 選取背面卡紙顏色（支援 16 款預設應援色 + 自訂調色盤 + 即時顯示顏色名稱與最佳文字對比）
+    function selectBackColor(color, customLabel) {
+      const upperColor = (color || '#60A5FA').toUpperCase();
+      selectedBackColor = upperColor;
+
       document.querySelectorAll('#backColorPicker button').forEach(btn => {
-        btn.style.transform = btn.dataset.color === color ? 'scale(1.2)' : 'scale(1)';
-        btn.style.boxShadow = btn.dataset.color === color ? '0 0 0 2px #272228' : 'none';
+        const isMatch = (btn.dataset.color || '').toUpperCase() === upperColor;
+        btn.style.transform = isMatch ? 'scale(1.22)' : 'scale(1)';
+        btn.style.boxShadow = isMatch ? '0 0 0 2.5px #FF5C8A' : 'none';
       });
+
+      const customInput = document.getElementById('customBackColorInput');
+      if (customInput && /^#[0-9A-F]{6}$/i.test(upperColor)) {
+        customInput.value = upperColor;
+      }
+
+      const badge = document.getElementById('selectedColorNameBadge');
+      if (badge) {
+        const name = customLabel || BACK_COLOR_NAMES[upperColor] || `自訂色 (${upperColor})`;
+        badge.textContent = `🎨 ${name}`;
+        badge.style.backgroundColor = upperColor;
+        badge.style.color = getContrastTextColor(upperColor);
+      }
     }
 
     function handlePhotoUpload(e) {
