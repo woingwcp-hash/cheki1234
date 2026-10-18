@@ -548,7 +548,7 @@
     </div>
   </div>
 
-  <!-- ADD / EDIT MODAL (含 ✨ 清晰銳化 + 🌤️ 消反光/壓高光 + Ultra-HD 畫質引擎) -->
+  <!-- ADD / EDIT MODAL (升級無損記憶修圖系統：支援「↩️ 還原上一個數值」、「🔄 重設原圖」、即時數值顯示與 `➖`/`➕` 微調) -->
   <div id="editCardModal" class="hidden fixed inset-0 z-[60] bg-black/75 flex items-center justify-center p-3 overflow-y-auto">
     <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-4 space-y-3 max-h-[92vh] overflow-y-auto">
       <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
@@ -582,23 +582,55 @@
             <button type="button" onclick="openCropperModal()" class="flex-1 py-1.5 rounded-xl bg-emerald-300 neo-btn text-xs font-black">📐 四點拉直 / 對齊白邊</button>
             <button type="button" onclick="rotateUploadImage(90)" class="px-3 py-1.5 rounded-xl bg-white neo-btn text-xs font-black">↻ 旋轉 90°</button>
           </div>
-          <!-- 畫質微調 (新增 ✨ 清晰銳化 + 🌤️ 消反光 + ☀️ 亮度 + ◐ 對比度) -->
-          <div class="w-full bg-zinc-800 rounded-xl p-2.5 space-y-1.5 text-white">
-            <div class="flex items-center justify-between text-[10px] font-bold">
-              <span class="text-emerald-300">✨ 清晰銳化 (五官/簽名增晰)</span>
-              <input id="sharpenSlider" type="range" min="0" max="100" value="15" oninput="applyImageFilterPreview()" class="w-36 accent-emerald-400">
+
+          <!-- 🎛️ 升級版無損記憶畫質微調面板 (支援 ↩️ 上一步還原 + 🔄 原圖重設 + 數字顯示 + ➖/➕ 微調) -->
+          <div class="w-full bg-zinc-800 rounded-xl p-2.5 space-y-2 text-white">
+            <div class="flex items-center justify-between border-b border-zinc-700 pb-1.5">
+              <span class="text-[10px] font-black text-zinc-300">🎛️ 畫質微調（無損記憶，隨時可調回）</span>
+              <div class="flex items-center gap-1.5">
+                <button type="button" onclick="undoFilterStep()" id="undoFilterBtn" class="px-2 py-0.5 rounded-lg bg-zinc-700 text-zinc-400 border border-zinc-600 text-[10px] font-black transition" disabled>↩️ 上一個數值</button>
+                <button type="button" onclick="resetAllFiltersToZero()" class="px-2 py-0.5 rounded-lg bg-rose-500/80 hover:bg-rose-500 text-white border border-rose-400 text-[10px] font-black">🔄 還原原圖</button>
+              </div>
             </div>
-            <div class="flex items-center justify-between text-[10px] font-bold">
-              <span class="text-amber-300">🌤️ 消反光 (壓低眩光亮斑)</span>
-              <input id="deglareSlider" type="range" min="0" max="100" value="0" oninput="applyImageFilterPreview()" class="w-36 accent-amber-400">
+
+            <!-- 1. 清晰銳化 -->
+            <div class="flex items-center justify-between gap-1.5 text-[10px] font-bold">
+              <span class="text-emerald-300 shrink-0 w-28 truncate">✨ 清晰銳化: <strong id="sharpenValLabel" class="text-white">0%</strong></span>
+              <div class="flex items-center gap-1 flex-1 justify-end">
+                <button type="button" onclick="stepFilterValue('sharpenSlider', -5)" class="w-5 h-5 rounded bg-zinc-700 text-white font-black flex items-center justify-center shrink-0 active:scale-90">➖</button>
+                <input id="sharpenSlider" type="range" min="0" max="100" value="0" oninput="onFilterSliderInput()" onchange="commitFilterHistory()" class="w-24 accent-emerald-400">
+                <button type="button" onclick="stepFilterValue('sharpenSlider', 5)" class="w-5 h-5 rounded bg-zinc-700 text-white font-black flex items-center justify-center shrink-0 active:scale-90">➕</button>
+              </div>
             </div>
-            <div class="flex items-center justify-between text-[10px] font-bold">
-              <span>☀️ 亮度微調</span>
-              <input id="brightnessSlider" type="range" min="80" max="130" value="100" oninput="applyImageFilterPreview()" class="w-36 accent-pink-400">
+
+            <!-- 2. 消反光 -->
+            <div class="flex items-center justify-between gap-1.5 text-[10px] font-bold">
+              <span class="text-amber-300 shrink-0 w-28 truncate">🌤️ 消反光: <strong id="deglareValLabel" class="text-white">0%</strong></span>
+              <div class="flex items-center gap-1 flex-1 justify-end">
+                <button type="button" onclick="stepFilterValue('deglareSlider', -5)" class="w-5 h-5 rounded bg-zinc-700 text-white font-black flex items-center justify-center shrink-0 active:scale-90">➖</button>
+                <input id="deglareSlider" type="range" min="0" max="100" value="0" oninput="onFilterSliderInput()" onchange="commitFilterHistory()" class="w-24 accent-amber-400">
+                <button type="button" onclick="stepFilterValue('deglareSlider', 5)" class="w-5 h-5 rounded bg-zinc-700 text-white font-black flex items-center justify-center shrink-0 active:scale-90">➕</button>
+              </div>
             </div>
-            <div class="flex items-center justify-between text-[10px] font-bold">
-              <span>◐ 對比微調</span>
-              <input id="contrastSlider" type="range" min="80" max="135" value="100" oninput="applyImageFilterPreview()" class="w-36 accent-pink-400">
+
+            <!-- 3. 亮度微調 -->
+            <div class="flex items-center justify-between gap-1.5 text-[10px] font-bold">
+              <span class="shrink-0 w-28 truncate">☀️ 亮度微調: <strong id="brightnessValLabel" class="text-pink-300">100%</strong></span>
+              <div class="flex items-center gap-1 flex-1 justify-end">
+                <button type="button" onclick="stepFilterValue('brightnessSlider', -2)" class="w-5 h-5 rounded bg-zinc-700 text-white font-black flex items-center justify-center shrink-0 active:scale-90">➖</button>
+                <input id="brightnessSlider" type="range" min="70" max="135" value="100" oninput="onFilterSliderInput()" onchange="commitFilterHistory()" class="w-24 accent-pink-400">
+                <button type="button" onclick="stepFilterValue('brightnessSlider', 2)" class="w-5 h-5 rounded bg-zinc-700 text-white font-black flex items-center justify-center shrink-0 active:scale-90">➕</button>
+              </div>
+            </div>
+
+            <!-- 4. 對比微調 -->
+            <div class="flex items-center justify-between gap-1.5 text-[10px] font-bold">
+              <span class="shrink-0 w-28 truncate">◐ 對比微調: <strong id="contrastValLabel" class="text-pink-300">100%</strong></span>
+              <div class="flex items-center gap-1 flex-1 justify-end">
+                <button type="button" onclick="stepFilterValue('contrastSlider', -2)" class="w-5 h-5 rounded bg-zinc-700 text-white font-black flex items-center justify-center shrink-0 active:scale-90">➖</button>
+                <input id="contrastSlider" type="range" min="70" max="135" value="100" oninput="onFilterSliderInput()" onchange="commitFilterHistory()" class="w-24 accent-pink-400">
+                <button type="button" onclick="stepFilterValue('contrastSlider', 2)" class="w-5 h-5 rounded bg-zinc-700 text-white font-black flex items-center justify-center shrink-0 active:scale-90">➕</button>
+              </div>
             </div>
           </div>
         </div>
@@ -674,7 +706,7 @@
     </div>
   </div>
 
-  <!-- 📸 LIVE CAMERA SCANNER MODAL (已移除無用的 AI 綠色跳動框，升級 4K 超清流 + 即時反光提示 + 雙拍消眩光) -->
+  <!-- 📸 LIVE CAMERA SCANNER MODAL -->
   <div id="liveCameraModal" oncontextmenu="return false;" class="hidden fixed inset-0 z-[80] bg-black flex flex-col justify-between p-3.5">
     <div class="space-y-1.5 z-10">
       <div class="flex justify-between items-center text-white gap-1">
@@ -682,7 +714,6 @@
         <div class="px-3 py-1 rounded-full bg-zinc-800 border border-zinc-600 text-[11px] font-black text-pink-300 truncate text-center">💎 4K 超清防反光掃描模式</div>
         <button onclick="switchCameraFacing()" class="px-3 py-1.5 rounded-xl bg-zinc-800 border border-zinc-600 text-xs font-black shrink-0">🔄 鏡頭</button>
       </div>
-      <!-- 即時眩光(反光亮斑)偵測提示條 -->
       <div id="glareWarningBadge" class="w-full py-1 px-3 rounded-xl bg-zinc-800/90 text-emerald-300 border border-zinc-700 text-[11px] font-black text-center">
         ✨ 光線理想（可微傾手機避開反光，拍後進入四點對齊白邊）
       </div>
@@ -690,21 +721,17 @@
 
     <div id="liveVideoContainer" class="relative flex-1 my-2 rounded-2xl overflow-hidden flex items-center justify-center bg-zinc-950">
       <video id="cameraVideo" autoplay playsinline muted class="w-full h-full object-cover pointer-events-none origin-center transition-transform duration-150"></video>
-      <!-- 雙拍消反光第 1 張半透明殘影對齊層 -->
       <img id="dualShotGhostImg" src="" class="hidden absolute inset-0 w-full h-full object-cover opacity-35 pointer-events-none">
 
-      <!-- 乾淨的靜態拍立得雙層參考框 (已移除無用的 AI 綠色動態框) -->
       <div class="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
         <div class="w-64 aspect-[54/86] border-2 border-dashed border-white/60 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] relative flex flex-col items-center">
           <span class="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-white/90 whitespace-nowrap bg-black/70 px-2.5 py-0.5 rounded-full">將 Cheki 大致放入框內即可（微傾可避開反光）</span>
-          <!-- 內層拍立得畫面參考線 -->
           <div class="w-[85%] h-[71%] mt-[7.5%] border border-dashed border-pink-300/65 rounded"></div>
         </div>
       </div>
     </div>
 
     <div class="flex flex-col items-center gap-2 pb-1 z-10">
-      <!-- 1x / 1.5x / 2x 遠距防反光變焦列 + 雙拍合成消反光開關 -->
       <div class="flex items-center justify-between w-full gap-1.5">
         <div class="flex items-center gap-1 bg-zinc-900 p-1 rounded-xl border border-zinc-700">
           <button type="button" onclick="setCameraZoom(1)" id="camZoomBtn1" class="px-2.5 py-1 rounded-lg text-[11px] font-black bg-emerald-400 text-zinc-950">1x 原生超清</button>
@@ -725,7 +752,7 @@
     </div>
   </div>
 
-  <!-- 📐 4-POINT PERSPECTIVE WARP & FREE CROPPER MODAL (四點獨立拉角 + 雙線性平滑無鋸齒插值 + 3倍放大鏡準星 + ±15° 微調旋轉) -->
+  <!-- 📐 4-POINT PERSPECTIVE WARP & FREE CROPPER MODAL -->
   <div id="cropperModal" oncontextmenu="return false;" class="hidden fixed inset-0 z-[90] bg-black/95 flex flex-col justify-between p-3 touch-none select-none">
     <div class="flex justify-between items-center text-white z-20">
       <button type="button" onclick="closeCropperModal()" class="px-3 py-1.5 rounded-xl bg-zinc-800 text-xs font-black">✕ 取消</button>
@@ -737,7 +764,6 @@
     </div>
 
     <div id="cropWorkspace" oncontextmenu="return false;" class="relative flex-1 my-1.5 flex items-center justify-center overflow-hidden select-none touch-none">
-      <!-- 🔍 3倍放大鏡準星 (當手指拉動角位時自動浮現，精準對齊拍立得白邊！) -->
       <div id="cropLoupe" class="hidden absolute top-2 left-2 z-40 w-28 h-28 rounded-2xl border-2 border-emerald-400 bg-black shadow-2xl overflow-hidden pointer-events-none">
         <canvas id="cropLoupeCanvas" width="112" height="112" class="w-full h-full block"></canvas>
         <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -752,23 +778,19 @@
         <img id="cropTargetImg" src="" draggable="false" oncontextmenu="return false;" class="max-h-[58vh] max-w-[88vw] object-contain block pointer-events-none select-none">
         <div class="absolute inset-0 z-10 bg-transparent" oncontextmenu="return false;"></div>
 
-        <!-- SVG 四邊形梯形遮罩 + 拍立得外框線 + 內層相片窗對齊虛線 -->
         <svg id="cropQuadSvg" class="absolute inset-0 w-full h-full z-20 pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
           <path id="cropMaskPath" fill="rgba(0,0,0,0.62)" fill-rule="evenodd" d="M0,0 L100,0 L100,100 L0,100 Z M12,10 L88,10 L88,90 L12,90 Z"></path>
           <polygon id="cropOuterPoly" points="12,10 88,10 88,90 12,90" fill="none" stroke="#34D399" stroke-width="0.9"></polygon>
           <polygon id="cropInnerGuidePoly" points="18,17 82,17 82,73 18,73" fill="none" stroke="#F472B6" stroke-width="0.55" stroke-dasharray="2,1.5"></polygon>
         </svg>
 
-        <!-- 中央整框平移感應區 -->
         <div id="cropCenterMoveHandle" data-handle="move" class="crop-handle absolute z-20 cursor-move touch-none" style="left:20%;top:20%;width:60%;height:60%;"></div>
 
-        <!-- 4 個可獨立自由拉動的角位圓點 -->
         <div id="handleNW" data-handle="nw" class="crop-handle absolute z-30 w-10 h-10 -ml-5 -mt-5 flex items-center justify-center"><div class="w-6 h-6 bg-white border-[2.5px] border-cheki-accent rounded-full shadow-lg flex items-center justify-center"><div class="w-1.5 h-1.5 bg-cheki-accent rounded-full"></div></div></div>
         <div id="handleNE" data-handle="ne" class="crop-handle absolute z-30 w-10 h-10 -ml-5 -mt-5 flex items-center justify-center"><div class="w-6 h-6 bg-white border-[2.5px] border-cheki-accent rounded-full shadow-lg flex items-center justify-center"><div class="w-1.5 h-1.5 bg-cheki-accent rounded-full"></div></div></div>
         <div id="handleSE" data-handle="se" class="crop-handle absolute z-30 w-10 h-10 -ml-5 -mt-5 flex items-center justify-center"><div class="w-6 h-6 bg-white border-[2.5px] border-cheki-accent rounded-full shadow-lg flex items-center justify-center"><div class="w-1.5 h-1.5 bg-cheki-accent rounded-full"></div></div></div>
         <div id="handleSW" data-handle="sw" class="crop-handle absolute z-30 w-10 h-10 -ml-5 -mt-5 flex items-center justify-center"><div class="w-6 h-6 bg-white border-[2.5px] border-cheki-accent rounded-full shadow-lg flex items-center justify-center"><div class="w-1.5 h-1.5 bg-cheki-accent rounded-full"></div></div></div>
 
-        <!-- 4 條邊線中點控制條 -->
         <div id="handleN" data-handle="n" class="crop-handle absolute z-30 w-11 h-8 -ml-5 -mt-4 flex items-center justify-center"><div class="w-7 h-2.5 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
         <div id="handleS" data-handle="s" class="crop-handle absolute z-30 w-11 h-8 -ml-5 -mt-4 flex items-center justify-center"><div class="w-7 h-2.5 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
         <div id="handleW" data-handle="w" class="crop-handle absolute z-30 w-8 h-11 -ml-4 -mt-5 flex items-center justify-center"><div class="w-2.5 h-7 bg-emerald-300 border border-zinc-900 rounded-full shadow"></div></div>
@@ -776,7 +798,6 @@
       </div>
     </div>
 
-    <!-- 底部控制區：±15° 微調旋轉滑桿 + 標準比例快捷鍵 -->
     <div class="space-y-2 z-20">
       <div class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2 text-white">
         <span class="text-[11px] font-black text-pink-300 shrink-0">🔄 微調拉直: <span id="fineRotLabel">0°</span></span>
@@ -844,8 +865,8 @@
     let editingCardId = null;
     let editingSelectedAlbums = new Set();
     let uncroppedOriginalDataUrl = ''; // 3200px 超高畫質原始底圖
-    let rawUploadDataUrl = '';         // 裁切拉直後的超清底圖
-    let currentUploadDataUrl = '';     // 套用銳化/濾鏡後的最終圖
+    let rawUploadDataUrl = '';         // 裁切拉直後的無損乾淨底圖（不烘死濾鏡，供隨時調回數值！）
+    let currentUploadDataUrl = '';     // 套用銳化/濾鏡後的最終顯示圖
     let selectedBackColor = '#60A5FA';
     let inspectingCardId = null;
     let selectedDeskCardId = null;
@@ -853,6 +874,9 @@
     let currentDeskThemeIdx = 0;
     let calYear = new Date().getFullYear();
     let calMonth = new Date().getMonth();
+
+    // 🎛️ 畫質調整歷史紀錄堆疊 (支援「↩️ 還原上一個數值」與無損編輯)
+    let filterHistoryStack = [];
 
     // 📐 拍立得直向與橫向標準實體比例常數
     const CHEKI_SHORT_SIDE_PX = 145;
@@ -939,6 +963,110 @@
       const clean = [...new Set((albumArray || []).filter(Boolean))];
       card.albums = clean.length > 0 ? clean : [albums[0] || '預設相簿'];
       card.album = card.albums[0];
+    }
+
+    // =========================================================================
+    // 🎛️ 無損記憶修圖控制引擎 (支援「↩️ 上一個數值」、「🔄 還原原圖」、即時數字與跨次編輯記憶)
+    // =========================================================================
+    function getCurrentFilterConfig() {
+      return {
+        sharpen: Number(document.getElementById('sharpenSlider')?.value || 0),
+        deglare: Number(document.getElementById('deglareSlider')?.value || 0),
+        brightness: Number(document.getElementById('brightnessSlider')?.value || 100),
+        contrast: Number(document.getElementById('contrastSlider')?.value || 100)
+      };
+    }
+
+    function setFilterSlidersUI(cfg) {
+      const s = cfg?.sharpen ?? 0;
+      const d = cfg?.deglare ?? 0;
+      const b = cfg?.brightness ?? 100;
+      const c = cfg?.contrast ?? 100;
+
+      const sEl = document.getElementById('sharpenSlider');
+      const dEl = document.getElementById('deglareSlider');
+      const bEl = document.getElementById('brightnessSlider');
+      const cEl = document.getElementById('contrastSlider');
+      if (sEl) sEl.value = s;
+      if (dEl) dEl.value = d;
+      if (bEl) bEl.value = b;
+      if (cEl) cEl.value = c;
+
+      updateFilterValueLabels();
+    }
+
+    function updateFilterValueLabels() {
+      const cfg = getCurrentFilterConfig();
+      const sLbl = document.getElementById('sharpenValLabel');
+      const dLbl = document.getElementById('deglareValLabel');
+      const bLbl = document.getElementById('brightnessValLabel');
+      const cLbl = document.getElementById('contrastValLabel');
+      if (sLbl) sLbl.textContent = `${cfg.sharpen}%`;
+      if (dLbl) dLbl.textContent = `${cfg.deglare}%`;
+      if (bLbl) bLbl.textContent = `${cfg.brightness}%`;
+      if (cLbl) cLbl.textContent = `${cfg.contrast}%`;
+    }
+
+    function initFilterHistory(initialCfg) {
+      const startCfg = initialCfg || { sharpen: 0, deglare: 0, brightness: 100, contrast: 100 };
+      setFilterSlidersUI(startCfg);
+      filterHistoryStack = [{ ...startCfg }];
+      updateUndoButtonUI();
+    }
+
+    function commitFilterHistory() {
+      const cur = getCurrentFilterConfig();
+      const last = filterHistoryStack[filterHistoryStack.length - 1];
+      if (!last || last.sharpen !== cur.sharpen || last.deglare !== cur.deglare || last.brightness !== cur.brightness || last.contrast !== cur.contrast) {
+        filterHistoryStack.push({ ...cur });
+        if (filterHistoryStack.length > 25) filterHistoryStack.shift();
+      }
+      updateUndoButtonUI();
+    }
+
+    function updateUndoButtonUI() {
+      const btn = document.getElementById('undoFilterBtn');
+      if (!btn) return;
+      if (filterHistoryStack.length > 1) {
+        btn.disabled = false;
+        btn.className = 'px-2 py-0.5 rounded-lg bg-amber-300 text-zinc-950 border border-amber-200 text-[10px] font-black transition active:scale-95';
+      } else {
+        btn.disabled = true;
+        btn.className = 'px-2 py-0.5 rounded-lg bg-zinc-700 text-zinc-400 border border-zinc-600 text-[10px] font-black transition opacity-60';
+      }
+    }
+
+    function undoFilterStep() {
+      if (filterHistoryStack.length <= 1) return;
+      filterHistoryStack.pop(); // 移除當前狀態
+      const prev = filterHistoryStack[filterHistoryStack.length - 1];
+      setFilterSlidersUI(prev);
+      updateUndoButtonUI();
+      applyImageFilterPreview();
+    }
+
+    function resetAllFiltersToZero() {
+      const zeroCfg = { sharpen: 0, deglare: 0, brightness: 100, contrast: 100 };
+      setFilterSlidersUI(zeroCfg);
+      commitFilterHistory();
+      applyImageFilterPreview();
+    }
+
+    function stepFilterValue(sliderId, delta) {
+      const el = document.getElementById(sliderId);
+      if (!el) return;
+      const min = Number(el.min);
+      const max = Number(el.max);
+      const next = Math.min(max, Math.max(min, Number(el.value) + delta));
+      el.value = next;
+      updateFilterValueLabels();
+      commitFilterHistory();
+      applyImageFilterPreview();
+    }
+
+    function onFilterSliderInput() {
+      updateFilterValueLabels();
+      applyImageFilterPreview();
     }
 
     // =========================================================================
@@ -2541,7 +2669,7 @@
     }
 
     // =========================================================================
-    // 📸 LIVE CAMERA SCANNER (4K 超高解析度請求 + 硬體光學變焦支援 + 雙拍消反光)
+    // 📸 LIVE CAMERA SCANNER
     // =========================================================================
     async function openLiveCameraScanner() {
       const modal = document.getElementById('liveCameraModal');
@@ -2555,13 +2683,12 @@
     async function startCameraStream() {
       stopCameraStream();
       try {
-        // 優先請求 4K / 2K 最高感光元件解析度與連續自動對焦
         cameraStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: useFrontCamera ? 'user' : { ideal: 'environment' },
             width: { ideal: 3840, min: 1280 },
             height: { ideal: 2160, min: 720 },
-             advanced: [{ focusMode: 'continuous' }]
+            advanced: [{ focusMode: 'continuous' }]
           },
           audio: false
         });
@@ -2590,7 +2717,6 @@
       });
 
       const video = document.getElementById('cameraVideo');
-      // 優先嘗試使用手機鏡頭原生硬體光學/無損變焦 (不損失像素！)
       hardwareZoomSupported = false;
       if (cameraStream) {
         const track = cameraStream.getVideoTracks()[0];
@@ -2632,7 +2758,6 @@
     function captureZoomedVideoFrame(video) {
       const vw = video.videoWidth;
       const vh = video.videoHeight;
-      // 若手機支援硬體變焦，直接擷取 100% 完整高解析度感光元件畫面
       const z = hardwareZoomSupported ? 1 : (currentCameraZoom || 1);
       const cropW = Math.round(vw / z);
       const cropH = Math.round(vh / z);
@@ -2766,7 +2891,7 @@
     }
 
     // =========================================================================
-    // 📐 4-POINT PERSPECTIVE HOMOGRAPHY WARP (雙線性平滑無鋸齒插值 + 3倍放大鏡準星)
+    // 📐 4-POINT PERSPECTIVE HOMOGRAPHY WARP
     // =========================================================================
     function setRectToQuadCorners(left, top, right, bottom) {
       cropCorners = {
@@ -2792,7 +2917,6 @@
       baseImg.onload = () => {
         cropBaseUnrotatedImg = baseImg;
         img.onload = () => {
-          // 預設產生與虛線參考框一致的標準 Cheki 對齊框，方便直接微調四角
           setCropPresetRatio(54, 86);
         };
         img.src = baseSrc;
@@ -3046,7 +3170,6 @@
       window.addEventListener('pointercancel', endDrag);
     })();
 
-    // 🚀 執行超高清四點透視拉直裁切（支援硬體加速矩形直出 + 雙線性平滑插值 Bilinear Interpolation，最高輸出 2200px）
     function applyFreeCrop() {
       const targetImgEl = document.getElementById('cropTargetImg');
       if (!targetImgEl || !targetImgEl.src) return;
@@ -3065,7 +3188,6 @@
         const leftH = Math.hypot(pSW.x - pNW.x, pSW.y - pNW.y);
         const rightH = Math.hypot(pSE.x - pNE.x, pSE.y - pNE.y);
 
-        // 提高輸出解析度上限至 2200px，保留完整超清細節！
         let outW = Math.max(80, Math.round((topW + botW) / 2));
         let outH = Math.max(80, Math.round((leftH + rightH) / 2));
         const maxOutSide = 2200;
@@ -3079,7 +3201,6 @@
         dstCanvas.height = outH;
         const dCtx = dstCanvas.getContext('2d', { willReadFrequently: true });
 
-        // 檢查四個角是否為標準矩形（未進行梯形斜拉）：若是矩形則直接使用瀏覽器最高畫質硬體渲染
         const isAxisAlignedRect =
           Math.abs(cropCorners.nw.y - cropCorners.ne.y) < 0.3 &&
           Math.abs(cropCorners.sw.y - cropCorners.se.y) < 0.3 &&
@@ -3095,7 +3216,6 @@
             0, 0, outW, outH
           );
         } else {
-          // 若為斜拍梯形，使用「雙線性平滑插值 (Bilinear Interpolation)」徹底消除鋸齒感！
           const srcCanvas = document.createElement('canvas');
           srcCanvas.width = sw;
           srcCanvas.height = sh;
@@ -3145,19 +3265,17 @@
           dCtx.putImageData(dstImgData, 0, 0);
         }
 
-        // 以 0.96 無損級品質儲存裁切後底圖
+        // 保存乾淨未加濾鏡的底圖至 rawUploadDataUrl，並將 4 個滑桿預設為 0% / 100% 原圖狀態
         rawUploadDataUrl = dstCanvas.toDataURL('image/jpeg', 0.96);
-        document.getElementById('brightnessSlider').value = 100;
-        document.getElementById('contrastSlider').value = 100;
-        document.getElementById('deglareSlider').value = 0;
-        document.getElementById('sharpenSlider').value = 15; // 預設加上 15% 微量清晰增晰
+        currentUploadDataUrl = rawUploadDataUrl;
+        initFilterHistory({ sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
+        document.getElementById('editPreviewImg').src = currentUploadDataUrl;
 
         const sizeTag = document.getElementById('detectedSizeTag');
         if (sizeTag) {
           sizeTag.textContent = `💎 超清輸出：${classifyChekiDimension(outW, outH)}`;
         }
         closeCropperModal();
-        applyImageFilterPreview();
       };
       img.src = targetImgEl.src;
     }
@@ -3190,17 +3308,22 @@
       ctx.putImageData(dstImg, 0, 0);
     }
 
-    // 畫質微調：支援 ✨ 清晰銳化 + 🌤️ 消反光 + ☀️ 亮度 + ◐ 對比度
+    // 畫質微調：每次永遠從乾淨的 `rawUploadDataUrl` 重新計算，確保拉回原位時 100% 還原上一個數值！
     let filterDebounceTimer = null;
     function applyImageFilterPreview() {
       if (!rawUploadDataUrl) return;
       if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
 
       filterDebounceTimer = setTimeout(() => {
-        const b = Number(document.getElementById('brightnessSlider')?.value || 100);
-        const c = Number(document.getElementById('contrastSlider')?.value || 100);
-        const deglare = Number(document.getElementById('deglareSlider')?.value || 0);
-        const sharpen = Number(document.getElementById('sharpenSlider')?.value || 0);
+        const cfg = getCurrentFilterConfig();
+        const { sharpen, deglare, brightness: b, contrast: c } = cfg;
+
+        // 若全部數值皆為預設原圖狀態，直接使用無損 rawUploadDataUrl，完全不經過重複壓縮！
+        if (sharpen === 0 && deglare === 0 && b === 100 && c === 100) {
+          currentUploadDataUrl = rawUploadDataUrl;
+          document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+          return;
+        }
 
         const img = new Image();
         img.onload = () => {
@@ -3241,7 +3364,7 @@
           document.getElementById('editPreviewImg').src = currentUploadDataUrl;
         };
         img.src = rawUploadDataUrl;
-      }, 60);
+      }, 45);
     }
 
     // --- INSPECT MODAL ---
@@ -3382,15 +3505,13 @@
       toggleEditMapPicker(false);
 
       document.getElementById('cardNoteInput').value = '';
-      document.getElementById('brightnessSlider').value = 100;
-      document.getElementById('contrastSlider').value = 100;
-      document.getElementById('deglareSlider').value = 0;
-      document.getElementById('sharpenSlider').value = 15;
+      initFilterHistory({ sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
       document.getElementById('previewContainer').classList.add('hidden');
       selectBackColor('#60A5FA');
       document.getElementById('editCardModal').classList.remove('hidden');
     }
 
+    // 打開「✏️ 編輯拍立得」時，自動載入該卡儲存的無損底圖 `baseImage` 與上次的 `filterConfig`，讓你隨時可以將數值調低或還原！
     function openEditFromInspect() {
       const card = cards.find(c => c.id === inspectingCardId);
       if (!card) return;
@@ -3398,9 +3519,11 @@
       closeInspectModal();
 
       editingCardId = targetId;
-      uncroppedOriginalDataUrl = card.image;
-      rawUploadDataUrl = card.image;
+      // 關鍵修復：載入未烘死濾鏡的 baseImage 作為底圖，若舊資料無 baseImage 則使用 image
+      rawUploadDataUrl = card.baseImage || card.image;
+      uncroppedOriginalDataUrl = card.uncroppedImage || rawUploadDataUrl;
       currentUploadDataUrl = card.image;
+
       editingSelectedAlbums = new Set(getCardAlbums(card));
       renderEditAlbumPills();
       populateMemberSuggestions();
@@ -3419,10 +3542,7 @@
       }
 
       document.getElementById('cardNoteInput').value = card.note || '';
-      document.getElementById('brightnessSlider').value = 100;
-      document.getElementById('contrastSlider').value = 100;
-      document.getElementById('deglareSlider').value = 0;
-      document.getElementById('sharpenSlider').value = 0;
+      initFilterHistory(card.filterConfig || { sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
       document.getElementById('editPreviewImg').src = card.image;
       document.getElementById('previewContainer').classList.remove('hidden');
       selectBackColor(card.backColor || '#60A5FA');
@@ -3452,7 +3572,6 @@
       e.target.value = '';
     }
 
-    // 💎 Ultra-HD 原圖載入器：保留高達 3200px 原始解析度供裁切器使用，徹底解決裁切後模糊問題！
     function compressAndSetImage(dataUrl, autoOpenCropper = false) {
       const img = new Image();
       img.onload = () => {
@@ -3475,10 +3594,7 @@
         rawUploadDataUrl = fullHighRes;
         currentUploadDataUrl = fullHighRes;
 
-        document.getElementById('brightnessSlider').value = 100;
-        document.getElementById('contrastSlider').value = 100;
-        document.getElementById('deglareSlider').value = 0;
-        document.getElementById('sharpenSlider').value = 15;
+        initFilterHistory({ sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
         document.getElementById('editPreviewImg').src = currentUploadDataUrl;
         document.getElementById('previewContainer').classList.remove('hidden');
 
@@ -3491,7 +3607,7 @@
     }
 
     function rotateUploadImage(deg) {
-      if (!currentUploadDataUrl) return;
+      if (!rawUploadDataUrl) return;
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
@@ -3505,12 +3621,11 @@
         ctx.drawImage(img, -img.width / 2, -img.height / 2);
         rawUploadDataUrl = canvas.toDataURL('image/jpeg', 0.96);
         uncroppedOriginalDataUrl = rawUploadDataUrl;
-        currentUploadDataUrl = rawUploadDataUrl;
-        document.getElementById('editPreviewImg').src = currentUploadDataUrl;
         const sizeTag = document.getElementById('detectedSizeTag');
         if (sizeTag) sizeTag.textContent = `💎 ${classifyChekiDimension(canvas.width, canvas.height)}`;
+        applyImageFilterPreview();
       };
-      img.src = currentUploadDataUrl;
+      img.src = rawUploadDataUrl;
     }
 
     function checkImageIsLandscape(dataUrl) {
@@ -3533,6 +3648,7 @@
       const chosenAlbums = [...editingSelectedAlbums];
       const note = document.getElementById('cardNoteInput').value;
       const isLandscape = await checkImageIsLandscape(currentUploadDataUrl);
+      const filterConfig = getCurrentFilterConfig();
 
       if (locationName && typeof editingLat !== 'number') {
         const match = PRESET_VENUES.find(v => v.name.toLowerCase().includes(locationName.toLowerCase()));
@@ -3552,6 +3668,8 @@
             lat: editingLat,
             lng: editingLng,
             image: currentUploadDataUrl,
+            baseImage: rawUploadDataUrl || currentUploadDataUrl,
+            filterConfig,
             isLandscape,
             backColor: selectedBackColor
           };
@@ -3568,6 +3686,8 @@
           lat: editingLat,
           lng: editingLng,
           image: currentUploadDataUrl,
+          baseImage: rawUploadDataUrl || currentUploadDataUrl,
+          filterConfig,
           isLandscape,
           backColor: selectedBackColor,
           fav: false,
@@ -3640,6 +3760,7 @@
               ? raw.albums
               : [raw.album || albums[0] || '預設相簿'];
 
+            const imgStr = raw.image || raw.img || raw.dataUrl || '';
             const normalized = {
               id: raw.id || (Date.now() + Math.floor(Math.random() * 100000)),
               createdAt: raw.createdAt || Date.now(),
@@ -3649,7 +3770,9 @@
               lat: typeof raw.lat === 'number' ? raw.lat : null,
               lng: typeof raw.lng === 'number' ? raw.lng : null,
               note: raw.note || raw.memo || '',
-              image: raw.image || raw.img || raw.dataUrl || '',
+              image: imgStr,
+              baseImage: raw.baseImage || imgStr,
+              filterConfig: raw.filterConfig || { sharpen: 0, deglare: 0, brightness: 100, contrast: 100 },
               isLandscape: Boolean(raw.isLandscape),
               backColor: raw.backColor || '#60A5FA',
               fav: Boolean(raw.fav || raw.favorite),
