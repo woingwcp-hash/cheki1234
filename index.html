@@ -4072,12 +4072,58 @@
   let selectedCdIcon = '✈️';
 
   // 將頂部倒數橫幅自動移到 Header 正下方
-  function mountCountdownBannerPosition() {
-    const header = document.querySelector('header');
+function mountCountdownBannerPosition() {
+    // 1. 隱藏原本頂部的倒數橫幅，騰出封面空間
     const banner = document.getElementById('cuteCountdownBanner');
-    if (header && banner && header.nextSibling !== banner) {
-      header.parentNode.insertBefore(banner, header.nextSibling);
+    if (banner) {
+      banner.style.display = 'none';
     }
+
+    // 2. 在畫面最底部的導覽列 (<nav>) 加入「⏳ 倒數」按鈕
+    const nav = document.querySelector('nav');
+    if (nav && !document.getElementById('nav-countdown')) {
+      nav.classList.remove('px-3');
+      nav.classList.add('px-1.5');
+      nav.querySelectorAll('button[id^="nav-"]').forEach(b => {
+        b.classList.remove('w-14');
+        b.classList.add('w-12');
+      });
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.id = 'nav-countdown';
+      btn.onclick = openCountdownModal;
+      btn.className = 'relative flex flex-col items-center gap-0.5 text-blue-600 font-black text-[11px] w-12 active:scale-90 transition';
+      btn.innerHTML = `
+        <span class="text-lg leading-none">⏳</span>
+        <span>倒數</span>
+        <span id="navCountdownMiniBadge" class="absolute -top-1.5 right-0 px-1 py-[1px] rounded-full bg-cheki-accent text-white border border-cheki-dark text-[8px] font-black leading-tight shadow-sm">--</span>
+      `;
+      nav.appendChild(btn);
+    }
+
+    // 3. 自動將剩餘日數（例如：35日）同步顯示在底部按鈕的小標籤上
+    const syncMiniBadge = () => {
+      const mini = document.getElementById('navCountdownMiniBadge');
+      if (!mini) return;
+      const act = (typeof getActiveCheerEvent === 'function') ? getActiveCheerEvent() : null;
+      if (!act) {
+        mini.textContent = '+';
+        return;
+      }
+      const rem = calculateTimeRemaining(act.date);
+      mini.textContent = rem.isToday ? '今日' : (rem.isPast ? '完成' : `${rem.days}日`);
+    };
+
+    const origUpdate = window.updateCountdownDisplays;
+    if (typeof origUpdate === 'function' && !origUpdate._wrappedForNav) {
+      window.updateCountdownDisplays = function() {
+        origUpdate.apply(this, arguments);
+        syncMiniBadge();
+      };
+      window.updateCountdownDisplays._wrappedForNav = true;
+    }
+    setTimeout(syncMiniBadge, 400);
   }
 
   function loadCheerDataFromDB() {
