@@ -5332,6 +5332,92 @@ let editingCheerEventId = null;
     }
 
     initLandscapeResponsiveFix();
+// =========================================================================
+    // 🪵 桌布「一鍵收起工具列 / 全螢幕純享觀賞模式」模組
+    // =========================================================================
+    let isDeskToolbarCollapsed = localStorage.getItem('cheki_desk_collapsed') === '1';
+
+    function toggleDeskToolbarMode(forceState) {
+      if (typeof forceState === 'boolean') {
+        isDeskToolbarCollapsed = forceState;
+      } else {
+        isDeskToolbarCollapsed = !isDeskToolbarCollapsed;
+      }
+      localStorage.setItem('cheki_desk_collapsed', isDeskToolbarCollapsed ? '1' : '0');
+      applyDeskToolbarCollapseUI();
+    }
+
+    function applyDeskToolbarCollapseUI() {
+      const deskSec = document.getElementById('tab-desk');
+      const canvas = document.getElementById('deskCanvas');
+      if (!deskSec || !canvas) return;
+
+      // 取得桌布上方的 3 排工具列區塊
+      const children = [...deskSec.children].filter(el => el.id !== 'deskCanvas' && el.id !== 'deskFloatingToggleWrap');
+      children.forEach(el => {
+        el.classList.toggle('hidden', isDeskToolbarCollapsed);
+      });
+
+      // 動態切換桌布高度：收起工具列時擴大至 82vh，展開時維持 64vh
+      if (isDeskToolbarCollapsed) {
+        canvas.classList.remove('h-[64vh]');
+        canvas.classList.add('h-[82vh]');
+      } else {
+        canvas.classList.remove('h-[82vh]');
+        canvas.classList.add('h-[64vh]');
+      }
+
+      // 更新桌布右上角懸浮切換按鈕狀態
+      const floatBtn = document.getElementById('deskFloatingCollapseBtn');
+      if (floatBtn) {
+        if (isDeskToolbarCollapsed) {
+          floatBtn.innerHTML = '🛠️ 展開工具';
+          floatBtn.className = 'px-3 py-1.5 rounded-full bg-white/90 backdrop-blur text-cheki-dark border-2 border-cheki-dark shadow-md text-[11px] font-black flex items-center gap-1 active:scale-95 transition';
+        } else {
+          floatBtn.innerHTML = '🔼 收起工具';
+          floatBtn.className = 'px-2.5 py-1 rounded-full bg-zinc-900/75 backdrop-blur text-white border border-white/40 shadow text-[10px] font-black flex items-center gap-1 active:scale-95 transition';
+        }
+      }
+
+      if (typeof applyDeskBgVisuals === 'function') {
+        applyDeskBgVisuals();
+      }
+    }
+
+    function initDeskToolbarCollapsePlugin() {
+      const deskSec = document.getElementById('tab-desk');
+      const canvas = document.getElementById('deskCanvas');
+      if (!deskSec || !canvas) return;
+
+      // 1. 在第一排工具列中加入「🔼 收起工具」按鈕
+      const firstToolbar = deskSec.firstElementChild;
+      if (firstToolbar && !document.getElementById('inlineCollapseToolbarBtn')) {
+        const inlineBtn = document.createElement('button');
+        inlineBtn.type = 'button';
+        inlineBtn.id = 'inlineCollapseToolbarBtn';
+        inlineBtn.onclick = () => toggleDeskToolbarMode(true);
+        inlineBtn.className = 'px-3 py-1.5 rounded-full bg-amber-200 text-cheki-dark text-xs font-black neo-btn shrink-0';
+        inlineBtn.innerHTML = '🔼 收起工具';
+        firstToolbar.insertBefore(inlineBtn, firstToolbar.firstElementChild);
+      }
+
+      // 2. 在桌布右上角加入懸浮「🔼 收起工具 / 🛠️ 展開工具」按鈕（跟隨捲動固定於桌布右上角）
+      if (!document.getElementById('deskFloatingCollapseBtn')) {
+        const stickyWrap = document.createElement('div');
+        stickyWrap.id = 'deskFloatingToggleWrap';
+        stickyWrap.className = 'sticky top-2.5 z-30 flex justify-end px-2.5 pointer-events-none h-0 overflow-visible';
+        stickyWrap.innerHTML = `
+          <button type="button" id="deskFloatingCollapseBtn" onclick="event.stopPropagation(); toggleDeskToolbarMode();" onpointerdown="event.stopPropagation();" class="pointer-events-auto">
+            🔼 收起工具
+          </button>
+        `;
+        canvas.insertBefore(stickyWrap, canvas.firstChild);
+      }
+
+      applyDeskToolbarCollapseUI();
+    }
+
+    setTimeout(initDeskToolbarCollapsePlugin, 300);  
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
