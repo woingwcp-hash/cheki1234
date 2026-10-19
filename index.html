@@ -1373,64 +1373,203 @@
     // =========================================================================
     // 🖼️ 桌布自訂相片背景 & 背景縮放平移系統
     // =========================================================================
-    function applyDeskBgVisuals() {
-      const canvas = document.getElementById('deskCanvas');
-      const customLayer = document.getElementById('deskCustomBgLayer');
-      const customImg = document.getElementById('deskCustomBgImg');
-      const dimmer = document.getElementById('deskCustomBgDimmer');
-      if (!canvas) return;
+    let isDeskGlobalPinching = false;
 
-      deskThemes.forEach(t => canvas.classList.remove(t));
-      currentDeskThemeIdx = deskBgConfig.themeIdx || 0;
-      canvas.classList.add(deskThemes[currentDeskThemeIdx]);
+  function applyDeskBgVisuals() {
+    const canvas = document.getElementById('deskCanvas');
+    const customLayer = document.getElementById('deskCustomBgLayer');
+    const customImg = document.getElementById('deskCustomBgImg');
+    const dimmer = document.getElementById('deskCustomBgDimmer');
+    const cardsLayer = document.getElementById('deskCardsLayer');
+    if (!canvas) return;
 
-      const zoomRatio = (deskBgConfig.zoom || 100) / 100;
+    deskThemes.forEach(t => canvas.classList.remove(t));
+    currentDeskThemeIdx = deskBgConfig.themeIdx || 0;
+    canvas.classList.add(deskThemes[currentDeskThemeIdx]);
 
-      if (deskBgConfig.mode === 'custom' && deskBgConfig.customImage) {
-        customLayer.classList.remove('hidden');
+    const zoomRatio = (deskBgConfig.zoom || 100) / 100;
+    const panX = deskBgConfig.panX || 0;
+    const panY = deskBgConfig.panY || 0;
+
+    // 1. 讓所有 Cheki 圖層與桌布背景一齊同步放大縮小及平移！
+    if (cardsLayer) {
+      cardsLayer.style.transformOrigin = '0 0';
+      cardsLayer.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomRatio})`;
+    }
+
+    // 2. 同步縮放自訂相片背景或預設波點/格紋背景
+    if (deskBgConfig.mode === 'custom' && deskBgConfig.customImage) {
+      if (customLayer) customLayer.classList.remove('hidden');
+      if (customImg) {
         customImg.src = deskBgConfig.customImage;
-        customImg.style.transform = `translate(${deskBgConfig.panX || 0}px, ${deskBgConfig.panY || 0}px) scale(${zoomRatio})`;
-        dimmer.style.backgroundColor = `rgba(0, 0, 0, ${(deskBgConfig.dim || 0) / 100})`;
+        customImg.style.transformOrigin = '0 0';
+        customImg.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomRatio})`;
+      }
+      if (dimmer) dimmer.style.backgroundColor = `rgba(0, 0, 0, ${(deskBgConfig.dim || 0) / 100})`;
+      canvas.style.backgroundSize = '';
+      canvas.style.backgroundPosition = '';
+    } else {
+      if (customLayer) customLayer.classList.add('hidden');
+      const basePx = currentDeskThemeIdx === 2 ? 28 : 32;
+      const scaledPx = Math.max(6, Math.round(basePx * zoomRatio));
+      if (currentDeskThemeIdx !== 3) {
+        canvas.style.backgroundSize = `${scaledPx}px ${scaledPx}px`;
+        canvas.style.backgroundPosition = `${panX}px ${panY}px`;
+      } else {
         canvas.style.backgroundSize = '';
         canvas.style.backgroundPosition = '';
-      } else {
-        customLayer.classList.add('hidden');
-        const basePx = currentDeskThemeIdx === 2 ? 28 : 32;
-        const scaledPx = Math.max(8, Math.round(basePx * zoomRatio));
-        if (currentDeskThemeIdx !== 3) {
-          canvas.style.backgroundSize = `${scaledPx}px ${scaledPx}px`;
-          canvas.style.backgroundPosition = `${deskBgConfig.panX || 0}px ${deskBgConfig.panY || 0}px`;
-        } else {
-          canvas.style.backgroundSize = '';
-          canvas.style.backgroundPosition = '';
-        }
       }
-
-      const zVal = Math.round(deskBgConfig.zoom || 100);
-      const cardScalePct = Math.round(deskBgConfig.defaultCardScale || 100);
-      const allCardsSlider = document.getElementById('deskAllCardsScaleSlider');
-      const allCardsText = document.getElementById('deskAllCardsScaleText');
-      if (allCardsSlider) allCardsSlider.value = cardScalePct;
-      if (allCardsText) allCardsText.textContent = `${cardScalePct}%`;
-
-      const quickSlider = document.getElementById('deskBgQuickSlider');
-      const quickText = document.getElementById('deskBgZoomValueText');
-      const modalZoomSlider = document.getElementById('modalBgZoomSlider');
-      const modalZoomLabel = document.getElementById('modalBgZoomLabel');
-      const modalPanX = document.getElementById('modalBgPanXSlider');
-      const modalPanY = document.getElementById('modalBgPanYSlider');
-      const modalDimSlider = document.getElementById('modalBgDimSlider');
-      const modalDimLabel = document.getElementById('modalBgDimLabel');
-
-      if (quickSlider) quickSlider.value = zVal;
-      if (quickText) quickText.textContent = `${zVal}%`;
-      if (modalZoomSlider) modalZoomSlider.value = zVal;
-      if (modalZoomLabel) modalZoomLabel.textContent = `${zVal}%`;
-      if (modalPanX) modalPanX.value = deskBgConfig.panX || 0;
-      if (modalPanY) modalPanY.value = deskBgConfig.panY || 0;
-      if (modalDimSlider) modalDimSlider.value = deskBgConfig.dim || 0;
-      if (modalDimLabel) modalDimLabel.textContent = `${deskBgConfig.dim || 0}%`;
     }
+
+    // 3. 更新縮放滑桿與數值顯示
+    const zVal = Math.round(deskBgConfig.zoom || 100);
+    const cardScalePct = Math.round(deskBgConfig.defaultCardScale || 100);
+    if (document.getElementById('deskAllCardsScaleSlider')) document.getElementById('deskAllCardsScaleSlider').value = cardScalePct;
+    if (document.getElementById('deskAllCardsScaleText')) document.getElementById('deskAllCardsScaleText').textContent = `${cardScalePct}%`;
+    if (document.getElementById('deskBgQuickSlider')) document.getElementById('deskBgQuickSlider').value = zVal;
+    if (document.getElementById('deskBgZoomValueText')) document.getElementById('deskBgZoomValueText').textContent = `${zVal}%`;
+    if (document.getElementById('modalBgZoomSlider')) document.getElementById('modalBgZoomSlider').value = zVal;
+    if (document.getElementById('modalBgZoomLabel')) document.getElementById('modalBgZoomLabel').textContent = `${zVal}%`;
+    if (document.getElementById('modalBgPanXSlider')) document.getElementById('modalBgPanXSlider').value = panX;
+    if (document.getElementById('modalBgPanYSlider')) document.getElementById('modalBgPanYSlider').value = panY;
+    if (document.getElementById('modalBgDimSlider')) document.getElementById('modalBgDimSlider').value = deskBgConfig.dim || 0;
+    if (document.getElementById('modalBgDimLabel')) document.getElementById('modalBgDimLabel').textContent = `${deskBgConfig.dim || 0}%`;
+
+    // 4. 綁定桌布雙指捏合同時放大 Cheki 與桌布手勢 (只綁定一次)
+    if (!canvas._pinchBound) {
+      canvas._pinchBound = true;
+      let startDist = 0, initZoom = 100, initPanX = 0, initPanY = 0, worldMidX = 0, worldMidY = 0;
+      let isBgPanning = false, bgStartX = 0, bgStartY = 0;
+
+      // 雙指觸控：以兩指中心點同時放大/縮小桌布與全部 Cheki
+      canvas.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+          isDeskGlobalPinching = true;
+          isBgPanning = false;
+          e.preventDefault();
+          e.stopPropagation();
+          const rect = canvas.getBoundingClientRect();
+          const t1 = e.touches[0], t2 = e.touches[1];
+          startDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
+          initZoom = deskBgConfig.zoom || 100;
+          initPanX = deskBgConfig.panX || 0;
+          initPanY = deskBgConfig.panY || 0;
+          const midX = ((t1.clientX + t2.clientX) / 2) - rect.left;
+          const midY = ((t1.clientY + t2.clientY) / 2) - rect.top;
+          const initScale = initZoom / 100;
+          worldMidX = (midX - initPanX) / initScale;
+          worldMidY = (midY - initPanY) / initScale;
+        } else if (e.touches.length === 1 && !e.target.closest('.desk-card-node')) {
+          // 單指按住桌布空白處可自由拖曳平移視野
+          isBgPanning = true;
+          bgStartX = e.touches[0].clientX;
+          bgStartY = e.touches[0].clientY;
+          initPanX = deskBgConfig.panX || 0;
+          initPanY = deskBgConfig.panY || 0;
+        }
+      }, { passive: false, capture: true });
+
+      canvas.addEventListener('touchmove', (e) => {
+        if (isDeskGlobalPinching && e.touches.length === 2) {
+          e.preventDefault();
+          e.stopPropagation();
+          const rect = canvas.getBoundingClientRect();
+          const t1 = e.touches[0], t2 = e.touches[1];
+          const curDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
+          const newZoom = Math.min(300, Math.max(20, Math.round(initZoom * (curDist / startDist))));
+          const newScale = newZoom / 100;
+          const curMidX = ((t1.clientX + t2.clientX) / 2) - rect.left;
+          const curMidY = ((t1.clientY + t2.clientY) / 2) - rect.top;
+
+          deskBgConfig.zoom = newZoom;
+          deskBgConfig.panX = Math.round(curMidX - worldMidX * newScale);
+          deskBgConfig.panY = Math.round(curMidY - worldMidY * newScale);
+          applyDeskBgVisuals();
+        } else if (isBgPanning && e.touches.length === 1 && !isDeskGlobalPinching) {
+          const dx = e.touches[0].clientX - bgStartX;
+          const dy = e.touches[0].clientY - bgStartY;
+          if (Math.hypot(dx, dy) > 4) {
+            e.preventDefault();
+            deskBgConfig.panX = Math.round(initPanX + dx);
+            deskBgConfig.panY = Math.round(initPanY + dy);
+            applyDeskBgVisuals();
+          }
+        }
+      }, { passive: false, capture: true });
+
+      const endTouch = (e) => {
+        if (!e.touches || e.touches.length < 2) {
+          if (isDeskGlobalPinching) {
+            setTimeout(() => { isDeskGlobalPinching = false; }, 120);
+            saveDeskBgConfigToDB();
+          }
+        }
+        if (!e.touches || e.touches.length === 0) {
+          if (isBgPanning) {
+            isBgPanning = false;
+            saveDeskBgConfigToDB();
+          }
+        }
+      };
+      canvas.addEventListener('touchend', endTouch, { capture: true });
+      canvas.addEventListener('touchcancel', endTouch, { capture: true });
+    }
+
+    // 5. 順便修正頂部標題列「💌 備忘」與「📊」重疊問題，將「💌 備忘」放到第 2 行統計字旁邊
+    const memoBtn = document.getElementById('topMemoQuickBtn');
+    const statsP = document.getElementById('headerStats');
+    if (memoBtn && statsP && memoBtn.parentNode !== statsP.parentNode) {
+      const row = document.createElement('div');
+      row.className = 'flex items-center gap-1.5 mt-0.5';
+      statsP.parentNode.insertBefore(row, statsP);
+      row.appendChild(statsP);
+      row.appendChild(memoBtn);
+    }
+  }
+
+  // 覆蓋單張卡片拖曳邏輯：確保桌布放大後，單指拖曳單張 Cheki 依然 1:1 貼合手指速度
+  window.attachDeskCardInteractions = function(el, card) {
+    let isDragging = false, startX = 0, startY = 0, initialLeft = 0, initialTop = 0, movedDistance = 0;
+    el.addEventListener('pointerdown', (e) => {
+      if (isDeskGlobalPinching) return;
+      e.stopPropagation();
+      autoCollapseSearchOnDeskTouch();
+      bringCardToFront(card, el);
+      isDragging = true;
+      movedDistance = 0;
+      startX = e.clientX;
+      startY = e.clientY;
+      initialLeft = card.deskX;
+      initialTop = card.deskY;
+      try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+
+    el.addEventListener('pointermove', (e) => {
+      if (!isDragging || isDeskGlobalPinching) return;
+      const zoomRatio = (deskBgConfig.zoom || 100) / 100;
+      const dx = (e.clientX - startX) / zoomRatio;
+      const dy = (e.clientY - startY) / zoomRatio;
+      movedDistance = Math.hypot(e.clientX - startX, e.clientY - startY);
+      if (movedDistance > 4) {
+        card.deskX = Math.round(initialLeft + dx);
+        card.deskY = Math.round(initialTop + dy);
+        el.style.left = `${card.deskX}px`;
+        el.style.top = `${card.deskY}px`;
+      }
+    });
+
+    el.addEventListener('pointerup', (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      try { el.releasePointerCapture(e.pointerId); } catch (_) {}
+      if (movedDistance < 6 && !isDeskGlobalPinching) {
+        card.deskFlipped = !card.deskFlipped;
+        const inner = el.querySelector('.desk-flip-inner');
+        if (inner) inner.classList.toggle('rotate-y-180', card.deskFlipped);
+      }
+      saveCardToDB(card);
+    });
+  };
 
     function onDeskBgZoomChange(val) {
       deskBgConfig.zoom = Math.min(300, Math.max(20, Number(val) || 100));
