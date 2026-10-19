@@ -4072,21 +4072,117 @@
   let selectedCdIcon = '✈️';
 
   // 將頂部倒數橫幅自動移到 Header 正下方
-function mountCountdownBannerPosition() {
-    // 1. 隱藏原本頂部的倒數橫幅，騰出封面空間
+function switchCheerModalTab(mode) {
+    const heroCard = document.getElementById('heroCountdownCard');
+    const formBox = document.getElementById('addEventFormBox');
+    const eventsList = document.getElementById('countdownEventsList');
+    const eventsWrapper = eventsList ? eventsList.parentElement : null;
+    const topicsList = document.getElementById('talkTopicsList');
+    const topicsWrapper = topicsList ? topicsList.parentElement : null;
+
+    const tabCdBtn = document.getElementById('tabBtnCountdown');
+    const tabMemoBtn = document.getElementById('tabBtnMemo');
+    const modalTitle = document.getElementById('cheerModalMainTitle');
+    const modalSub = document.getElementById('cheerModalSubTitle');
+    const modalIcon = document.getElementById('cheerModalMainIcon');
+
+    // 加大兩個清單的可視高度，唔再迫埋一齊
+    if (eventsList) {
+      eventsList.classList.remove('max-h-36');
+      eventsList.classList.add('max-h-72');
+    }
+    if (topicsList) {
+      topicsList.classList.remove('max-h-48');
+      topicsList.classList.add('max-h-80');
+    }
+
+    if (mode === 'memo') {
+      if (heroCard) heroCard.classList.add('hidden');
+      if (formBox) formBox.classList.add('hidden');
+      if (eventsWrapper) eventsWrapper.classList.add('hidden');
+      if (topicsWrapper) topicsWrapper.classList.remove('hidden');
+
+      if (modalIcon) modalIcon.textContent = '💌';
+      if (modalTitle) modalTitle.textContent = '特典會話題 & Pose 備忘錄';
+      if (modalSub) modalSub.textContent = '預先記低想同偶像講嘅日文與大字報 ✨';
+
+      if (tabCdBtn) tabCdBtn.className = 'flex-1 py-2 rounded-xl bg-white border-2 border-cheki-dark text-xs font-black text-zinc-500 transition';
+      if (tabMemoBtn) tabMemoBtn.className = 'flex-1 py-2 rounded-xl bg-cheki-accent text-white neo-btn text-xs font-black transition';
+    } else {
+      if (heroCard) heroCard.classList.remove('hidden');
+      if (eventsWrapper) eventsWrapper.classList.remove('hidden');
+      if (topicsWrapper) topicsWrapper.classList.add('hidden');
+
+      if (modalIcon) modalIcon.textContent = '⏳';
+      if (modalTitle) modalTitle.textContent = '應援倒數計時器';
+      if (modalSub) modalSub.textContent = '記錄下一場 Live 與見面日倒數 ✨';
+
+      if (tabCdBtn) tabCdBtn.className = 'flex-1 py-2 rounded-xl bg-blue-500 text-white neo-btn text-xs font-black transition';
+      if (tabMemoBtn) tabMemoBtn.className = 'flex-1 py-2 rounded-xl bg-white border-2 border-cheki-dark text-xs font-black text-zinc-500 transition';
+    }
+  }
+
+  function openCheerModalWithMode(mode) {
+    if (typeof updateCountdownDisplays === 'function') updateCountdownDisplays();
+    switchCheerModalTab(mode || 'countdown');
+    document.getElementById('countdownModal')?.classList.remove('hidden');
+  }
+
+  function mountCountdownBannerPosition() {
+    // 1. 隱藏原本頂部的倒數橫幅
     const banner = document.getElementById('cuteCountdownBanner');
     if (banner) {
       banner.style.display = 'none';
     }
 
-    // 2. 在底部導覽列加入「⏳ 倒數」按鈕，並將「+」號調整為左右 3:3 完美置中
+    // 2. 在視窗內注入「⏳ 應援倒數 ｜ 💌 話題備忘錄」分頁切換按鈕，將兩個功能徹底分開
+    const modalBox = document.querySelector('#countdownModal > div');
+    const heroCard = document.getElementById('heroCountdownCard');
+    if (modalBox && heroCard && !document.getElementById('cheerModeTabs')) {
+      const headerRow = modalBox.firstElementChild;
+      if (headerRow) {
+        const iconEl = headerRow.querySelector('.cute-float');
+        const titleEl = headerRow.querySelector('h3');
+        const subEl = headerRow.querySelector('p');
+        if (iconEl) iconEl.id = 'cheerModalMainIcon';
+        if (titleEl) titleEl.id = 'cheerModalMainTitle';
+        if (subEl) subEl.id = 'cheerModalSubTitle';
+      }
+
+      const tabsBar = document.createElement('div');
+      tabsBar.id = 'cheerModeTabs';
+      tabsBar.className = 'flex gap-2 bg-pink-100/70 p-1.5 rounded-2xl border-2 border-cheki-dark';
+      tabsBar.innerHTML = `
+        <button type="button" id="tabBtnCountdown" onclick="switchCheerModalTab('countdown')" class="flex-1 py-2 rounded-xl bg-blue-500 text-white neo-btn text-xs font-black transition">
+          ⏳ 應援倒數計時
+        </button>
+        <button type="button" id="tabBtnMemo" onclick="switchCheerModalTab('memo')" class="flex-1 py-2 rounded-xl bg-white border-2 border-cheki-dark text-xs font-black text-zinc-500 transition">
+          💌 話題 & Pose 備忘
+        </button>
+      `;
+      modalBox.insertBefore(tabsBar, heroCard);
+    }
+
+    // 3. 在頂部標題列「本機永久存」旁邊加入「💌 備忘」快捷按鈕（一鍵直達備忘錄）
+    const saveBadge = document.querySelector('header span[onclick*="openBackupModal"]');
+    if (saveBadge && !document.getElementById('topMemoQuickBtn')) {
+      const memoBtn = document.createElement('button');
+      memoBtn.type = 'button';
+      memoBtn.id = 'topMemoQuickBtn';
+      memoBtn.onclick = () => openCheerModalWithMode('memo');
+      memoBtn.className = 'cursor-pointer text-[10px] font-black px-2 py-0.5 rounded-full bg-pink-100 text-cheki-accent border border-cheki-dark shrink-0 active:scale-95';
+      memoBtn.textContent = '💌 備忘';
+      saveBadge.parentNode.appendChild(memoBtn);
+    }
+
+    // 4. 在底部導覽列加入「⏳ 倒數」按鈕（一鍵直達倒數計時器），並維持「+」號左右 3:3 置中
     const nav = document.querySelector('nav');
     if (nav) {
       if (!document.getElementById('nav-countdown')) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.id = 'nav-countdown';
-        btn.onclick = openCountdownModal;
+        btn.onclick = () => openCheerModalWithMode('countdown');
         btn.className = 'relative flex flex-col items-center gap-0.5 text-blue-600 font-black text-[11px] flex-1 active:scale-90 transition';
         btn.innerHTML = `
           <span class="text-lg leading-none">⏳</span>
@@ -4094,16 +4190,16 @@ function mountCountdownBannerPosition() {
           <span id="navCountdownMiniBadge" class="absolute -top-1.5 right-0.5 px-1 py-[1px] rounded-full bg-cheki-accent text-white border border-cheki-dark text-[8px] font-black leading-tight shadow-sm">--</span>
         `;
         nav.appendChild(btn);
+      } else {
+        document.getElementById('nav-countdown').onclick = () => openCheerModalWithMode('countdown');
       }
 
-      // 將「+」號移到「📅 日曆」之後，形成「左3 (相簿/卡冊/日曆) + 中間(+) + 右3 (統計/桌布/倒數)」對稱結構
       const plusBtn = nav.querySelector('button[onclick*="openAddModal"]');
       const calBtn = document.getElementById('nav-calendar');
       if (plusBtn && calBtn && calBtn.nextSibling !== plusBtn) {
         nav.insertBefore(plusBtn, calBtn.nextSibling);
       }
 
-      // 統一左右 6 個按鈕為等寬 (flex-1)，確保「+」號 100% 處於正中央
       nav.classList.remove('px-3');
       nav.classList.add('px-1', 'gap-0.5');
       nav.querySelectorAll('button[id^="nav-"]').forEach(b => {
@@ -4115,7 +4211,7 @@ function mountCountdownBannerPosition() {
       }
     }
 
-    // 3. 自動同步倒數日數至底部小標籤
+    // 5. 自動同步倒數日數至底部小標籤
     const syncMiniBadge = () => {
       const mini = document.getElementById('navCountdownMiniBadge');
       if (!mini) return;
@@ -4136,7 +4232,10 @@ function mountCountdownBannerPosition() {
       };
       window.updateCountdownDisplays._wrappedForNav = true;
     }
-    setTimeout(syncMiniBadge, 400);
+    setTimeout(() => {
+      syncMiniBadge();
+      switchCheerModalTab('countdown');
+    }, 400);
   }
   function loadCheerDataFromDB() {
     if (!db) return;
