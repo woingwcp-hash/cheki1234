@@ -4801,6 +4801,157 @@ let editingCheerEventId = null;
     setTimeout(loadCheerDataFromDB, 350);
     setInterval(updateCountdownDisplays, 30000);
   });
+ // =========================================================================
+    // 🏷️ 極簡版「有簽名/無簽名 & 雙人/單人」標籤系統 (零畫面干擾外掛)
+    // =========================================================================
+    const CHEKI_TAG_OPTIONS = [
+      { id: 'signed', label: '✍️ 有簽名', group: 'sign' },
+      { id: 'unsigned', label: '📷 無簽名', group: 'sign' },
+      { id: '2shot', label: '👫 雙人 2S', group: 'shot' },
+      { id: 'solo', label: '👤 單人 Solo', group: 'shot' }
+    ];
+    let editingChekiTags = new Set();
+    let selectedTagFilter = 'ALL';
+
+    function renderEditChekiTagPills() {
+      let box = document.getElementById('editChekiTagPillsBox');
+      if (!box) {
+        const memberInput = document.getElementById('cardMemberInput');
+        if (!memberInput || !memberInput.parentElement) return;
+        box = document.createElement('div');
+        box.id = 'editChekiTagPillsBox';
+        box.className = 'flex items-center gap-1.5 pt-2 flex-wrap';
+        memberInput.parentElement.appendChild(box);
+      }
+      box.innerHTML = `<span class="text-[10px] font-black text-zinc-500 shrink-0">🏷️ 類型:</span>` + CHEKI_TAG_OPTIONS.map(t => {
+        const active = editingChekiTags.has(t.id);
+        return `
+          <button type="button" onclick="toggleEditChekiTag('${t.id}', '${t.group}')" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark transition active:scale-95 ${active ? 'bg-blue-500 text-white shadow-sm' : 'bg-white text-zinc-600'}">
+            ${t.label}
+          </button>
+        `;
+      }).join('');
+    }
+
+    function toggleEditChekiTag(tagId, group) {
+      if (editingChekiTags.has(tagId)) {
+        editingChekiTags.delete(tagId);
+      } else {
+        // 同組自動互斥（例如揀「有簽名」會自動取消「無簽名」）
+        CHEKI_TAG_OPTIONS.filter(t => t.group === group).forEach(t => editingChekiTags.delete(t.id));
+        editingChekiTags.add(tagId);
+      }
+      renderEditChekiTagPills();
+    }
+
+    function cycleBinderTagFilter() {
+      const order = ['ALL', 'signed', 'unsigned', '2shot', 'solo'];
+      const nextIdx = (order.indexOf(selectedTagFilter) + 1) % order.length;
+      selectedTagFilter = order[nextIdx];
+      renderBinder();
+    }
+
+    function initMinimalChekiTagsPlugin() {
+      // 1. 掛載於「新增拍立得」視窗
+      const origOpenAdd = window.openAddModal;
+      if (typeof origOpenAdd === 'function') {
+        window.openAddModal = function() {
+          editingChekiTags = new Set(['signed', '2shot']); // 預設幫你勾選最常用嘅「有簽名 + 雙人 2S」
+          origOpenAdd.apply(this, arguments);
+          renderEditChekiTagPills();
+        };
+      }
+
+      // 2. 掛載於「編輯拍立得」視窗
+      const origOpenEdit = window.openEditFromInspect;
+      if (typeof origOpenEdit === 'function') {
+        window.openEditFromInspect = function() {
+          const card = cards.find(c => c.id === inspectingCardId);
+          editingChekiTags = new Set(Array.isArray(card?.chekiTags) ? card.chekiTags : []);
+          origOpenEdit.apply(this, arguments);
+          renderEditChekiTagPills();
+        };
+      }
+
+      // 3. 儲存相片時自動寫入標籤
+      const origSaveCard = window.saveCard;
+      if (typeof origSaveCard === 'function') {
+        window.saveCard = async function() {
+          const isEditing = editingCardId;
+          await origSaveCard.apply(this, arguments);
+          const targetCard = isEditing ? cards.find(c => c.id === isEditing) : cards[0];
+          if (targetCard) {
+            targetCard.chekiTags = [...editingChekiTags];
+            await saveCardToDB(targetCard);
+            renderCurrentTab();
+          }
+        };
+      }
+
+      // 4. 支援卡冊分類篩選與搜尋關鍵字（如輸入「有簽名」、「Solo」）
+      const origGetFiltered = window.getFilteredCards;
+      if (typeof origGetFiltered === 'function') {
+        window.getFilteredCards = function() {
+          const list = origGetFiltered.apply(this, arguments);
+          if (selectedTagFilter === 'ALL') return list;
+          return list.filter(c => Array.isArray(c.chekiTags) && c.chekiTags.includes(selectedTagFilter));
+        };
+      }
+
+      const origMatchesSearch = window.cardMatchesSearchQuery;
+      if (typeof origMatchesSearch === 'function') {
+        window.cardMatchesSearchQuery = function(card, rawQuery) {
+          if (origMatchesSearch.apply(this, arguments)) return true;
+          const q = (rawQuery || '').trim().toLowerCase();
+          if (!q || !Array.isArray(card.chekiTags)) return false;
+          const tagText = card.chekiTags.map(id => CHEKI_TAG_OPTIONS.find(o => o.id === id)?.label || '').join(' ').toLowerCase();
+          return tagText.includes(q);
+        };
+      }
+
+      // 5. 在卡冊頁「★ 最愛」旁邊加入一粒極簡切換掣（不佔空間，點一下循環切換類型）
+      const origRenderBinder = window.renderBinder;
+      if (typeof origRenderBinder === 'function') {
+        window.renderBinder = function() {
+          origRenderBinder.apply(this, arguments);
+          const favBtn = document.getElementById('favFilterBtn');
+          if (favBtn && favBtn.parentElement) {
+            let tagBtn = document.getElementById('minimalTagFilterBtn');
+            if (!tagBtn) {
+              tagBtn = document.createElement('button');
+              tagBtn.id = 'minimalTagFilterBtn';
+              tagBtn.type = 'button';
+              tagBtn.onclick = cycleBinderTagFilter;
+              favBtn.parentElement.insertBefore(tagBtn, favBtn);
+            }
+            const curOpt = CHEKI_TAG_OPTIONS.find(o => o.id === selectedTagFilter);
+            const count = selectedTagFilter === 'ALL'
+              ? cards.length
+              : cards.filter(c => Array.isArray(c.chekiTags) && c.chekiTags.includes(selectedTagFilter)).length;
+            tagBtn.className = `px-2.5 py-1.5 rounded-full text-xs font-black neo-btn shrink-0 ${selectedTagFilter !== 'ALL' ? 'bg-blue-500 text-white' : 'bg-white text-zinc-700'}`;
+            tagBtn.textContent = curOpt ? `${curOpt.label} (${count})` : `🏷️ 類型`;
+          }
+        };
+      }
+
+      // 6. 點開相片檢視 (Inspect Modal) 時，與相簿膠囊並排顯示極簡標籤
+      const origRenderBadges = window.renderInspectAlbumBadges;
+      if (typeof origRenderBadges === 'function') {
+        window.renderInspectAlbumBadges = function(card) {
+          origRenderBadges.apply(this, arguments);
+          const box = document.getElementById('inspectAlbumsBadges');
+          if (box && Array.isArray(card?.chekiTags) && card.chekiTags.length > 0) {
+            const tagsHtml = card.chekiTags.map(id => {
+              const opt = CHEKI_TAG_OPTIONS.find(o => o.id === id);
+              return opt ? `<span class="px-2.5 py-0.5 rounded-full bg-blue-500/80 text-white border border-blue-300 text-[11px] font-black">${opt.label}</span>` : '';
+            }).join('');
+            box.insertAdjacentHTML('beforeend', tagsHtml);
+          }
+        };
+      }
+    }
+
+    setTimeout(initMinimalChekiTagsPlugin, 300); 
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
