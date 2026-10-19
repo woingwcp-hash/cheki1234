@@ -5239,286 +5239,129 @@ let editingCheerEventId = null;
   // =========================================================================
     // 📱 橫向模式 (Landscape) 自動適應與防變形修復模組
     // =========================================================================
+    // =========================================================================
+    // 📱 橫向模式 (Landscape) 自動適應與防變形修復模組
+    // =========================================================================
     function initLandscapeResponsiveFix() {
       if (document.getElementById('chekiLandscapeFixStyle')) return;
       const style = document.createElement('style');
       style.id = 'chekiLandscapeFixStyle';
       style.textContent = `
         @media (orientation: landscape) and (max-height: 600px) {
-          /* 1. 解除直向窄框限制，用盡橫向全螢幕闊度 */
-          body {
-            max-width: 100vw !important;
-            padding-bottom: 3.4rem !important;
-          }
-          nav {
-            max-width: 100vw !important;
-            padding-top: 0.2rem !important;
-            padding-bottom: 0.2rem !important;
-          }
-          nav button[onclick*="openAddModal"] {
-            width: 2.5rem !important;
-            height: 2.5rem !important;
-            margin-top: -0.75rem !important;
-            font-size: 1.25rem !important;
-          }
-          nav button[id^="nav-"] span:first-child {
-            font-size: 0.95rem !important;
-            line-height: 1 !important;
-          }
-          nav button[id^="nav-"] span:nth-child(2) {
-            font-size: 9px !important;
-          }
-
-          /* 2. 頂部標題列自動變纖薄，減少霸佔垂直空間 */
-          header {
-            padding-top: 0.25rem !important;
-            padding-bottom: 0.25rem !important;
-            padding-left: 0.75rem !important;
-            padding-right: 0.75rem !important;
-          }
-          main {
-            padding: 0.5rem 0.75rem !important;
-          }
-
-          /* 3. 卡冊與相簿在橫向時自動改為 4 欄並限制單張高度，確保整張 Cheki 完整顯示唔遮頭 */
-          #binderGrid {
-            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-            gap: 0.6rem !important;
-          }
-          #binderGrid > div > div.aspect-\\[3\\/4\\] {
-            aspect-ratio: auto !important;
-            height: 44vh !important;
-            max-height: 165px !important;
-          }
-          #albumsGrid {
-            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-            gap: 0.6rem !important;
-          }
-          #albumsGrid .h-32 {
-            height: 6rem !important;
-          }
-          #batchPickerGrid, #batchTagCardsGrid {
-            grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-          }
-
-          /* 4. 桌布與檢視視窗橫向最佳化 */
-          #deskCanvas {
-            height: 58vh !important;
-          }
-          #inspectModal {
-            padding: 0.4rem 0.75rem !important;
-          }
-          #inspectImg {
-            max-height: 54vh !important;
-          }
-          #editCardModal > div, #countdownModal > div {
-            max-width: 92vw !important;
-            max-height: 88vh !important;
-          }
+          body { max-width: 100vw !important; padding-bottom: 3.4rem !important; }
+          nav { max-width: 100vw !important; padding-top: 0.2rem !important; padding-bottom: 0.2rem !important; }
+          nav button[onclick*="openAddModal"] { width: 2.5rem !important; height: 2.5rem !important; margin-top: -0.75rem !important; font-size: 1.25rem !important; }
+          nav button[id^="nav-"] span:first-child { font-size: 0.95rem !important; line-height: 1 !important; }
+          nav button[id^="nav-"] span:nth-child(2) { font-size: 9px !important; }
+          header { padding: 0.25rem 0.75rem !important; }
+          main { padding: 0.5rem 0.75rem !important; }
+          #binderGrid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 0.6rem !important; }
+          #binderGrid > div > div.aspect-\\[3\\/4\\] { aspect-ratio: auto !important; height: 44vh !important; max-height: 165px !important; }
+          #albumsGrid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 0.6rem !important; }
+          #albumsGrid .h-32 { height: 6rem !important; }
+          #batchPickerGrid, #batchTagCardsGrid { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+          #deskCanvas { height: 58vh !important; }
+          #inspectModal { padding: 0.4rem 0.75rem !important; }
+          #inspectImg { max-height: 54vh !important; }
+          #editCardModal > div, #countdownModal > div { max-width: 92vw !important; max-height: 88vh !important; }
         }
       `;
       document.head.appendChild(style);
 
-      // 當手機旋轉方向時，自動重新計算並刷新桌布與當前頁面排版
       let resizeTimer = null;
       window.addEventListener('resize', () => {
         if (resizeTimer) clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
-          if (currentTab === 'desk') {
-            applyDeskBgVisuals();
-          }
+          if (currentTab === 'desk') applyDeskBgVisuals();
         }, 150);
       });
     }
-
     initLandscapeResponsiveFix();
-// =========================================================================
-    // 🪵 桌布「一鍵收起工具列 / 全螢幕純享觀賞模式」模組
+
     // =========================================================================
-    let isDeskToolbarCollapsed = localStorage.getItem('cheki_desk_collapsed') === '1';
+    // 🪵 桌布「原地同掣收起 / 展開工具列」100% 靈敏版
+    // =========================================================================
+    window.deskToolsCollapsed = false;
 
-    function toggleDeskToolbarMode(forceState) {
-      if (typeof forceState === 'boolean') {
-        isDeskToolbarCollapsed = forceState;
-      } else {
-        isDeskToolbarCollapsed = !isDeskToolbarCollapsed;
-      }
-      localStorage.setItem('cheki_desk_collapsed', isDeskToolbarCollapsed ? '1' : '0');
-      applyDeskToolbarCollapseUI();
-    }
+    window.toggleDeskToolbarMode = function() {
+      window.deskToolsCollapsed = !window.deskToolsCollapsed;
+      window.applyDeskToolbarCollapseUI();
+    };
 
-    function applyDeskToolbarCollapseUI() {
+    window.applyDeskToolbarCollapseUI = function() {
       const deskSec = document.getElementById('tab-desk');
       const canvas = document.getElementById('deskCanvas');
       if (!deskSec || !canvas) return;
 
-      // 取得桌布上方的 3 排工具列區塊
-      const children = [...deskSec.children].filter(el => el.id !== 'deskCanvas' && el.id !== 'deskFloatingToggleWrap');
-      children.forEach(el => {
-        el.classList.toggle('hidden', isDeskToolbarCollapsed);
+      // 徹底清除之前版本可能殘留的失效按鈕與鎖定狀態
+      try { localStorage.removeItem('cheki_desk_collapsed'); } catch (_) {}
+      ['deskFloatingToggleWrap', 'deskFloatingCollapseBtn', 'globalDeskFloatingToggleBtn', 'deskCollapsedSlimBar'].forEach(oldId => {
+        const oldEl = document.getElementById(oldId);
+        if (oldEl) oldEl.remove();
       });
 
-      // 動態切換桌布高度：收起工具列時擴大至 82vh，展開時維持 64vh
-      if (isDeskToolbarCollapsed) {
-        canvas.classList.remove('h-[64vh]');
-        canvas.classList.add('h-[82vh]');
-      } else {
-        canvas.classList.remove('h-[82vh]');
-        canvas.classList.add('h-[64vh]');
-      }
-
-      // 更新桌布右上角懸浮切換按鈕狀態
-      const floatBtn = document.getElementById('deskFloatingCollapseBtn');
-      if (floatBtn) {
-        if (isDeskToolbarCollapsed) {
-          floatBtn.innerHTML = '🛠️ 展開工具';
-          floatBtn.className = 'px-3 py-1.5 rounded-full bg-white/90 backdrop-blur text-cheki-dark border-2 border-cheki-dark shadow-md text-[11px] font-black flex items-center gap-1 active:scale-95 transition';
+      const firstToolbar = deskSec.firstElementChild;
+      // 只收起第 2 排（滑桿框）與第 3 排（單張大小框），保留第 1 排讓同一個按鈕原地切換
+      const allChildren = [...deskSec.children];
+      allChildren.forEach(el => {
+        if (el === firstToolbar || el === canvas) {
+          el.classList.remove('hidden');
+          el.style.display = '';
         } else {
-          floatBtn.innerHTML = '🔼 收起工具';
-          floatBtn.className = 'px-2.5 py-1 rounded-full bg-zinc-900/75 backdrop-blur text-white border border-white/40 shadow text-[10px] font-black flex items-center gap-1 active:scale-95 transition';
+          el.classList.remove('hidden');
+          el.style.display = window.deskToolsCollapsed ? 'none' : '';
+        }
+      });
+
+      // 更新第 1 排最左邊同一粒按鈕的外觀與文字
+      const toggleBtn = document.getElementById('inlineCollapseToolbarBtn');
+      if (toggleBtn) {
+        if (window.deskToolsCollapsed) {
+          toggleBtn.innerHTML = '🛠️ 展開工具 ▼';
+          toggleBtn.className = 'px-3.5 py-1.5 rounded-full bg-emerald-300 text-cheki-dark text-xs font-black neo-btn shrink-0';
+        } else {
+          toggleBtn.innerHTML = '🔼 收起工具';
+          toggleBtn.className = 'px-3 py-1.5 rounded-full bg-amber-200 text-cheki-dark text-xs font-black neo-btn shrink-0';
         }
       }
 
-      if (typeof applyDeskBgVisuals === 'function') {
-        applyDeskBgVisuals();
-      }
-    }
-
-    function initDeskToolbarCollapsePlugin() {
-      const deskSec = document.getElementById('tab-desk');
-      const canvas = document.getElementById('deskCanvas');
-      if (!deskSec || !canvas) return;
-
-      // 1. 在第一排工具列中加入「🔼 收起工具」按鈕
-      const firstToolbar = deskSec.firstElementChild;
-      if (firstToolbar && !document.getElementById('inlineCollapseToolbarBtn')) {
-        const inlineBtn = document.createElement('button');
-        inlineBtn.type = 'button';
-        inlineBtn.id = 'inlineCollapseToolbarBtn';
-        inlineBtn.onclick = () => toggleDeskToolbarMode(true);
-        inlineBtn.className = 'px-3 py-1.5 rounded-full bg-amber-200 text-cheki-dark text-xs font-black neo-btn shrink-0';
-        inlineBtn.innerHTML = '🔼 收起工具';
-        firstToolbar.insertBefore(inlineBtn, firstToolbar.firstElementChild);
-      }
-
-      // 2. 在桌布右上角加入懸浮「🔼 收起工具 / 🛠️ 展開工具」按鈕（跟隨捲動固定於桌布右上角）
-      if (!document.getElementById('deskFloatingCollapseBtn')) {
-        const stickyWrap = document.createElement('div');
-        stickyWrap.id = 'deskFloatingToggleWrap';
-        stickyWrap.className = 'sticky top-2.5 z-30 flex justify-end px-2.5 pointer-events-none h-0 overflow-visible';
-        stickyWrap.innerHTML = `
-          <button type="button" id="deskFloatingCollapseBtn" onclick="event.stopPropagation(); toggleDeskToolbarMode();" onpointerdown="event.stopPropagation();" class="pointer-events-auto">
-            🔼 收起工具
-          </button>
-        `;
-        canvas.insertBefore(stickyWrap, canvas.firstChild);
-      }
-
-      applyDeskToolbarCollapseUI();
-    }
-
-    setTimeout(initDeskToolbarCollapsePlugin, 300);
-  // =========================================================================
-    // 🪵 桌布「一鍵收起 / 展開工具列」穩定版模組 (獨立於畫布外，100% 靈敏不失效)
-    // =========================================================================
-    let isDeskToolbarCollapsed = false;
-
-    function toggleDeskToolbarMode(forceState) {
-      if (typeof forceState === 'boolean') {
-        isDeskToolbarCollapsed = forceState;
+      // 切換桌布高度
+      canvas.classList.remove('h-[82vh]', 'h-[84vh]');
+      if (window.deskToolsCollapsed) {
+        canvas.style.height = '76vh';
       } else {
-        isDeskToolbarCollapsed = !isDeskToolbarCollapsed;
+        canvas.style.height = '';
+        if (!canvas.classList.contains('h-[64vh]')) canvas.classList.add('h-[64vh]');
       }
-      applyDeskToolbarCollapseUI();
-    }
-
-    function applyDeskToolbarCollapseUI() {
-      const deskSec = document.getElementById('tab-desk');
-      const canvas = document.getElementById('deskCanvas');
-      const collapsedBar = document.getElementById('deskCollapsedSlimBar');
-      if (!deskSec || !canvas) return;
-
-      // 找出桌布上方原本的 3 個控制框 (排除桌布畫布本身與收起後的纖薄列)
-      const toolbars = [...deskSec.children].filter(
-        el => el.id !== 'deskCanvas' && el.id !== 'deskCollapsedSlimBar'
-      );
-
-      toolbars.forEach(el => {
-        el.style.display = isDeskToolbarCollapsed ? 'none' : '';
-      });
-
-      if (collapsedBar) {
-        collapsedBar.style.display = isDeskToolbarCollapsed ? 'flex' : 'none';
-      }
-
-      // 收起工具列時將桌布放大至 78vh，展開時恢復原本高度
-      canvas.style.height = isDeskToolbarCollapsed ? '78vh' : '';
 
       if (typeof applyDeskBgVisuals === 'function') {
         applyDeskBgVisuals();
       }
-    }
+    };
 
-    function initDeskToolbarCollapsePlugin() {
+    window.initDeskToolbarCollapsePlugin = function() {
       const deskSec = document.getElementById('tab-desk');
-      const canvas = document.getElementById('deskCanvas');
-      if (!deskSec || !canvas) return;
-
-      // 清除上次可能殘留的舊 localStorage 狀態
-      try { localStorage.removeItem('cheki_desk_collapsed'); } catch (_) {}
-
-      // 1. 在第一排工具列最左邊加入「🔼 收起工具」按鈕
+      if (!deskSec) return;
       const firstToolbar = deskSec.firstElementChild;
-      if (firstToolbar && !document.getElementById('inlineCollapseToolbarBtn')) {
-        const collapseBtn = document.createElement('button');
-        collapseBtn.type = 'button';
-        collapseBtn.id = 'inlineCollapseToolbarBtn';
-        collapseBtn.className = 'px-3 py-1.5 rounded-full bg-amber-200 text-cheki-dark text-xs font-black neo-btn shrink-0';
-        collapseBtn.innerHTML = '🔼 收起工具';
-        collapseBtn.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          toggleDeskToolbarMode(true);
-        });
-        firstToolbar.insertBefore(collapseBtn, firstToolbar.firstElementChild);
+      if (!firstToolbar) return;
+
+      let btn = document.getElementById('inlineCollapseToolbarBtn');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'inlineCollapseToolbarBtn';
+        firstToolbar.insertBefore(btn, firstToolbar.firstElementChild);
       }
+      btn.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.toggleDeskToolbarMode();
+      };
 
-      // 2. 在桌布畫布「正上方外部」建立收起後的纖薄控制列（完全避開畫布內部觸控攔截）
-      if (!document.getElementById('deskCollapsedSlimBar')) {
-        const slimBar = document.createElement('div');
-        slimBar.id = 'deskCollapsedSlimBar';
-        slimBar.style.display = 'none';
-        slimBar.className = 'neo-box bg-pink-100/95 rounded-2xl px-3 py-1.5 items-center justify-between gap-2';
-        slimBar.innerHTML = `
-          <span class="text-xs font-black text-cheki-dark truncate">🪵 純享大桌布模式</span>
-          <div class="flex items-center gap-1.5 shrink-0">
-            <button type="button" id="slimBarFlipBtn" class="px-2.5 py-1 rounded-full bg-white neo-btn text-xs font-black flex items-center gap-1">
-              🔄 翻面
-            </button>
-            <button type="button" id="slimBarExpandBtn" class="px-3 py-1 rounded-full bg-amber-300 text-cheki-dark neo-btn text-xs font-black flex items-center gap-1">
-              🛠️ 展開工具 ▼
-            </button>
-          </div>
-        `;
-        deskSec.insertBefore(slimBar, canvas);
+      window.applyDeskToolbarCollapseUI();
+    };
 
-        document.getElementById('slimBarFlipBtn')?.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (typeof flipSelectedDeskCard === 'function') flipSelectedDeskCard();
-        });
-
-        document.getElementById('slimBarExpandBtn')?.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          toggleDeskToolbarMode(false);
-        });
-      }
-
-      applyDeskToolbarCollapseUI();
-    }
-
-    setTimeout(initDeskToolbarCollapsePlugin, 300);
+    setTimeout(window.initDeskToolbarCollapsePlugin, 300);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
