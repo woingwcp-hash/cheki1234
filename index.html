@@ -5417,7 +5417,108 @@ let editingCheerEventId = null;
       applyDeskToolbarCollapseUI();
     }
 
-    setTimeout(initDeskToolbarCollapsePlugin, 300);  
+    setTimeout(initDeskToolbarCollapsePlugin, 300);
+  // =========================================================================
+    // 🪵 桌布「一鍵收起 / 展開工具列」穩定版模組 (獨立於畫布外，100% 靈敏不失效)
+    // =========================================================================
+    let isDeskToolbarCollapsed = false;
+
+    function toggleDeskToolbarMode(forceState) {
+      if (typeof forceState === 'boolean') {
+        isDeskToolbarCollapsed = forceState;
+      } else {
+        isDeskToolbarCollapsed = !isDeskToolbarCollapsed;
+      }
+      applyDeskToolbarCollapseUI();
+    }
+
+    function applyDeskToolbarCollapseUI() {
+      const deskSec = document.getElementById('tab-desk');
+      const canvas = document.getElementById('deskCanvas');
+      const collapsedBar = document.getElementById('deskCollapsedSlimBar');
+      if (!deskSec || !canvas) return;
+
+      // 找出桌布上方原本的 3 個控制框 (排除桌布畫布本身與收起後的纖薄列)
+      const toolbars = [...deskSec.children].filter(
+        el => el.id !== 'deskCanvas' && el.id !== 'deskCollapsedSlimBar'
+      );
+
+      toolbars.forEach(el => {
+        el.style.display = isDeskToolbarCollapsed ? 'none' : '';
+      });
+
+      if (collapsedBar) {
+        collapsedBar.style.display = isDeskToolbarCollapsed ? 'flex' : 'none';
+      }
+
+      // 收起工具列時將桌布放大至 78vh，展開時恢復原本高度
+      canvas.style.height = isDeskToolbarCollapsed ? '78vh' : '';
+
+      if (typeof applyDeskBgVisuals === 'function') {
+        applyDeskBgVisuals();
+      }
+    }
+
+    function initDeskToolbarCollapsePlugin() {
+      const deskSec = document.getElementById('tab-desk');
+      const canvas = document.getElementById('deskCanvas');
+      if (!deskSec || !canvas) return;
+
+      // 清除上次可能殘留的舊 localStorage 狀態
+      try { localStorage.removeItem('cheki_desk_collapsed'); } catch (_) {}
+
+      // 1. 在第一排工具列最左邊加入「🔼 收起工具」按鈕
+      const firstToolbar = deskSec.firstElementChild;
+      if (firstToolbar && !document.getElementById('inlineCollapseToolbarBtn')) {
+        const collapseBtn = document.createElement('button');
+        collapseBtn.type = 'button';
+        collapseBtn.id = 'inlineCollapseToolbarBtn';
+        collapseBtn.className = 'px-3 py-1.5 rounded-full bg-amber-200 text-cheki-dark text-xs font-black neo-btn shrink-0';
+        collapseBtn.innerHTML = '🔼 收起工具';
+        collapseBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleDeskToolbarMode(true);
+        });
+        firstToolbar.insertBefore(collapseBtn, firstToolbar.firstElementChild);
+      }
+
+      // 2. 在桌布畫布「正上方外部」建立收起後的纖薄控制列（完全避開畫布內部觸控攔截）
+      if (!document.getElementById('deskCollapsedSlimBar')) {
+        const slimBar = document.createElement('div');
+        slimBar.id = 'deskCollapsedSlimBar';
+        slimBar.style.display = 'none';
+        slimBar.className = 'neo-box bg-pink-100/95 rounded-2xl px-3 py-1.5 items-center justify-between gap-2';
+        slimBar.innerHTML = `
+          <span class="text-xs font-black text-cheki-dark truncate">🪵 純享大桌布模式</span>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button type="button" id="slimBarFlipBtn" class="px-2.5 py-1 rounded-full bg-white neo-btn text-xs font-black flex items-center gap-1">
+              🔄 翻面
+            </button>
+            <button type="button" id="slimBarExpandBtn" class="px-3 py-1 rounded-full bg-amber-300 text-cheki-dark neo-btn text-xs font-black flex items-center gap-1">
+              🛠️ 展開工具 ▼
+            </button>
+          </div>
+        `;
+        deskSec.insertBefore(slimBar, canvas);
+
+        document.getElementById('slimBarFlipBtn')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (typeof flipSelectedDeskCard === 'function') flipSelectedDeskCard();
+        });
+
+        document.getElementById('slimBarExpandBtn')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleDeskToolbarMode(false);
+        });
+      }
+
+      applyDeskToolbarCollapseUI();
+    }
+
+    setTimeout(initDeskToolbarCollapsePlugin, 300);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
