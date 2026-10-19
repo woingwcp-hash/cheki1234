@@ -2803,23 +2803,111 @@
       saveCardToDB(card);
     }
 
-    function scatterDeskCards() {
+function scatterDeskCards() {
       const canvas = document.getElementById('deskCanvas');
+      if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
       const q = (document.getElementById('searchInput')?.value || '').trim();
       const targetList = q ? cards.filter(c => cardMatchesSearchQuery(c, q)) : cards;
+      const total = targetList.length;
+      if (total === 0) return;
+
+      // 1. 根據目前桌布實際大小與縮放比例 (Zoom & Pan)，計算整個可視桌布座標範圍
+      const zoomRatio = (deskBgConfig.zoom || 100) / 100;
+      const panX = deskBgConfig.panX || 0;
+      const panY = deskBgConfig.panY || 0;
+      const viewLeft = -panX / zoomRatio;
+      const viewTop = -panY / zoomRatio;
+      const viewW = (rect.width || 360) / zoomRatio;
+      const viewH = (rect.height || 480) / zoomRatio;
+
+      // 2. 採用「均勻網格分區 + 隨機微調」演算法，令 Cheki 平均散佈在整張桌布，不再擠在中間
+      const aspect = viewW / Math.max(1, viewH);
+      const cols = Math.max(2, Math.ceil(Math.sqrt(total * aspect)));
+      const rows = Math.max(2, Math.ceil(total / cols));
+
+      const slots = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          slots.push({ r, c });
+        }
+      }
+      // 隨機洗牌分區位置
+      for (let i = slots.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [slots[i], slots[j]] = [slots[j], slots[i]];
+      }
+
+      const defaultScale = (deskBgConfig.defaultCardScale || 100) / 100;
+      const pad = Math.round(10 / zoomRatio);
+
+      targetList.forEach((card, i) => {
+        const sc = card.deskScale || defaultScale;
+        const cardW = Math.round(getDeskCardBaseWidth(card) * sc);
+        const cardH = Math.round(getDeskCardBaseHeight(card) * sc);
+
+        const usableW = Math.max(20, viewW - cardW - pad * 2);
+        const usableH = Math.max(20, viewH - cardH - pad * 2);
+        const cellW = usableW / cols;
+        const cellH = usableH / rows;
+
+        const slot = slots[i % slots.length];
+        const jitterX = (Math.random() - 0.5) * cellW * 0.85;
+        const jitterY = (Math.random() - 0.5) * cellH * 0.85;
+
+        const rawX = viewLeft + pad + (slot.c + 0.5) * cellW + jitterX;
+        const rawY = viewTop + pad + (slot.r + 0.5) * cellH + jitterY;
+
+        card.deskX = Math.round(Math.max(viewLeft + pad, Math.min(viewLeft + pad + usableW, rawX)));
+        card.deskY = Math.round(Math.max(viewTop + pad, Math.min(viewTop + pad + usableH, rawY)));
+        card.deskRot = Math.floor(Math.random() * 32) - 16;
+        card.deskZ = i + 1;
+        saveCardToDB(card);
+      });
+      renderDesk();
+    }
+
+    function neatArrangeDeskCards() {
+      const q = (document.getElementById('searchInput')?.value || '').trim();
+      const targetList = q ? cards.filter(c => cardMatchesSearchQuery(c, q)) : cards;
+      if (targetList.length === 0) return;
+
+      const canvas = document.getElementById('deskCanvas');
+      const rect = canvas.getBoundingClientRect();
+      const zoomRatio = (deskBgConfig.zoom || 100) / 100;
+      const panX = deskBgConfig.panX || 0;
+      const panY = deskBgConfig.panY || 0;
+
+      // 根據目前桌布可視寬度與左上角起點進行整齊排列
+      const viewLeft = Math.round(-panX / zoomRatio);
+      const viewTop = Math.round(-panY / zoomRatio);
+      const viewW = (rect.width || 360) / zoomRatio;
+
+      const targetScale = (deskBgConfig.defaultCardScale || 100) / 100;
+      const gap = Math.max(6, Math.round(10 * targetScale));
+      const padX = Math.round(10 / zoomRatio);
+      let curX = viewLeft + padX;
+      let curY = viewTop + Math.round(12 / zoomRatio);
+      let rowMaxH = 0;
 
       targetList.forEach((c, i) => {
-        const sc = c.deskScale || 1;
-        const cardW = Math.round(getDeskCardBaseWidth(c) * sc);
-        const cardH = Math.round(getDeskCardBaseHeight(c) * sc);
-        const maxW = Math.max(15, rect.width - cardW - 12);
-        const maxH = Math.max(30, rect.height - cardH - 12);
+        c.deskScale = targetScale;
+        const cardW = Math.round(getDeskCardBaseWidth(c) * targetScale);
+        const cardH = Math.round(getDeskCardBaseHeight(c) * targetScale);
 
-        c.deskX = Math.floor(8 + Math.random() * maxW);
-        c.deskY = Math.floor(8 + Math.random() * maxH);
-        c.deskRot = Math.floor(Math.random() * 34) - 17;
+        if (curX > viewLeft + padX && curX + cardW > viewLeft + viewW - padX) {
+          curX = viewLeft + padX;
+          curY += rowMaxH + gap;
+          rowMaxH = 0;
+        }
+
+        c.deskX = Math.round(curX);
+        c.deskY = Math.round(curY);
+        c.deskRot = 0;
         c.deskZ = i + 1;
+
+        curX += cardW + gap;
+        if (cardH > rowMaxH) rowMaxH = cardH;
         saveCardToDB(c);
       });
       renderDesk();
