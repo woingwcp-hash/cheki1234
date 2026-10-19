@@ -4804,14 +4804,47 @@ let editingCheerEventId = null;
  // =========================================================================
     // 🏷️ 極簡版「有簽名/無簽名 & 雙人/單人」標籤系統 (零畫面干擾外掛)
     // =========================================================================
-    const CHEKI_TAG_OPTIONS = [
-      { id: 'signed', label: '✍️ 有簽名', group: 'sign' },
-      { id: 'unsigned', label: '📷 無簽名', group: 'sign' },
-      { id: '2shot', label: '👫 雙人 2S', group: 'shot' },
-      { id: 'solo', label: '👤 單人 Solo', group: 'shot' }
+   // =========================================================================
+    // 🏷️ 極簡版「預設 + 自訂標籤 & 舊 Cheki 批次加標籤」系統
+    // =========================================================================
+    const DEFAULT_CHEKI_TAGS = [
+      { id: 'signed', label: '✍️ 有簽名', group: 'sign', isDefault: true },
+      { id: 'unsigned', label: '📷 無簽名', group: 'sign', isDefault: true },
+      { id: '2shot', label: '👫 雙人 2S', group: 'shot', isDefault: true },
+      { id: 'solo', label: '👤 單人 Solo', group: 'shot', isDefault: true }
     ];
+    let customChekiTags = [];
     let editingChekiTags = new Set();
     let selectedTagFilter = 'ALL';
+
+    // 批次為舊 Cheki 加標籤狀態
+    let batchTagCurrentId = 'signed';
+    let batchTagSelectedCardIds = new Set();
+
+    function getAllChekiTagOptions() {
+      return [...DEFAULT_CHEKI_TAGS, ...customChekiTags];
+    }
+
+    function loadCustomTagsFromDB() {
+      if (!db) return;
+      try {
+        const tx = db.transaction('meta', 'readonly');
+        const req = tx.objectStore('meta').get('customChekiTags');
+        tx.oncomplete = () => {
+          if (req.result && Array.isArray(req.result.value)) {
+            customChekiTags = req.result.value;
+          }
+        };
+      } catch (_) {}
+    }
+
+    function saveCustomTagsToDB() {
+      if (!db) return;
+      try {
+        const tx = db.transaction('meta', 'readwrite');
+        tx.objectStore('meta').put({ key: 'customChekiTags', value: customChekiTags });
+      } catch (_) {}
+    }
 
     function renderEditChekiTagPills() {
       let box = document.getElementById('editChekiTagPillsBox');
@@ -4823,7 +4856,9 @@ let editingCheerEventId = null;
         box.className = 'flex items-center gap-1.5 pt-2 flex-wrap';
         memberInput.parentElement.appendChild(box);
       }
-      box.innerHTML = `<span class="text-[10px] font-black text-zinc-500 shrink-0">🏷️ 類型:</span>` + CHEKI_TAG_OPTIONS.map(t => {
+
+      const allOpts = getAllChekiTagOptions();
+      const pillsHtml = allOpts.map(t => {
         const active = editingChekiTags.has(t.id);
         return `
           <button type="button" onclick="toggleEditChekiTag('${t.id}', '${t.group}')" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark transition active:scale-95 ${active ? 'bg-blue-500 text-white shadow-sm' : 'bg-white text-zinc-600'}">
@@ -4831,32 +4866,263 @@ let editingCheerEventId = null;
           </button>
         `;
       }).join('');
+
+      box.innerHTML = `
+        <span class="text-[10px] font-black text-zinc-500 shrink-0">🏷️ 類型:</span>
+        ${pillsHtml}
+        <button type="button" onclick="promptAddCustomChekiTag(false)" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark bg-amber-200 text-cheki-dark active:scale-95">
+          + 自訂標籤
+        </button>
+        <button type="button" onclick="openBatchTagOldChekisModal()" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark bg-pink-100 text-cheki-accent active:scale-95">
+          ⚡ 批次加落舊相
+        </button>
+      `;
     }
 
     function toggleEditChekiTag(tagId, group) {
       if (editingChekiTags.has(tagId)) {
         editingChekiTags.delete(tagId);
       } else {
-        // 同組自動互斥（例如揀「有簽名」會自動取消「無簽名」）
-        CHEKI_TAG_OPTIONS.filter(t => t.group === group).forEach(t => editingChekiTags.delete(t.id));
+        if (group === 'sign' || group === 'shot') {
+          getAllChekiTagOptions().filter(t => t.group === group).forEach(t => editingChekiTags.delete(t.id));
+        }
         editingChekiTags.add(tagId);
       }
       renderEditChekiTagPills();
     }
 
+    function promptAddCustomChekiTag(fromBatchModal = false) {
+      const raw = prompt('✨ 請輸入新自訂標籤名稱（例如：👗 新衣装、✌️ T Pose、🎁 宿題）：');
+      if (!raw || !raw.trim()) return;
+      const cleanLabel = raw.trim();
+      const allOpts = getAllChekiTagOptions();
+      const existing = allOpts.find(t => t.label.toLowerCase() === cleanLabel.toLowerCase());
+
+      let targetTagId;
+      if (existing) {
+        targetTagId = existing.id;
+      } else {
+        targetTagId = 'custom_' + Date.now();
+        const displayLabel = cleanLabel.startsWith('#') || /[\u{1F300}-\u{1FAFF}]/u.test(cleanLabel) ? cleanLabel : `🏷️ ${cleanLabel}`;
+        customChekiTags.push({
+          id: targetTagId,
+          label: displayLabel,
+          group: targetTagId,
+          isDefault: false
+        });
+        saveCustomTagsToDB();
+      }
+
+      editingChekiTags.add(targetTagId);
+      renderEditChekiTagPills();
+      if (currentTab === 'binder') renderBinder();
+
+      if (fromBatchModal) {
+        selectBatchTagTarget(targetTagId);
+      } else if (cards.length > 0) {
+        if (confirm(`✅ 已新增標籤「${cleanLabel}」！\n\n要唔要順便打開「舊 Cheki 批次選擇器」，一次過幫以前嘅舊 Cheki 都加埋呢個標籤？`)) {
+          openBatchTagOldChekisModal(targetTagId);
+        }
+      }
+    }
+
+    function deleteCustomChekiTag(tagId) {
+      const opt = customChekiTags.find(t => t.id === tagId);
+      if (!opt) return;
+      if (!confirm(`確定要刪除自訂標籤「${opt.label}」嗎？`)) return;
+      customChekiTags = customChekiTags.filter(t => t.id !== tagId);
+      saveCustomTagsToDB();
+      editingChekiTags.delete(tagId);
+      if (selectedTagFilter === tagId) selectedTagFilter = 'ALL';
+
+      cards.forEach(c => {
+        if (Array.isArray(c.chekiTags) && c.chekiTags.includes(tagId)) {
+          c.chekiTags = c.chekiTags.filter(id => id !== tagId);
+          saveCardToDB(c);
+        }
+      });
+
+      renderEditChekiTagPills();
+      if (!document.getElementById('batchTagModal')?.classList.contains('hidden')) {
+        selectBatchTagTarget('signed');
+      }
+      renderCurrentTab();
+    }
+
+    // --- ⚡ 批次為舊 Cheki 加標籤視窗 ---
+    function ensureBatchTagModalExists() {
+      if (document.getElementById('batchTagModal')) return;
+      const div = document.createElement('div');
+      div.innerHTML = `
+        <div id="batchTagModal" class="hidden fixed inset-0 z-[88] bg-black/80 flex items-center justify-center p-3">
+          <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-4 flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+              <div>
+                <h3 class="font-black text-base">⚡ 批次為舊 Cheki 加 / 改標籤</h3>
+                <p class="text-[10px] text-zinc-500 font-bold">先揀標籤，再點選下方舊相片即可一次過套用！</p>
+              </div>
+              <button type="button" onclick="closeBatchTagOldChekisModal()" class="w-8 h-8 rounded-full bg-white neo-btn font-black">✕</button>
+            </div>
+
+            <div class="my-2 space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-black text-zinc-700">1️⃣ 選擇要套用的標籤：</span>
+                <button type="button" onclick="promptAddCustomChekiTag(true)" class="px-2 py-0.5 rounded-lg bg-amber-200 border border-cheki-dark text-[10px] font-black">+ 新增自訂標籤</button>
+              </div>
+              <div id="batchTagSelectorPills" class="flex flex-wrap gap-1.5 p-2 rounded-2xl bg-white border-2 border-cheki-dark max-h-28 overflow-y-auto"></div>
+            </div>
+
+            <div class="flex items-center justify-between gap-1.5 mb-2">
+              <input id="batchTagSearchInput" type="text" placeholder="搜尋偶像名稱 (如：遠藤まりん) 或筆記..." oninput="renderBatchTagCardsGrid()" class="flex-1 px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark text-xs font-bold bg-white">
+              <button type="button" onclick="batchTagSelectAllVisible(true)" class="px-2.5 py-1.5 rounded-xl bg-blue-100 neo-btn text-[11px] font-black shrink-0">全選</button>
+              <button type="button" onclick="batchTagSelectAllVisible(false)" class="px-2 py-1.5 rounded-xl bg-white neo-btn text-[11px] font-black shrink-0">全取消</button>
+            </div>
+
+            <div id="batchTagCardsGrid" class="flex-1 overflow-y-auto grid grid-cols-3 gap-2.5 py-1.5 pr-1"></div>
+
+            <div class="pt-3 border-t-2 border-cheki-dark mt-2 flex items-center justify-between gap-2">
+              <span id="batchTagSelectedCount" class="text-xs font-black text-blue-600">已勾選 0 張相片</span>
+              <button type="button" onclick="saveBatchTagOldChekis()" class="px-5 py-2.5 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-box">💾 套用標籤變更</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(div);
+    }
+
+    function openBatchTagOldChekisModal(defaultTagId) {
+      ensureBatchTagModalExists();
+      const startTag = defaultTagId || (selectedTagFilter !== 'ALL' ? selectedTagFilter : ([...editingChekiTags][0] || 'signed'));
+      document.getElementById('batchTagSearchInput').value = '';
+      selectBatchTagTarget(startTag);
+      document.getElementById('batchTagModal').classList.remove('hidden');
+    }
+
+    function closeBatchTagOldChekisModal() {
+      document.getElementById('batchTagModal')?.classList.add('hidden');
+    }
+
+    function selectBatchTagTarget(tagId) {
+      const allOpts = getAllChekiTagOptions();
+      if (!allOpts.some(t => t.id === tagId)) tagId = 'signed';
+      batchTagCurrentId = tagId;
+
+      batchTagSelectedCardIds = new Set(
+        cards.filter(c => Array.isArray(c.chekiTags) && c.chekiTags.includes(tagId)).map(c => c.id)
+      );
+
+      const pillsBox = document.getElementById('batchTagSelectorPills');
+      if (pillsBox) {
+        pillsBox.innerHTML = allOpts.map(t => {
+          const active = t.id === batchTagCurrentId;
+          return `
+            <div class="inline-flex items-center gap-0.5">
+              <button type="button" onclick="selectBatchTagTarget('${t.id}')" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark transition ${active ? 'bg-blue-500 text-white shadow-sm' : 'bg-zinc-100 text-zinc-700'}">
+                ${t.label}
+              </button>
+              ${!t.isDefault ? `<button type="button" onclick="deleteCustomChekiTag('${t.id}')" class="w-5 h-5 rounded-full bg-rose-100 text-rose-600 border border-rose-300 text-[10px] font-black flex items-center justify-center" title="刪除此自訂標籤">✕</button>` : ''}
+            </div>
+          `;
+        }).join('');
+      }
+
+      renderBatchTagCardsGrid();
+    }
+
+    function renderBatchTagCardsGrid() {
+      const grid = document.getElementById('batchTagCardsGrid');
+      if (!grid) return;
+      const q = (document.getElementById('batchTagSearchInput')?.value || '').trim();
+      const filtered = cards.filter(c => cardMatchesSearchQuery(c, q));
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `<div class="col-span-3 text-center py-8 text-xs font-bold text-zinc-400">沒有找到符合的相片</div>`;
+      } else {
+        grid.innerHTML = filtered.map(c => {
+          const isSelected = batchTagSelectedCardIds.has(c.id);
+          return `
+            <div onclick="toggleBatchTagCardSelection(${c.id})" class="relative rounded-2xl p-1.5 border-2 cursor-pointer transition flex flex-col items-center ${isSelected ? 'border-blue-500 bg-blue-50/90 shadow-md' : 'border-zinc-200 bg-white opacity-75'}">
+              <div class="w-full aspect-[3/4] flex items-center justify-center overflow-hidden rounded-lg bg-zinc-50">
+                <img src="${c.image}" draggable="false" class="max-h-full max-w-full object-contain pointer-events-none">
+              </div>
+              <p class="font-black text-[11px] truncate w-full text-center mt-1">${c.member || '未命名'}</p>
+              <div class="absolute top-2 right-2 w-6 h-6 rounded-full border-2 border-cheki-dark flex items-center justify-center text-xs font-black ${isSelected ? 'bg-blue-500 text-white' : 'bg-white text-transparent'}">
+                ✓
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      const curOpt = getAllChekiTagOptions().find(t => t.id === batchTagCurrentId);
+      const countEl = document.getElementById('batchTagSelectedCount');
+      if (countEl) {
+        countEl.textContent = `${curOpt ? curOpt.label : ''}：已勾選 ${batchTagSelectedCardIds.size} 張`;
+      }
+    }
+
+    function toggleBatchTagCardSelection(cardId) {
+      if (batchTagSelectedCardIds.has(cardId)) batchTagSelectedCardIds.delete(cardId);
+      else batchTagSelectedCardIds.add(cardId);
+      renderBatchTagCardsGrid();
+    }
+
+    function batchTagSelectAllVisible(selectAll) {
+      const q = (document.getElementById('batchTagSearchInput')?.value || '').trim();
+      cards.forEach(c => {
+        if (cardMatchesSearchQuery(c, q)) {
+          if (selectAll) batchTagSelectedCardIds.add(c.id);
+          else batchTagSelectedCardIds.delete(c.id);
+        }
+      });
+      renderBatchTagCardsGrid();
+    }
+
+    async function saveBatchTagOldChekis() {
+      const curOpt = getAllChekiTagOptions().find(t => t.id === batchTagCurrentId);
+      if (!curOpt) return;
+
+      for (const c of cards) {
+        const tagSet = new Set(Array.isArray(c.chekiTags) ? c.chekiTags : []);
+        const shouldHave = batchTagSelectedCardIds.has(c.id);
+        const currentlyHas = tagSet.has(batchTagCurrentId);
+
+        if (shouldHave && !currentlyHas) {
+          // 如果係「有簽名/無簽名」或「雙人/單人」，自動移除互斥標籤
+          if (curOpt.group === 'sign' || curOpt.group === 'shot') {
+            getAllChekiTagOptions().filter(t => t.group === curOpt.group).forEach(t => tagSet.delete(t.id));
+          }
+          tagSet.add(batchTagCurrentId);
+          c.chekiTags = [...tagSet];
+          await saveCardToDB(c);
+        } else if (!shouldHave && currentlyHas) {
+          tagSet.delete(batchTagCurrentId);
+          c.chekiTags = [...tagSet];
+          await saveCardToDB(c);
+        }
+      }
+
+      closeBatchTagOldChekisModal();
+      renderCurrentTab();
+      alert(`✅ 已成功將「${curOpt.label}」同步更新至 ${batchTagSelectedCardIds.size} 張 Cheki！`);
+    }
+
     function cycleBinderTagFilter() {
-      const order = ['ALL', 'signed', 'unsigned', '2shot', 'solo'];
+      const allOpts = getAllChekiTagOptions();
+      const order = ['ALL', ...allOpts.map(o => o.id)];
       const nextIdx = (order.indexOf(selectedTagFilter) + 1) % order.length;
       selectedTagFilter = order[nextIdx];
       renderBinder();
     }
 
     function initMinimalChekiTagsPlugin() {
+      setTimeout(loadCustomTagsFromDB, 250);
+
       // 1. 掛載於「新增拍立得」視窗
       const origOpenAdd = window.openAddModal;
       if (typeof origOpenAdd === 'function') {
         window.openAddModal = function() {
-          editingChekiTags = new Set(['signed', '2shot']); // 預設幫你勾選最常用嘅「有簽名 + 雙人 2S」
+          editingChekiTags = new Set(['signed', '2shot']);
           origOpenAdd.apply(this, arguments);
           renderEditChekiTagPills();
         };
@@ -4877,6 +5143,9 @@ let editingCheerEventId = null;
       const origSaveCard = window.saveCard;
       if (typeof origSaveCard === 'function') {
         window.saveCard = async function() {
+          if (!currentUploadDataUrl) {
+            return origSaveCard.apply(this, arguments);
+          }
           const isEditing = editingCardId;
           await origSaveCard.apply(this, arguments);
           const targetCard = isEditing ? cards.find(c => c.id === isEditing) : cards[0];
@@ -4888,7 +5157,7 @@ let editingCheerEventId = null;
         };
       }
 
-      // 4. 支援卡冊分類篩選與搜尋關鍵字（如輸入「有簽名」、「Solo」）
+      // 4. 支援卡冊分類篩選與搜尋關鍵字
       const origGetFiltered = window.getFilteredCards;
       if (typeof origGetFiltered === 'function') {
         window.getFilteredCards = function() {
@@ -4904,12 +5173,13 @@ let editingCheerEventId = null;
           if (origMatchesSearch.apply(this, arguments)) return true;
           const q = (rawQuery || '').trim().toLowerCase();
           if (!q || !Array.isArray(card.chekiTags)) return false;
-          const tagText = card.chekiTags.map(id => CHEKI_TAG_OPTIONS.find(o => o.id === id)?.label || '').join(' ').toLowerCase();
+          const allOpts = getAllChekiTagOptions();
+          const tagText = card.chekiTags.map(id => allOpts.find(o => o.id === id)?.label || '').join(' ').toLowerCase();
           return tagText.includes(q);
         };
       }
 
-      // 5. 在卡冊頁「★ 最愛」旁邊加入一粒極簡切換掣（不佔空間，點一下循環切換類型）
+      // 5. 在卡冊頁「★ 最愛」旁邊加入「🏷️ 類型」切換掣及「⚡ 批次標記」細掣
       const origRenderBinder = window.renderBinder;
       if (typeof origRenderBinder === 'function') {
         window.renderBinder = function() {
@@ -4924,7 +5194,20 @@ let editingCheerEventId = null;
               tagBtn.onclick = cycleBinderTagFilter;
               favBtn.parentElement.insertBefore(tagBtn, favBtn);
             }
-            const curOpt = CHEKI_TAG_OPTIONS.find(o => o.id === selectedTagFilter);
+            let batchBtn = document.getElementById('minimalBatchTagBtn');
+            if (!batchBtn) {
+              batchBtn = document.createElement('button');
+              batchBtn.id = 'minimalBatchTagBtn';
+              batchBtn.type = 'button';
+              batchBtn.onclick = () => openBatchTagOldChekisModal();
+              batchBtn.title = '批次為舊 Cheki 加標籤';
+              batchBtn.className = 'px-2 py-1.5 rounded-full text-xs font-black neo-btn bg-pink-100 text-cheki-accent shrink-0';
+              batchBtn.textContent = '⚡標記';
+              favBtn.parentElement.insertBefore(batchBtn, favBtn);
+            }
+
+            const allOpts = getAllChekiTagOptions();
+            const curOpt = allOpts.find(o => o.id === selectedTagFilter);
             const count = selectedTagFilter === 'ALL'
               ? cards.length
               : cards.filter(c => Array.isArray(c.chekiTags) && c.chekiTags.includes(selectedTagFilter)).length;
@@ -4934,16 +5217,17 @@ let editingCheerEventId = null;
         };
       }
 
-      // 6. 點開相片檢視 (Inspect Modal) 時，與相簿膠囊並排顯示極簡標籤
+      // 6. 點開相片檢視 (Inspect Modal) 時顯示標籤
       const origRenderBadges = window.renderInspectAlbumBadges;
       if (typeof origRenderBadges === 'function') {
         window.renderInspectAlbumBadges = function(card) {
           origRenderBadges.apply(this, arguments);
           const box = document.getElementById('inspectAlbumsBadges');
           if (box && Array.isArray(card?.chekiTags) && card.chekiTags.length > 0) {
+            const allOpts = getAllChekiTagOptions();
             const tagsHtml = card.chekiTags.map(id => {
-              const opt = CHEKI_TAG_OPTIONS.find(o => o.id === id);
-              return opt ? `<span class="px-2.5 py-0.5 rounded-full bg-blue-500/80 text-white border border-blue-300 text-[11px] font-black">${opt.label}</span>` : '';
+              const opt = allOpts.find(o => o.id === id);
+              return opt ? `<span onclick="openBatchTagOldChekisModal('${id}')" class="cursor-pointer px-2.5 py-0.5 rounded-full bg-blue-500/80 text-white border border-blue-300 text-[11px] font-black">${opt.label}</span>` : '';
             }).join('');
             box.insertAdjacentHTML('beforeend', tagsHtml);
           }
