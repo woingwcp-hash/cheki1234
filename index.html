@@ -4193,14 +4193,20 @@
     renderTalkTopicsList();
   }
 
+let editingCheerEventId = null;
+
   function renderCountdownEventsList() {
     const box = document.getElementById('countdownEventsList');
     if (!box) return;
+    if (cheerEvents.length === 0) {
+      box.innerHTML = `<p class="text-center py-3 text-xs text-zinc-400 font-bold">尚無倒數行程，請點上方「+ 新增行程」✨</p>`;
+      return;
+    }
     box.innerHTML = cheerEvents.map(ev => {
       const rem = calculateTimeRemaining(ev.date);
       const statusText = rem.isToday ? '🎉 今日！' : (rem.isPast ? `已過 ${rem.days} 日` : `仲有 ${rem.days} 日`);
       return `
-        <div onclick="setActiveCheerEvent(${ev.id})" class="p-2 rounded-2xl border-2 border-cheki-dark flex items-center justify-between gap-2 cursor-pointer transition ${ev.active ? 'bg-sky-100 shadow-sm' : 'bg-white opacity-80'}">
+        <div onclick="setActiveCheerEvent(${ev.id})" class="p-2 rounded-2xl border-2 border-cheki-dark flex items-center justify-between gap-2 cursor-pointer transition ${ev.active ? 'bg-sky-100 shadow-sm' : 'bg-white opacity-85'}">
           <div class="flex items-center gap-2 min-w-0">
             <span class="text-lg shrink-0">${ev.icon || '✈️'}</span>
             <div class="min-w-0">
@@ -4208,9 +4214,10 @@
               <p class="text-[10px] text-zinc-500 font-bold truncate">📅 ${ev.date} ${ev.location ? '· 📍 ' + ev.location : ''}</p>
             </div>
           </div>
-          <div class="flex items-center gap-1.5 shrink-0">
+          <div class="flex items-center gap-1 shrink-0">
             <span class="px-2 py-0.5 rounded-full bg-white border border-cheki-dark text-[10px] font-black text-cheki-accent">${statusText}</span>
-            ${cheerEvents.length > 1 ? `<button onclick="event.stopPropagation();deleteCheerEvent(${ev.id})" class="w-6 h-6 rounded-lg bg-rose-50 border border-rose-200 text-xs flex items-center justify-center">🗑️</button>` : ''}
+            <button type="button" onclick="event.stopPropagation();editCheerEvent(${ev.id})" class="w-7 h-7 rounded-lg bg-amber-100 hover:bg-amber-200 border border-cheki-dark text-xs flex items-center justify-center active:scale-90" title="修改行程">✏️</button>
+            <button type="button" onclick="event.stopPropagation();deleteCheerEvent(${ev.id})" class="w-7 h-7 rounded-lg bg-rose-100 hover:bg-rose-200 border border-cheki-dark text-xs flex items-center justify-center active:scale-90" title="刪除行程">🗑️</button>
           </div>
         </div>
       `;
@@ -4223,14 +4230,41 @@
     updateCountdownDisplays();
   }
 
+  function editCheerEvent(id) {
+    const ev = cheerEvents.find(e => e.id === id);
+    if (!ev) return;
+    editingCheerEventId = id;
+    const box = document.getElementById('addEventFormBox');
+    if (box) box.classList.remove('hidden');
+
+    if (document.getElementById('cdTitleInput')) document.getElementById('cdTitleInput').value = ev.title || '';
+    if (document.getElementById('cdIdolInput')) document.getElementById('cdIdolInput').value = ev.idol || '';
+    if (document.getElementById('cdDateInput')) document.getElementById('cdDateInput').value = ev.date || '';
+    if (document.getElementById('cdLocInput')) document.getElementById('cdLocInput').value = ev.location || '';
+    selectCdIcon(ev.icon || '✈️');
+    document.getElementById('cdTitleInput')?.focus();
+  }
+
   function deleteCheerEvent(id) {
     if (!confirm('確定要刪除這個倒數行程嗎？')) return;
     cheerEvents = cheerEvents.filter(e => e.id !== id);
     if (cheerEvents.length > 0 && !cheerEvents.some(e => e.active)) {
       cheerEvents[0].active = true;
     }
+    if (editingCheerEventId === id) {
+      toggleAddEventForm(false);
+    }
     saveCheerDataToDB();
     updateCountdownDisplays();
+    renderCountdownEventsList();
+
+    if (cheerEvents.length === 0) {
+      if (document.getElementById('heroEventName')) document.getElementById('heroEventName').textContent = '尚無應援行程';
+      if (document.getElementById('heroEventMeta')) document.getElementById('heroEventMeta').textContent = '請點右上角「+ 新增行程」建立倒數';
+      if (document.getElementById('heroDaysNum')) document.getElementById('heroDaysNum').textContent = '-';
+      if (document.getElementById('heroHoursNum')) document.getElementById('heroHoursNum').textContent = '-';
+      if (document.getElementById('heroMinsNum')) document.getElementById('heroMinsNum').textContent = '-';
+    }
   }
 
   function toggleAddEventForm(forceState) {
@@ -4239,7 +4273,14 @@
     const show = typeof forceState === 'boolean' ? forceState : box.classList.contains('hidden');
     box.classList.toggle('hidden', !show);
     if (show) {
-      document.getElementById('cdDateInput').value = '2026-11-23';
+      editingCheerEventId = null;
+      if (document.getElementById('cdTitleInput')) document.getElementById('cdTitleInput').value = '';
+      if (document.getElementById('cdIdolInput')) document.getElementById('cdIdolInput').value = '遠藤まりん';
+      if (document.getElementById('cdDateInput')) document.getElementById('cdDateInput').value = new Date().toISOString().split('T')[0];
+      if (document.getElementById('cdLocInput')) document.getElementById('cdLocInput').value = '';
+      selectCdIcon('✈️');
+    } else {
+      editingCheerEventId = null;
     }
   }
 
@@ -4252,29 +4293,44 @@
   }
 
   function saveCountdownEvent() {
-    const title = (document.getElementById('cdTitleInput').value || '').trim();
-    const idol = (document.getElementById('cdIdolInput').value || '').trim() || '遠藤まりん';
-    const date = document.getElementById('cdDateInput').value;
-    const location = (document.getElementById('cdLocInput').value || '').trim();
+    const title = (document.getElementById('cdTitleInput')?.value || '').trim();
+    const idol = (document.getElementById('cdIdolInput')?.value || '').trim() || '遠藤まりん';
+    const date = document.getElementById('cdDateInput')?.value;
+    const location = (document.getElementById('cdLocInput')?.value || '').trim();
 
     if (!title || !date) {
       alert('請輸入活動名稱與日期！');
       return;
     }
 
-    cheerEvents.forEach(e => { e.active = false; });
-    cheerEvents.unshift({
-      id: Date.now(),
-      title,
-      idol,
-      date,
-      location,
-      icon: selectedCdIcon || '✈️',
-      active: true
-    });
+    if (editingCheerEventId !== null) {
+      const idx = cheerEvents.findIndex(e => e.id === editingCheerEventId);
+      if (idx > -1) {
+        cheerEvents[idx] = {
+          ...cheerEvents[idx],
+          title,
+          idol,
+          date,
+          location,
+          icon: selectedCdIcon || '✈️'
+        };
+      }
+      editingCheerEventId = null;
+    } else {
+      cheerEvents.forEach(e => { e.active = false; });
+      cheerEvents.unshift({
+        id: Date.now(),
+        title,
+        idol,
+        date,
+        location,
+        icon: selectedCdIcon || '✈️',
+        active: true
+      });
+    }
 
-    document.getElementById('cdTitleInput').value = '';
-    document.getElementById('cdLocInput').value = '';
+    if (document.getElementById('cdTitleInput')) document.getElementById('cdTitleInput').value = '';
+    if (document.getElementById('cdLocInput')) document.getElementById('cdLocInput').value = '';
     toggleAddEventForm(false);
     saveCheerDataToDB();
     updateCountdownDisplays();
