@@ -1383,32 +1383,54 @@
     const cardsLayer = document.getElementById('deskCardsLayer');
     if (!canvas) return;
 
+    // 鎖定桌布外框不出現原生捲軸，防止手指拉動時背景與相片飛走
+    canvas.classList.remove('overflow-y-auto', 'touch-pan-y');
+    canvas.classList.add('overflow-hidden', 'touch-none');
+    canvas.scrollTop = 0;
+
     deskThemes.forEach(t => canvas.classList.remove(t));
     currentDeskThemeIdx = deskBgConfig.themeIdx || 0;
-    canvas.classList.add(deskThemes[currentDeskThemeIdx]);
 
     const zoomRatio = (deskBgConfig.zoom || 100) / 100;
     const panX = deskBgConfig.panX || 0;
     const panY = deskBgConfig.panY || 0;
 
-    // 1. 讓所有 Cheki 圖層與桌布背景一齊同步放大縮小及平移！
+    // 1. 讓所有 Cheki 圖層跟隨縮放與平移
     if (cardsLayer) {
       cardsLayer.style.transformOrigin = '0 0';
       cardsLayer.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomRatio})`;
     }
 
-    // 2. 同步縮放自訂相片背景或預設波點/格紋背景
+    // 2. 自訂背景圖片：強制 100% 貼合填滿整個桌布大小 (object-cover)，絕不露出波點邊框
     if (deskBgConfig.mode === 'custom' && deskBgConfig.customImage) {
-      if (customLayer) customLayer.classList.remove('hidden');
+      canvas.style.backgroundImage = 'none';
+      if (customLayer) {
+        customLayer.classList.remove('hidden', 'sticky');
+        customLayer.classList.add('absolute', 'inset-0', 'w-full', 'h-full');
+      }
       if (customImg) {
         customImg.src = deskBgConfig.customImage;
+        customImg.classList.remove('object-contain');
+        customImg.classList.add('w-full', 'h-full', 'object-cover');
         customImg.style.transformOrigin = '0 0';
-        customImg.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomRatio})`;
+
+        // 背景圖最小維持 100% 填滿桌布；放大時跟隨放大並限制邊界不露底邊
+        const bgScale = Math.max(1, zoomRatio);
+        const cw = canvas.clientWidth || 360;
+        const ch = canvas.clientHeight || 480;
+        const minBgPanX = cw * (1 - bgScale);
+        const minBgPanY = ch * (1 - bgScale);
+        const clampedBgX = Math.min(0, Math.max(minBgPanX, panX));
+        const clampedBgY = Math.min(0, Math.max(minBgPanY, panY));
+
+        customImg.style.transform = `translate(${clampedBgX}px, ${clampedBgY}px) scale(${bgScale})`;
       }
       if (dimmer) dimmer.style.backgroundColor = `rgba(0, 0, 0, ${(deskBgConfig.dim || 0) / 100})`;
       canvas.style.backgroundSize = '';
       canvas.style.backgroundPosition = '';
     } else {
+      canvas.style.backgroundImage = '';
+      canvas.classList.add(deskThemes[currentDeskThemeIdx]);
       if (customLayer) customLayer.classList.add('hidden');
       const basePx = currentDeskThemeIdx === 2 ? 28 : 32;
       const scaledPx = Math.max(6, Math.round(basePx * zoomRatio));
@@ -1435,13 +1457,12 @@
     if (document.getElementById('modalBgDimSlider')) document.getElementById('modalBgDimSlider').value = deskBgConfig.dim || 0;
     if (document.getElementById('modalBgDimLabel')) document.getElementById('modalBgDimLabel').textContent = `${deskBgConfig.dim || 0}%`;
 
-    // 4. 綁定桌布雙指捏合同時放大 Cheki 與桌布手勢 (只綁定一次)
+    // 4. 綁定桌布雙指捏合與單指平移手勢 (只綁定一次)
     if (!canvas._pinchBound) {
       canvas._pinchBound = true;
       let startDist = 0, initZoom = 100, initPanX = 0, initPanY = 0, worldMidX = 0, worldMidY = 0;
       let isBgPanning = false, bgStartX = 0, bgStartY = 0;
 
-      // 雙指觸控：以兩指中心點同時放大/縮小桌布與全部 Cheki
       canvas.addEventListener('touchstart', (e) => {
         if (e.touches.length === 2) {
           isDeskGlobalPinching = true;
@@ -1460,7 +1481,6 @@
           worldMidX = (midX - initPanX) / initScale;
           worldMidY = (midY - initPanY) / initScale;
         } else if (e.touches.length === 1 && !e.target.closest('.desk-card-node')) {
-          // 單指按住桌布空白處可自由拖曳平移視野
           isBgPanning = true;
           bgStartX = e.touches[0].clientX;
           bgStartY = e.touches[0].clientY;
@@ -1515,7 +1535,7 @@
       canvas.addEventListener('touchcancel', endTouch, { capture: true });
     }
 
-    // 5. 順便修正頂部標題列「💌 備忘」與「📊」重疊問題，將「💌 備忘」放到第 2 行統計字旁邊
+    // 5. 維持頂部「💌 備忘」對齊
     const memoBtn = document.getElementById('topMemoQuickBtn');
     const statsP = document.getElementById('headerStats');
     if (memoBtn && statsP && memoBtn.parentNode !== statsP.parentNode) {
@@ -1526,8 +1546,6 @@
       row.appendChild(memoBtn);
     }
   }
-
-  // 覆蓋單張卡片拖曳邏輯：確保桌布放大後，單指拖曳單張 Cheki 依然 1:1 貼合手指速度
   window.attachDeskCardInteractions = function(el, card) {
     let isDragging = false, startX = 0, startY = 0, initialLeft = 0, initialTop = 0, movedDistance = 0;
     el.addEventListener('pointerdown', (e) => {
