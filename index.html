@@ -5596,6 +5596,183 @@ let editingCheerEventId = null;
     };
 
     setTimeout(window.initDeskToolbarCollapsePlugin, 300);
+  // =========================================================================
+    // 👆 大圖檢視「左右滑動 (Swipe) 切換上/下一張」＋ 🪵 桌布「🔍 放大檢視」模組
+    // =========================================================================
+    function getInspectNavigationList() {
+      // 若在卡冊分頁，依目前卡冊篩選結果順序切換；否則依搜尋條件或全部相片順序切換
+      if (currentTab === 'binder' && typeof getFilteredCards === 'function') {
+        const filtered = getFilteredCards();
+        if (filtered.length > 0) return filtered;
+      }
+      const q = (document.getElementById('searchInput')?.value || '').trim();
+      if (q && typeof cardMatchesSearchQuery === 'function') {
+        const matched = cards.filter(c => cardMatchesSearchQuery(c, q));
+        if (matched.length > 0) return matched;
+      }
+      return cards;
+    }
+
+    window.navigateInspectCard = function(direction) {
+      if (!inspectingCardId) return;
+      const list = getInspectNavigationList();
+      if (!list || list.length <= 1) return;
+
+      const curIdx = list.findIndex(c => c.id === inspectingCardId);
+      const nextIdx = curIdx === -1
+        ? 0
+        : (curIdx + direction + list.length) % list.length;
+      const nextCard = list[nextIdx];
+      if (!nextCard) return;
+
+      // 記住目前是否處於「背面」狀態，切換相片時保持正面/背面一致
+      const flipInner = document.getElementById('inspectFlipInner');
+      const wasFlipped = flipInner ? flipInner.classList.contains('rotate-y-180') : false;
+
+      // 播放輕微滑動過渡動畫
+      if (flipInner) {
+        flipInner.style.transition = 'opacity 0.12s ease, transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
+        flipInner.style.opacity = '0.35';
+      }
+
+      openInspectModal(nextCard.id);
+
+      if (flipInner) {
+        if (wasFlipped) {
+          flipInner.classList.add('rotate-y-180');
+        } else {
+          flipInner.classList.remove('rotate-y-180');
+        }
+        requestAnimationFrame(() => {
+          flipInner.style.opacity = '1';
+        });
+      }
+    };
+
+    window.openSelectedDeskCardInspect = function() {
+      let targetId = selectedDeskCardId;
+      if (!targetId && cards.length > 0) {
+        targetId = cards[0].id;
+      }
+      if (!targetId) {
+        alert('請先在桌布上點選一張拍立得！');
+        return;
+      }
+      openInspectModal(targetId);
+    };
+
+    function updateInspectCounterUI() {
+      const titleEl = document.getElementById('inspectMemberTitle');
+      if (!titleEl || !inspectingCardId) return;
+      const card = cards.find(c => c.id === inspectingCardId);
+      if (!card) return;
+      const list = getInspectNavigationList();
+      const idx = list.findIndex(c => c.id === inspectingCardId);
+      if (idx !== -1 && list.length > 0) {
+        titleEl.textContent = `${card.member || '未命名'} (${idx + 1}/${list.length})`;
+      }
+    }
+
+    function initInspectSwipeAndDeskZoomPlugin() {
+      // 1. 在桌布「🔄 翻面」按鈕旁邊加入「🔍 放大」按鈕，一鍵檢視或編輯桌布選中的相片
+      const flipBtn = document.querySelector('button[onclick="flipSelectedDeskCard()"]');
+      if (flipBtn && flipBtn.parentElement && !document.getElementById('deskQuickInspectBtn')) {
+        const btnWrap = document.createElement('div');
+        btnWrap.className = 'flex items-center gap-1 shrink-0';
+        flipBtn.parentElement.insertBefore(btnWrap, flipBtn);
+
+        const zoomBtn = document.createElement('button');
+        zoomBtn.type = 'button';
+        zoomBtn.id = 'deskQuickInspectBtn';
+        zoomBtn.onclick = window.openSelectedDeskCardInspect;
+        zoomBtn.className = 'px-2.5 py-1 rounded-full bg-amber-200 neo-btn text-xs font-black flex items-center gap-0.5 shrink-0';
+        zoomBtn.innerHTML = '🔍 放大';
+        btnWrap.appendChild(zoomBtn);
+        btnWrap.appendChild(flipBtn);
+      }
+
+      // 2. 在大圖檢視視窗 (Inspect Modal) 加入左右切換按鈕與手指滑動 (Swipe) 手勢
+      const inspectModal = document.getElementById('inspectModal');
+      const flipInner = document.getElementById('inspectFlipInner');
+      if (inspectModal && flipInner && !document.getElementById('inspectPrevBtn')) {
+        const middleArea = flipInner.parentElement?.parentElement;
+        if (middleArea) {
+          middleArea.classList.add('relative');
+
+          const prevBtn = document.createElement('button');
+          prevBtn.type = 'button';
+          prevBtn.id = 'inspectPrevBtn';
+          prevBtn.onclick = (e) => { e.stopPropagation(); window.navigateInspectCard(-1); };
+          prevBtn.className = 'absolute left-0 top-1/2 -translate-y-1/2 z-30 w-9 h-12 rounded-r-2xl bg-white/20 hover:bg-white/40 text-white border border-white/30 backdrop-blur-sm font-black text-sm flex items-center justify-center active:scale-90 transition';
+          prevBtn.innerHTML = '◀';
+
+          const nextBtn = document.createElement('button');
+          nextBtn.type = 'button';
+          nextBtn.id = 'inspectNextBtn';
+          nextBtn.onclick = (e) => { e.stopPropagation(); window.navigateInspectCard(1); };
+          nextBtn.className = 'absolute right-0 top-1/2 -translate-y-1/2 z-30 w-9 h-12 rounded-l-2xl bg-white/20 hover:bg-white/40 text-white border border-white/30 backdrop-blur-sm font-black text-sm flex items-center justify-center active:scale-90 transition';
+          nextBtn.innerHTML = '▶';
+
+          middleArea.appendChild(prevBtn);
+          middleArea.appendChild(nextBtn);
+        }
+
+        // 綁定手機左右滑動 (Swipe Left / Right) 手勢與防誤觸翻面保護
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let lastSwipeTime = 0;
+
+        const flipContainer = flipInner.parentElement;
+        if (flipContainer) {
+          flipContainer.addEventListener('click', (e) => {
+            if (Date.now() - lastSwipeTime < 350) {
+              e.stopPropagation();
+              e.preventDefault();
+            }
+          }, true);
+        }
+
+        inspectModal.addEventListener('touchstart', (e) => {
+          if (e.touches.length !== 1) return;
+          touchStartX = e.touches[0].clientX;
+          touchStartY = e.touches[0].clientY;
+        }, { passive: true });
+
+        inspectModal.addEventListener('touchend', (e) => {
+          if (!e.changedTouches || e.changedTouches.length !== 1) return;
+          const dx = e.changedTouches[0].clientX - touchStartX;
+          const dy = e.changedTouches[0].clientY - touchStartY;
+          // 水平滑動超過 48px 且大於垂直位移時，觸發上/下一張切換
+          if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+            lastSwipeTime = Date.now();
+            if (dx < 0) {
+              window.navigateInspectCard(1); // 向左滑 -> 下一張
+            } else {
+              window.navigateInspectCard(-1); // 向右滑 -> 上一張
+            }
+          }
+        }, { passive: true });
+
+        // 支援電腦鍵盤左右方向鍵切換
+        window.addEventListener('keydown', (e) => {
+          if (inspectModal.classList.contains('hidden')) return;
+          if (e.key === 'ArrowLeft') window.navigateInspectCard(-1);
+          else if (e.key === 'ArrowRight') window.navigateInspectCard(1);
+        });
+      }
+
+      // 3. 每次打開大圖預覽時，自動更新頂部張數進度 (例如：遠藤まりん (1/108))
+      const origOpenInspect = window.openInspectModal;
+      if (typeof origOpenInspect === 'function' && !origOpenInspect._wrappedForSwipe) {
+        window.openInspectModal = function(id) {
+          origOpenInspect.apply(this, arguments);
+          updateInspectCounterUI();
+        };
+        window.openInspectModal._wrappedForSwipe = true;
+      }
+    }
+
+    setTimeout(initInspectSwipeAndDeskZoomPlugin, 200);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
