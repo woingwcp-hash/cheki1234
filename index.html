@@ -1657,14 +1657,81 @@
       e.target.value = '';
     }
 
+   let _prevToolbarCollapsedBeforeBgModal = null;
+
     function openDeskBgModal() {
+      const modal = document.getElementById('deskBgModal');
+      const card = modal?.firstElementChild;
+      if (!modal || !card) return;
+
+      // 1. 暫時自動收起桌布上方工具列，讓桌布升到畫面頂部方便即時預覽
+      if (typeof window.deskToolsCollapsed === 'boolean' && typeof window.applyDeskToolbarCollapseUI === 'function') {
+        _prevToolbarCollapsedBeforeBgModal = window.deskToolsCollapsed;
+        if (!window.deskToolsCollapsed) {
+          window.deskToolsCollapsed = true;
+          window.applyDeskToolbarCollapseUI();
+        }
+      }
+
+      // 2. 將原本遮住全畫面的中央大視窗，改為「無黑幕遮罩 + 貼底緊湊抽屜」
+      modal.className = 'fixed inset-0 z-[75] bg-transparent flex items-end justify-center p-2 pb-3 pointer-events-none';
+      card.className = 'bg-white/95 backdrop-blur-md w-full max-w-md rounded-3xl neo-box p-3 space-y-2 max-h-[48vh] overflow-y-auto pointer-events-auto transition-opacity duration-150 shadow-2xl';
+
+      // 3. 手指按住滑桿調整參數時，面板自動變透明 (15%)，100% 睇清背後桌布！
+      if (!card._livePreviewBound) {
+        card._livePreviewBound = true;
+        const setGhostMode = (isGhost) => {
+          card.style.opacity = isGhost ? '0.15' : '1';
+        };
+        card.querySelectorAll('input[type="range"]').forEach(slider => {
+          slider.addEventListener('pointerdown', () => setGhostMode(true));
+          slider.addEventListener('touchstart', () => setGhostMode(true), { passive: true });
+          slider.addEventListener('pointerup', () => setGhostMode(false));
+          slider.addEventListener('pointercancel', () => setGhostMode(false));
+          slider.addEventListener('touchend', () => setGhostMode(false));
+          slider.addEventListener('change', () => setGhostMode(false));
+        });
+      }
+
+      // 4. 修正自訂背景圖片移動限制，令 X / Y 滑桿在任何縮放比例下都能自由調整背景位置
+      const customImg = document.getElementById('deskCustomBgImg');
+      if (customImg && !window._bgPanEnhanced) {
+        window._bgPanEnhanced = true;
+        const origApply = window.applyDeskBgVisuals;
+        if (typeof origApply === 'function') {
+          window.applyDeskBgVisuals = function() {
+            origApply.apply(this, arguments);
+            if (deskBgConfig.mode === 'custom' && deskBgConfig.customImage) {
+              const imgEl = document.getElementById('deskCustomBgImg');
+              if (imgEl) {
+                const zoomRatio = (deskBgConfig.zoom || 100) / 100;
+                const panX = deskBgConfig.panX || 0;
+                const panY = deskBgConfig.panY || 0;
+                imgEl.style.transformOrigin = 'center center';
+                imgEl.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomRatio})`;
+              }
+            }
+          };
+        }
+      }
+
       applyDeskBgVisuals();
-      document.getElementById('pickChekiAsBgBox').classList.add('hidden');
-      document.getElementById('deskBgModal').classList.remove('hidden');
+      document.getElementById('pickChekiAsBgBox')?.classList.add('hidden');
+      modal.classList.remove('hidden');
     }
 
     function closeDeskBgModal() {
-      document.getElementById('deskBgModal').classList.add('hidden');
+      const modal = document.getElementById('deskBgModal');
+      if (modal) {
+        modal.classList.add('hidden');
+        if (modal.firstElementChild) modal.firstElementChild.style.opacity = '1';
+      }
+      // 關閉時還原原本的工具列展開/收起狀態
+      if (_prevToolbarCollapsedBeforeBgModal !== null && typeof window.applyDeskToolbarCollapseUI === 'function') {
+        window.deskToolsCollapsed = _prevToolbarCollapsedBeforeBgModal;
+        _prevToolbarCollapsedBeforeBgModal = null;
+        window.applyDeskToolbarCollapseUI();
+      }
     }
 
     function togglePickChekiAsBgList() {
