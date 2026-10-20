@@ -5773,6 +5773,162 @@ let editingCheerEventId = null;
     }
 
     setTimeout(initInspectSwipeAndDeskZoomPlugin, 200);
+// =========================================================================
+    // ⚡ 連續入相神器：「儲存並繼續新增（自動沿用同場日期、場地、相簿、標籤）」模組
+    // =========================================================================
+    let continuousAddCount = 0;
+
+    window.saveAndAddAnotherCard = async function() {
+      if (!currentUploadDataUrl) {
+        alert('請先拍攝或選擇一張拍立得相片！');
+        return;
+      }
+
+      // 1. 先備份目前呢張相嘅所有「同場設定」
+      const keptMember = (document.getElementById('cardMemberInput')?.value || '').trim() || '遠藤まりん';
+      const keptDate = document.getElementById('cardDateInput')?.value || '';
+      const keptLocation = (document.getElementById('cardLocationInput')?.value || '').trim();
+      const keptLat = editingLat;
+      const keptLng = editingLng;
+      const keptAlbums = new Set(editingSelectedAlbums);
+      const keptTags = typeof editingChekiTags !== 'undefined' ? new Set(editingChekiTags) : new Set(['signed', '2shot']);
+      const keptBackColor = selectedBackColor || '#60A5FA';
+
+      // 2. 執行原本嘅儲存流程（寫入 IndexedDB 並更新統計與畫面）
+      await window.saveCard();
+
+      // 3. 重新打開視窗，並自動帶入剛才備份嘅同場設定
+      continuousAddCount += 1;
+      editingCardId = null;
+      uncroppedOriginalDataUrl = '';
+      rawUploadDataUrl = '';
+      currentUploadDataUrl = '';
+
+      editingSelectedAlbums = new Set(keptAlbums);
+      if (typeof editingChekiTags !== 'undefined') {
+        editingChekiTags = new Set(keptTags);
+      }
+
+      // 還原文字欄位與顏色、相簿、標籤
+      if (document.getElementById('cardMemberInput')) document.getElementById('cardMemberInput').value = keptMember;
+      if (document.getElementById('cardDateInput')) document.getElementById('cardDateInput').value = keptDate;
+      if (document.getElementById('cardLocationInput')) document.getElementById('cardLocationInput').value = keptLocation;
+      if (document.getElementById('cardNoteInput')) document.getElementById('cardNoteInput').value = '';
+
+      // 還原地圖座標 Pin（如有設定座標）
+      if (typeof keptLat === 'number' && typeof keptLng === 'number') {
+        editingLat = keptLat;
+        editingLng = keptLng;
+        const coordText = document.getElementById('editCoordsText');
+        if (coordText) coordText.textContent = `✅ 已沿用同場座標：${keptLat}, ${keptLng}`;
+      } else {
+        clearEditLocationPin();
+      }
+      toggleEditMapPicker(false);
+
+      // 還原相片預覽區與濾鏡為初始狀態（等待揀選下一張相）
+      initFilterHistory({ sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
+      document.getElementById('previewContainer')?.classList.add('hidden');
+      if (document.getElementById('editPreviewImg')) document.getElementById('editPreviewImg').src = '';
+
+      renderEditAlbumPills();
+      populateMemberSuggestions();
+      renderQuickVenuePills();
+      if (typeof renderEditChekiTagPills === 'function') renderEditChekiTagPills();
+      selectBackColor(keptBackColor);
+
+      // 確保新增視窗維持開啟並滾動返最頂端方便即刻揀下一張相
+      const modal = document.getElementById('editCardModal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        const innerBox = modal.firstElementChild;
+        if (innerBox) innerBox.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      // 顯示頂部連拍成功提示橫幅
+      showContinuousToast(`✅ 已儲存第 ${continuousAddCount} 張！已自動保留【${keptDate || '同日'} · ${keptLocation || keptMember}】設定 ✨`);
+    };
+
+    function showContinuousToast(msg) {
+      let toast = document.getElementById('continuousSaveToast');
+      if (!toast) {
+        const modalInner = document.querySelector('#editCardModal > div');
+        if (!modalInner) return;
+        toast = document.createElement('div');
+        toast.id = 'continuousSaveToast';
+        toast.className = 'px-3 py-2 rounded-2xl bg-emerald-300 border-2 border-cheki-dark text-cheki-dark text-xs font-black text-center shadow-md transition-all';
+        modalInner.insertBefore(toast, modalInner.children[1]);
+      }
+      toast.textContent = msg;
+      toast.classList.remove('hidden');
+      if (toast._hideTimer) clearTimeout(toast._hideTimer);
+      toast._hideTimer = setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 4000);
+    }
+
+    function updateContinuousButtonsVisibility(isEditMode) {
+      const nextBtn = document.getElementById('saveAndNextCardBtn');
+      const mainSaveBtn = document.getElementById('mainSaveCardBtn');
+      const toast = document.getElementById('continuousSaveToast');
+      if (toast) toast.classList.add('hidden');
+
+      if (nextBtn && mainSaveBtn) {
+        if (isEditMode) {
+          // 編輯現有相片時：只顯示單一「💾 儲存變更」掣
+          nextBtn.classList.add('hidden');
+          mainSaveBtn.textContent = '💾 儲存拍立得變更';
+        } else {
+          // 新增相片時：並列顯示「💾 儲存並關閉」與「⚡ 儲存並下一張」
+          nextBtn.classList.remove('hidden');
+          mainSaveBtn.textContent = '💾 儲存並關閉';
+        }
+      }
+    }
+
+    function initContinuousAddPlugin() {
+      const saveBtn = document.querySelector('#editCardModal button[onclick="saveCard()"]');
+      if (saveBtn && !document.getElementById('saveAndNextCardBtn')) {
+        saveBtn.id = 'mainSaveCardBtn';
+        saveBtn.className = 'flex-1 py-3 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-box';
+        saveBtn.textContent = '💾 儲存並關閉';
+
+        const btnRow = document.createElement('div');
+        btnRow.className = 'flex gap-2 mt-2';
+        saveBtn.parentElement.insertBefore(btnRow, saveBtn);
+        btnRow.appendChild(saveBtn);
+
+        const nextBtn = document.createElement('button');
+        nextBtn.type = 'button';
+        nextBtn.id = 'saveAndNextCardBtn';
+        nextBtn.onclick = window.saveAndAddAnotherCard;
+        nextBtn.className = 'flex-1 py-3 rounded-2xl bg-emerald-300 text-cheki-dark font-black text-xs neo-box flex items-center justify-center gap-1 active:scale-95 transition';
+        nextBtn.innerHTML = '⚡ 儲存並下一張';
+        btnRow.appendChild(nextBtn);
+      }
+
+      // 掛載於開啟新增與編輯視窗時，自動切換按鈕顯示狀態
+      const origOpenAdd = window.openAddModal;
+      if (typeof origOpenAdd === 'function' && !origOpenAdd._wrappedForCont) {
+        window.openAddModal = function() {
+          continuousAddCount = 0;
+          origOpenAdd.apply(this, arguments);
+          updateContinuousButtonsVisibility(false);
+        };
+        window.openAddModal._wrappedForCont = true;
+      }
+
+      const origOpenEdit = window.openEditFromInspect;
+      if (typeof origOpenEdit === 'function' && !origOpenEdit._wrappedForCont) {
+        window.openEditFromInspect = function() {
+          origOpenEdit.apply(this, arguments);
+          updateContinuousButtonsVisibility(true);
+        };
+        window.openEditFromInspect._wrappedForCont = true;
+      }
+    }
+
+    setTimeout(initContinuousAddPlugin, 250);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
