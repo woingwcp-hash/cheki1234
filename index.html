@@ -5133,13 +5133,154 @@ let editingCheerEventId = null;
       renderBinder();
     }
 
+   // 額外快取機制：確保一開網頁 0 秒即顯示所有偶像名稱、相簿與自訂標籤
+    function syncFastCacheToLocalStorage() {
+      try {
+        if (Array.isArray(albums) && albums.length > 0) {
+          localStorage.setItem('cheki_fast_albums', JSON.stringify(albums));
+        }
+        if (Array.isArray(customChekiTags)) {
+          localStorage.setItem('cheki_fast_custom_tags', JSON.stringify(customChekiTags));
+        }
+        if (Array.isArray(cards) && cards.length > 0) {
+          const members = [...new Set(['遠藤まりん', ...cards.map(c => (c.member || '').trim()).filter(Boolean)])];
+          localStorage.setItem('cheki_fast_members', JSON.stringify(members));
+        }
+      } catch (_) {}
+    }
+
+    function restoreFastCacheFromLocalStorage() {
+      try {
+        const cachedAlbums = JSON.parse(localStorage.getItem('cheki_fast_albums') || 'null');
+        if (Array.isArray(cachedAlbums) && cachedAlbums.length > 0) {
+          cachedAlbums.forEach(a => { if (a && !albums.includes(a)) albums.push(a); });
+        }
+        const cachedTags = JSON.parse(localStorage.getItem('cheki_fast_custom_tags') || 'null');
+        if (Array.isArray(cachedTags) && cachedTags.length > 0 && customChekiTags.length === 0) {
+          customChekiTags = cachedTags;
+        }
+      } catch (_) {}
+    }
+
+    function refreshOpenEditModalUI() {
+      const editModal = document.getElementById('editCardModal');
+      if (editModal && !editModal.classList.contains('hidden')) {
+        populateMemberSuggestions();
+        renderEditAlbumPills();
+        renderQuickVenuePills();
+        renderEditChekiTagPills();
+      }
+    }
+
     function initMinimalChekiTagsPlugin() {
-      setTimeout(loadCustomTagsFromDB, 250);
+      // 0. 啟動時立即讀取快取，唔使等 105 張相慢慢載入都即刻有齊相簿與標籤
+      restoreFastCacheFromLocalStorage();
+
+      // 修正：覆蓋重複的舊版整齊排列函數，確保按目前桌布縮放比例排列
+      window.neatArrangeDeskCards = function() {
+        const q = (document.getElementById('searchInput')?.value || '').trim();
+        const targetList = q ? cards.filter(c => cardMatchesSearchQuery(c, q)) : cards;
+        if (targetList.length === 0) return;
+        const canvas = document.getElementById('deskCanvas');
+        const rect = canvas.getBoundingClientRect();
+        const zoomRatio = (deskBgConfig.zoom || 100) / 100;
+        const panX = deskBgConfig.panX || 0;
+        const panY = deskBgConfig.panY || 0;
+        const viewLeft = Math.round(-panX / zoomRatio);
+        const viewTop = Math.round(-panY / zoomRatio);
+        const viewW = (rect.width || 360) / zoomRatio;
+        const targetScale = (deskBgConfig.defaultCardScale || 100) / 100;
+        const gap = Math.max(6, Math.round(10 * targetScale));
+        const padX = Math.round(10 / zoomRatio);
+        let curX = viewLeft + padX;
+        let curY = viewTop + Math.round(12 / zoomRatio);
+        let rowMaxH = 0;
+        targetList.forEach((c, i) => {
+          c.deskScale = targetScale;
+          const cardW = Math.round(getDeskCardBaseWidth(c) * targetScale);
+          const cardH = Math.round(getDeskCardBaseHeight(c) * targetScale);
+          if (curX > viewLeft + padX && curX + cardW > viewLeft + viewW - padX) {
+            curX = viewLeft + padX;
+            curY += rowMaxH + gap;
+            rowMaxH = 0;
+          }
+          c.deskX = Math.round(curX);
+          c.deskY = Math.round(curY);
+          c.deskRot = 0;
+          c.deskZ = i + 1;
+          curX += cardW + gap;
+          if (cardH > rowMaxH) rowMaxH = cardH;
+          saveCardToDB(c);
+        });
+        renderDesk();
+      };
+
+      // 強化偶像建議清單：結合快取與現有相片，確保一開即見所有成員
+      const origPopulateMembers = window.populateMemberSuggestions;
+      window.populateMemberSuggestions = function() {
+        const sugBox = document.getElementById('quickMemberSuggestions');
+        if (!sugBox) return;
+        let cachedMembers = [];
+        try { cachedMembers = JSON.parse(localStorage.getItem('cheki_fast_members') || '[]'); } catch (_) {}
+        const existingNames = [...new Set([
+          '遠藤まりん',
+          ...cards.map(c => (c.member || '').trim()).filter(Boolean),
+          ...cachedMembers
+        ])];
+        sugBox.innerHTML = existingNames.map(name => `
+          <button type="button" onclick="document.getElementById('cardMemberInput').value='${name.replace(/'/g, "\\'")}'" class="px-2.5 py-0.5 rounded-full bg-pink-100 border border-pink-300 text-[11px] font-bold shrink-0">
+            ${name}
+          </button>
+        `).join('');
+      };
+
+      // 當 IndexedDB 讀取完成時，自動載入自訂標籤並即時刷新已開啟的視窗
+      const origLoadData = window.loadDataFromDB;
+      if (typeof origLoadData === 'function') {
+        window.loadDataFromDB = async function() {
+          await origLoadData.apply(this, arguments);
+          if (db) {
+            try {
+              const tx = db.transaction('meta', 'readonly');
+              const req = tx.objectStore('meta').get('customChekiTags');
+              tx.oncomplete = () => {
+                if (req.result && Array.isArray(req.result.value)) {
+                  customChekiTags = req.result.value;
+                }
+                syncFastCacheToLocalStorage();
+                refreshOpenEditModalUI();
+                if (currentTab === 'binder') renderBinder();
+              };
+            } catch (_) {}
+          }
+          if (typeof loadCheerDataFromDB === 'function') loadCheerDataFromDB();
+          syncFastCacheToLocalStorage();
+          refreshOpenEditModalUI();
+        };
+      }
+
+      // 儲存自訂標籤或相簿時同步更新快取
+      const origSaveCustomTags = window.saveCustomTagsToDB;
+      if (typeof origSaveCustomTags === 'function') {
+        window.saveCustomTagsToDB = function() {
+          origSaveCustomTags.apply(this, arguments);
+          syncFastCacheToLocalStorage();
+        };
+      }
+      const origSaveAlbums = window.saveAlbumsToDB;
+      if (typeof origSaveAlbums === 'function') {
+        window.saveAlbumsToDB = function() {
+          const res = origSaveAlbums.apply(this, arguments);
+          syncFastCacheToLocalStorage();
+          return res;
+        };
+      }
 
       // 1. 掛載於「新增拍立得」視窗
       const origOpenAdd = window.openAddModal;
       if (typeof origOpenAdd === 'function') {
         window.openAddModal = function() {
+          restoreFastCacheFromLocalStorage();
           editingChekiTags = new Set(['signed', '2shot']);
           origOpenAdd.apply(this, arguments);
           renderEditChekiTagPills();
@@ -5150,6 +5291,7 @@ let editingCheerEventId = null;
       const origOpenEdit = window.openEditFromInspect;
       if (typeof origOpenEdit === 'function') {
         window.openEditFromInspect = function() {
+          restoreFastCacheFromLocalStorage();
           const card = cards.find(c => c.id === inspectingCardId);
           editingChekiTags = new Set(Array.isArray(card?.chekiTags) ? card.chekiTags : []);
           origOpenEdit.apply(this, arguments);
@@ -5157,7 +5299,7 @@ let editingCheerEventId = null;
         };
       }
 
-      // 3. 儲存相片時自動寫入標籤
+      // 3. 儲存相片時自動寫入標籤並更新快取
       const origSaveCard = window.saveCard;
       if (typeof origSaveCard === 'function') {
         window.saveCard = async function() {
@@ -5170,6 +5312,7 @@ let editingCheerEventId = null;
           if (targetCard) {
             targetCard.chekiTags = [...editingChekiTags];
             await saveCardToDB(targetCard);
+            syncFastCacheToLocalStorage();
             renderCurrentTab();
           }
         };
@@ -5223,7 +5366,6 @@ let editingCheerEventId = null;
               batchBtn.textContent = '⚡標記';
               favBtn.parentElement.insertBefore(batchBtn, favBtn);
             }
-
             const allOpts = getAllChekiTagOptions();
             const curOpt = allOpts.find(o => o.id === selectedTagFilter);
             const count = selectedTagFilter === 'ALL'
@@ -5251,9 +5393,15 @@ let editingCheerEventId = null;
           }
         };
       }
-    }
 
-    setTimeout(initMinimalChekiTagsPlugin, 300); 
+      // 若資料庫已就緒，立即同步一次
+      if (db) {
+        loadCustomTagsFromDB();
+        syncFastCacheToLocalStorage();
+      }
+    }
+    // 立即執行掛載（0 延遲，不再等 300ms）
+    initMinimalChekiTagsPlugin();
   // =========================================================================
     // 📱 橫向模式 (Landscape) 自動適應與防變形修復模組
     // =========================================================================
