@@ -4705,9 +4705,7 @@ let editingCheerEventId = null;
     setTimeout(loadCheerDataFromDB, 350);
     setInterval(updateCountdownDisplays, 30000);
   });
- // =========================================================================
-    // 🏷️ 極簡版「有簽名/無簽名 & 雙人/單人」標籤系統 (零畫面干擾外掛)
-    // =========================================================================
+
    // =========================================================================
     // 🏷️ 極簡版「預設 + 自訂標籤 & 舊 Cheki 批次加標籤」系統
     // =========================================================================
@@ -5251,9 +5249,6 @@ let editingCheerEventId = null;
     }
     // 立即執行掛載（0 延遲，不再等 300ms）
     initMinimalChekiTagsPlugin();
-  // =========================================================================
-    // 📱 橫向模式 (Landscape) 自動適應與防變形修復模組
-    // =========================================================================
     // =========================================================================
     // 📱 橫向模式 (Landscape) 自動適應與防變形修復模組
     // =========================================================================
@@ -5307,13 +5302,6 @@ let editingCheerEventId = null;
       const deskSec = document.getElementById('tab-desk');
       const canvas = document.getElementById('deskCanvas');
       if (!deskSec || !canvas) return;
-
-      // 徹底清除之前版本可能殘留的失效按鈕與鎖定狀態
-      try { localStorage.removeItem('cheki_desk_collapsed'); } catch (_) {}
-      ['deskFloatingToggleWrap', 'deskFloatingCollapseBtn', 'globalDeskFloatingToggleBtn', 'deskCollapsedSlimBar'].forEach(oldId => {
-        const oldEl = document.getElementById(oldId);
-        if (oldEl) oldEl.remove();
-      });
 
       const firstToolbar = deskSec.firstElementChild;
       // 只收起第 2 排（滑桿框）與第 3 排（單張大小框），保留第 1 排讓同一個按鈕原地切換
