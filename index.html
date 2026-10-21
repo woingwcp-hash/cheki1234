@@ -6128,6 +6128,294 @@ let editingCheerEventId = null;
     }
 
     setTimeout(initSmartRemasterPlugin, 250);  
+  // =========================================================================
+    // 📊 升級版多維度統計系統（徹底移除「應援成就徽章」＋ 新增類型/標籤/參戰活躍度統計）
+    // =========================================================================
+    function filterBinderByChekiTag(tagId) {
+      if (typeof selectedTagFilter !== 'undefined') {
+        selectedTagFilter = tagId;
+      }
+      selectedAlbumFilter = 'ALL';
+      selectedMemberFilter = 'ALL';
+      favOnlyFilter = false;
+      switchTab('binder');
+    }
+
+    function filterBinderBySpecificDate(dateStr) {
+      if (!dateStr) return;
+      const input = document.getElementById('searchInput');
+      if (input) input.value = dateStr;
+      selectedAlbumFilter = 'ALL';
+      selectedMemberFilter = 'ALL';
+      if (typeof selectedTagFilter !== 'undefined') selectedTagFilter = 'ALL';
+      executeSearch(true);
+      switchTab('binder');
+    }
+
+    function renderEnhancedMultiStats() {
+      // 1. 徹底移除原本的「🏆 應援成就徽章」區塊
+      const achGrid = document.getElementById('achievementsGrid');
+      if (achGrid && achGrid.parentElement) {
+        achGrid.parentElement.classList.add('hidden');
+        achGrid.parentElement.style.display = 'none';
+      }
+
+      const statsSec = document.getElementById('tab-stats');
+      if (!statsSec) return;
+
+      let container = document.getElementById('enhancedCustomStatsContainer');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'enhancedCustomStatsContainer';
+        container.className = 'space-y-4';
+        statsSec.appendChild(container);
+      }
+
+      const total = cards.length;
+      if (total === 0) {
+        container.innerHTML = '';
+        return;
+      }
+
+      // --- A. 計算「有簽名/無簽名」、「雙人2S/單人Solo」、「直向/橫向」與「自訂標籤」數據 ---
+      let signedCount = 0, unsignedCount = 0;
+      let twoShotCount = 0, soloCount = 0;
+      let landscapeCount = 0, portraitCount = 0;
+      const customTagCounts = {};
+
+      cards.forEach(c => {
+        const tags = Array.isArray(c.chekiTags) ? c.chekiTags : [];
+        if (tags.includes('signed')) signedCount++;
+        if (tags.includes('unsigned')) unsignedCount++;
+        if (tags.includes('2shot')) twoShotCount++;
+        if (tags.includes('solo')) soloCount++;
+
+        if (c.isLandscape) landscapeCount++;
+        else portraitCount++;
+
+        tags.forEach(tId => {
+          if (!['signed', 'unsigned', '2shot', 'solo'].includes(tId)) {
+            customTagCounts[tId] = (customTagCounts[tId] || 0) + 1;
+          }
+        });
+      });
+
+      const signTotal = Math.max(1, signedCount + unsignedCount);
+      const signedPct = Math.round((signedCount / signTotal) * 100);
+      const unsignedPct = (signedCount + unsignedCount) > 0 ? (100 - signedPct) : 0;
+
+      const shotTotal = Math.max(1, twoShotCount + soloCount);
+      const twoShotPct = Math.round((twoShotCount / shotTotal) * 100);
+      const soloPct = (twoShotCount + soloCount) > 0 ? (100 - twoShotPct) : 0;
+
+      const portraitPct = Math.round((portraitCount / total) * 100);
+      const landscapePct = 100 - portraitPct;
+
+      const allTagOpts = typeof getAllChekiTagOptions === 'function' ? getAllChekiTagOptions() : [];
+      const customTagsList = Object.entries(customTagCounts)
+        .map(([id, cnt]) => {
+          const opt = allTagOpts.find(o => o.id === id);
+          return { id, label: opt ? opt.label : id, count: cnt, pct: Math.round((cnt / total) * 100) };
+        })
+        .filter(item => item.label && !item.label.startsWith('custom_'))
+        .sort((a, b) => b.count - a.count);
+
+      // --- B. 計算「參戰活躍度、單日最高紀錄、星期分佈、年度統計」 ---
+      const dateMap = {};
+      const weekdayCounts = [0, 0, 0, 0, 0, 0, 0]; // 日 ~ 六
+      const yearMap = {};
+
+      cards.forEach(c => {
+        const dStr = (c.date || '').trim();
+        if (dStr) {
+          if (!dateMap[dStr]) {
+            dateMap[dStr] = { count: 0, location: c.locationName || '', member: c.member || '' };
+          }
+          dateMap[dStr].count++;
+          if (!dateMap[dStr].location && c.locationName) dateMap[dStr].location = c.locationName;
+
+          const yr = dStr.slice(0, 4);
+          if (/^\d{4}$/.test(yr)) {
+            yearMap[yr] = (yearMap[yr] || 0) + 1;
+          }
+
+          const dt = new Date(dStr + 'T12:00:00');
+          if (!isNaN(dt.getTime())) {
+            weekdayCounts[dt.getDay()]++;
+          }
+        }
+      });
+
+      const activeDaysCount = Object.keys(dateMap).length;
+      const avgPerDay = activeDaysCount > 0 ? (total / activeDaysCount).toFixed(1) : '0';
+
+      let maxDayDate = '-';
+      let maxDayCount = 0;
+      let maxDayLoc = '';
+      Object.entries(dateMap).forEach(([dStr, info]) => {
+        if (info.count > maxDayCount) {
+          maxDayCount = info.count;
+          maxDayDate = dStr;
+          maxDayLoc = info.location;
+        }
+      });
+
+      const weekdayNames = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+      const maxWeekdayVal = Math.max(...weekdayCounts, 1);
+
+      const yearList = Object.entries(yearMap).sort((a, b) => b[0].localeCompare(a[0]));
+
+      // --- C. 渲染 HTML 面板 ---
+      container.innerHTML = `
+        <!-- 1. 🏷️ 拍立得類型與標籤比例統計 -->
+        <div class="neo-box bg-white rounded-2xl p-3.5 space-y-3">
+          <div class="flex items-center justify-between border-b-2 border-zinc-100 pb-2">
+            <h3 class="font-black text-base">🏷️ 拍立得類型與標籤統計</h3>
+            <span class="text-[10px] font-bold text-zinc-400">點選標籤可檢視相片</span>
+          </div>
+
+          <!-- 有簽名 vs 無簽名 -->
+          <div class="space-y-1">
+            <div class="flex justify-between text-xs font-black">
+              <span onclick="filterBinderByChekiTag('signed')" class="cursor-pointer text-blue-600 hover:underline">✍️ 有簽名：${signedCount} 張 (${signedPct}%)</span>
+              <span onclick="filterBinderByChekiTag('unsigned')" class="cursor-pointer text-zinc-500 hover:underline">📷 無簽名：${unsignedCount} 張 (${unsignedPct}%)</span>
+            </div>
+            <div class="w-full h-3 rounded-full bg-zinc-100 border border-cheki-dark overflow-hidden flex">
+              <div class="h-full bg-blue-500 transition-all" style="width: ${signedPct}%"></div>
+              <div class="h-full bg-zinc-300 transition-all" style="width: ${unsignedPct}%"></div>
+            </div>
+          </div>
+
+          <!-- 雙人 2S vs 單人 Solo -->
+          <div class="space-y-1">
+            <div class="flex justify-between text-xs font-black">
+              <span onclick="filterBinderByChekiTag('2shot')" class="cursor-pointer text-cheki-accent hover:underline">👫 雙人 2S：${twoShotCount} 張 (${twoShotPct}%)</span>
+              <span onclick="filterBinderByChekiTag('solo')" class="cursor-pointer text-amber-600 hover:underline">👤 單人 Solo：${soloCount} 張 (${soloPct}%)</span>
+            </div>
+            <div class="w-full h-3 rounded-full bg-zinc-100 border border-cheki-dark overflow-hidden flex">
+              <div class="h-full bg-cheki-accent transition-all" style="width: ${twoShotPct}%"></div>
+              <div class="h-full bg-amber-400 transition-all" style="width: ${soloPct}%"></div>
+            </div>
+          </div>
+
+          <!-- 直向 vs 橫向拍立得比例 -->
+          <div class="space-y-1">
+            <div class="flex justify-between text-xs font-black">
+              <span class="text-emerald-700">📏 標準直向：${portraitCount} 張 (${portraitPct}%)</span>
+              <span class="text-indigo-600">📐 橫向構圖：${landscapeCount} 張 (${landscapePct}%)</span>
+            </div>
+            <div class="w-full h-2.5 rounded-full bg-zinc-100 border border-cheki-dark overflow-hidden flex">
+              <div class="h-full bg-emerald-400" style="width: ${portraitPct}%"></div>
+              <div class="h-full bg-indigo-400" style="width: ${landscapePct}%"></div>
+            </div>
+          </div>
+
+          <!-- 自訂標籤排行榜 -->
+          ${customTagsList.length > 0 ? `
+            <div class="pt-2 border-t border-zinc-100 space-y-1.5">
+              <p class="text-xs font-black text-zinc-700">✨ 自訂標籤收藏統計：</p>
+              <div class="flex flex-wrap gap-1.5">
+                ${customTagsList.map(t => `
+                  <button type="button" onclick="filterBinderByChekiTag('${t.id}')" class="px-2.5 py-1 rounded-full bg-blue-50 hover:bg-blue-100 border border-blue-300 text-[11px] font-black text-blue-900 flex items-center gap-1 active:scale-95 transition">
+                    <span>${t.label}</span>
+                    <span class="px-1.5 py-0.2 rounded-full bg-blue-500 text-white text-[10px]">${t.count}張</span>
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- 2. 🔥 應援參戰活躍度與星期分佈 -->
+        <div class="neo-box bg-white rounded-2xl p-3.5 space-y-3">
+          <h3 class="font-black text-base border-b-2 border-zinc-100 pb-2">🔥 參戰活躍度與單日紀錄</h3>
+
+          <div class="grid grid-cols-3 gap-2 text-center">
+            <div class="rounded-2xl bg-pink-50 border-2 border-cheki-dark p-2">
+              <p class="text-[10px] font-bold text-zinc-500">累積參戰日數</p>
+              <p class="font-black text-lg text-cheki-accent mt-0.5">${activeDaysCount} <span class="text-[10px]">日</span></p>
+            </div>
+            <div class="rounded-2xl bg-blue-50 border-2 border-cheki-dark p-2">
+              <p class="text-[10px] font-bold text-zinc-500">單日場均收穫</p>
+              <p class="font-black text-lg text-blue-600 mt-0.5">${avgPerDay} <span class="text-[10px]">張/日</span></p>
+            </div>
+            <div onclick="filterBinderBySpecificDate('${maxDayDate}')" class="rounded-2xl bg-amber-100 border-2 border-cheki-dark p-2 cursor-pointer active:scale-95 transition" title="點擊檢視當日所有 Cheki">
+              <p class="text-[10px] font-bold text-zinc-600">👑 單日最高紀錄</p>
+              <p class="font-black text-lg text-amber-700 mt-0.5">${maxDayCount} <span class="text-[10px]">張</span></p>
+            </div>
+          </div>
+
+          ${maxDayCount > 0 ? `
+            <div onclick="filterBinderBySpecificDate('${maxDayDate}')" class="px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 flex items-center justify-between text-xs font-black cursor-pointer hover:bg-amber-100 transition">
+              <span class="truncate">🏆 最高產參戰日：${maxDayDate}${maxDayLoc ? `(${maxDayLoc})` : ''}</span>
+              <span class="text-amber-700 shrink-0">共 ${maxDayCount} 張 ▶</span>
+            </div>
+          ` : ''}
+
+          <!-- 星期幾參戰分佈 -->
+          <div class="space-y-1.5 pt-1">
+            <p class="text-xs font-black text-zinc-600">📊 星期幾拍攝分佈（週日 ～ 週六）：</p>
+            <div class="grid grid-cols-7 gap-1.5 items-end h-24 pt-3 px-1 bg-zinc-50 rounded-xl border border-zinc-200">
+              ${weekdayCounts.map((cnt, dIdx) => {
+                const barH = cnt > 0 ? Math.max(14, Math.round((cnt / maxWeekdayVal) * 52)) : 4;
+                const isWeekend = dIdx === 0 || dIdx === 6;
+                const barColor = cnt === 0 ? 'bg-zinc-200' : (isWeekend ? 'bg-cheki-accent' : 'bg-blue-400');
+                return `
+                  <div class="flex flex-col items-center justify-end h-full">
+                    <span class="text-[9px] font-black ${cnt > 0 ? 'text-cheki-dark' : 'text-zinc-300'} mb-0.5">${cnt}</span>
+                    <div class="w-full max-w-[20px] rounded-t-md ${barColor} border border-cheki-dark/30 transition-all" style="height: ${barH}px"></div>
+                    <span class="text-[10px] font-black mt-1 ${isWeekend ? 'text-cheki-accent' : 'text-zinc-500'}">${weekdayNames[dIdx]}</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. 📚 年度與相簿收藏統計 -->
+        <div class="neo-box bg-white rounded-2xl p-3.5 space-y-2.5">
+          <h3 class="font-black text-base border-b-2 border-zinc-100 pb-2">📚 年度與相簿收藏分佈</h3>
+          ${yearList.length > 0 ? `
+            <div class="flex flex-wrap gap-1.5 pb-1">
+              ${yearList.map(([yr, cnt]) => `
+                <div onclick="filterBinderBySpecificDate('${yr}-')" class="cursor-pointer px-3 py-1 rounded-xl bg-emerald-100 border border-cheki-dark text-xs font-black text-emerald-900">
+                  🗓️ ${yr}年：${cnt} 張 (${Math.round((cnt / total) * 100)}%)
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+          <div class="space-y-1.5">
+            ${albums.map(alb => {
+              const cnt = cards.filter(c => cardBelongsToAlbum(c, alb)).length;
+              const pct = Math.round((cnt / total) * 100);
+              const safeAlb = alb.replace(/'/g, "\\'");
+              return `
+                <div onclick="openAlbumInBinder('${safeAlb}')" class="flex items-center justify-between px-3 py-1.5 rounded-xl bg-pink-50/60 border border-pink-200 cursor-pointer text-xs font-black hover:bg-pink-100 transition">
+                  <span class="truncate">📁 ${alb}</span>
+                  <span class="text-cheki-accent shrink-0">${cnt} 張 (${pct}%) ▶</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function initEnhancedStatsPlugin() {
+      const origRenderStats = window.renderStats;
+      if (typeof origRenderStats === 'function' && !origRenderStats._wrappedForEnhancedStats) {
+        window.renderStats = function() {
+          origRenderStats.apply(this, arguments);
+          renderEnhancedMultiStats();
+        };
+        window.renderStats._wrappedForEnhancedStats = true;
+      }
+      if (currentTab === 'stats') {
+        renderEnhancedMultiStats();
+      }
+    }
+
+    setTimeout(initEnhancedStatsPlugin, 200);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
