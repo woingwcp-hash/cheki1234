@@ -2753,92 +2753,6 @@
       cardsLayer.style.height = `${Math.max(ch, maxBottomY + 60)}px`;
     }
 
-    function attachDeskCardInteractions(el, card) {
-      let isDragging = false;
-      let startX = 0, startY = 0;
-      let initialLeft = 0, initialTop = 0;
-      let movedDistance = 0;
-
-      let isPinching = false;
-      let startDist = 0;
-      let startAngle = 0;
-      let initScale = 1;
-      let initRot = 0;
-
-      el.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
-        autoCollapseSearchOnDeskTouch();
-        bringCardToFront(card, el);
-
-        isDragging = true;
-        movedDistance = 0;
-        startX = e.clientX;
-        startY = e.clientY;
-        initialLeft = card.deskX;
-        initialTop = card.deskY;
-        el.setPointerCapture(e.pointerId);
-      });
-
-      el.addEventListener('pointermove', (e) => {
-        if (!isDragging || isPinching) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        movedDistance = Math.hypot(dx, dy);
-
-        if (movedDistance > 3) {
-          card.deskX = initialLeft + dx;
-          card.deskY = initialTop + dy;
-          el.style.left = `${card.deskX}px`;
-          el.style.top = `${card.deskY}px`;
-        }
-      });
-
-      el.addEventListener('pointerup', (e) => {
-        if (!isDragging) return;
-        isDragging = false;
-        try { el.releasePointerCapture(e.pointerId); } catch (_) {}
-
-        if (movedDistance < 6 && !isPinching) {
-          card.deskFlipped = !card.deskFlipped;
-          const inner = el.querySelector('.desk-flip-inner');
-          if (inner) inner.classList.toggle('rotate-y-180', card.deskFlipped);
-        }
-        saveCardToDB(card);
-      });
-
-      el.addEventListener('touchstart', (e) => {
-        if (e.touches.length === 2) {
-          isPinching = true;
-          isDragging = false;
-          const t1 = e.touches[0], t2 = e.touches[1];
-          startDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-          startAngle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX) * (180 / Math.PI);
-          initScale = card.deskScale || 1;
-          initRot = card.deskRot || 0;
-        }
-      }, { passive: true });
-
-      el.addEventListener('touchmove', (e) => {
-        if (isPinching && e.touches.length === 2) {
-          const t1 = e.touches[0], t2 = e.touches[1];
-          const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-          const angle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX) * (180 / Math.PI);
-          card.deskScale = Math.min(2.5, Math.max(0.12, initScale * (dist / startDist)));
-          card.deskRot = initRot + (angle - startAngle);
-          el.style.transform = `rotate(${card.deskRot}deg) scale(${card.deskScale})`;
-          const selBadge = document.getElementById('deskSelectedScaleBadge');
-          if (selBadge) selBadge.textContent = `${Math.round(card.deskScale * 100)}%`;
-        }
-      }, { passive: true });
-
-      el.addEventListener('touchend', (e) => {
-        if (e.touches.length < 2 && isPinching) {
-          setTimeout(() => { isPinching = false; }, 100);
-          saveCardToDB(card);
-        }
-      });
-    }
-
     function bringCardToFront(card, el) {
       selectedDeskCardId = card.id;
       const maxZ = cards.reduce((m, c) => Math.max(m, c.deskZ || 1), 1);
@@ -3134,38 +3048,6 @@ function scatterDeskCards() {
       useFrontCamera = !useFrontCamera;
       startCameraStream();
     }
-
-    function blendDualShotAntiGlare(c1, c2) {
-      const w = c1.width, h = c1.height;
-      const out = document.createElement('canvas');
-      out.width = w;
-      out.height = h;
-      const ctx = out.getContext('2d');
-      const d1 = c1.getContext('2d').getImageData(0, 0, w, h).data;
-      const d2 = c2.getContext('2d').getImageData(0, 0, w, h).data;
-      const outImg = ctx.createImageData(w, h);
-      const dst = outImg.data;
-
-      for (let i = 0; i < d1.length; i += 4) {
-        const l1 = 0.299 * d1[i] + 0.587 * d1[i + 1] + 0.114 * d1[i + 2];
-        const l2 = 0.299 * d2[i] + 0.587 * d2[i + 1] + 0.114 * d2[i + 2];
-        if (Math.abs(l1 - l2) > 22 && Math.max(l1, l2) > 205) {
-          if (l1 < l2) {
-            dst[i] = d1[i]; dst[i + 1] = d1[i + 1]; dst[i + 2] = d1[i + 2]; dst[i + 3] = 255;
-          } else {
-            dst[i] = d2[i]; dst[i + 1] = d2[i + 1]; dst[i + 2] = d2[i + 2]; dst[i + 3] = 255;
-          }
-        } else {
-          dst[i] = Math.round((d1[i] + d2[i]) * 0.5);
-          dst[i + 1] = Math.round((d1[i + 1] + d2[i + 1]) * 0.5);
-          dst[i + 2] = Math.round((d1[i + 2] + d2[i + 2]) * 0.5);
-          dst[i + 3] = 255;
-        }
-      }
-      ctx.putImageData(outImg, 0, 0);
-      return out;
-    }
-
     function captureLivePhoto() {
       const video = document.getElementById('cameraVideo');
       if (!video.videoWidth) return;
