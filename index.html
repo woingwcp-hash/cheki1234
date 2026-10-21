@@ -5897,26 +5897,25 @@ let editingCheerEventId = null;
     }
 
     setTimeout(initSmartRemasterPlugin, 250);  
-  // =========================================================================
-   // =========================================================================
-    // 📊 子分頁切換式統計系統（👑 偶像排行 ｜ 🏷️ 類型標籤 ｜ 🔥 參戰足跡）
+ // =========================================================================
+    // 📊 子分頁切換式統計系統（自動免疫舊成就徽章報錯 ＋ 3 大子分頁切換）
     // =========================================================================
     let currentStatsSubTab = 'idol'; // 'idol' | 'tags' | 'activity'
 
-    function switchStatsSubTab(subTab) {
+    window.switchStatsSubTab = function(subTab) {
       currentStatsSubTab = subTab;
-      renderEnhancedMultiStats();
-    }
+      window.renderEnhancedMultiStats();
+    };
 
-    function filterBinderByChekiTag(tagId) {
+    window.filterBinderByChekiTag = function(tagId) {
       if (typeof selectedTagFilter !== 'undefined') selectedTagFilter = tagId;
       selectedAlbumFilter = 'ALL';
       selectedMemberFilter = 'ALL';
       favOnlyFilter = false;
       switchTab('binder');
-    }
+    };
 
-    function filterBinderBySpecificDate(dateStr) {
+    window.filterBinderBySpecificDate = function(dateStr) {
       if (!dateStr || dateStr === '-') return;
       const input = document.getElementById('searchInput');
       if (input) input.value = dateStr;
@@ -5925,14 +5924,17 @@ let editingCheerEventId = null;
       if (typeof selectedTagFilter !== 'undefined') selectedTagFilter = 'ALL';
       executeSearch(true);
       switchTab('binder');
-    }
+    };
 
-    function renderEnhancedMultiStats() {
+    window.renderEnhancedMultiStats = function() {
       const statsSec = document.getElementById('tab-stats');
       if (!statsSec) return;
 
-      // 若成就徽章殘留則自動移除
-      document.getElementById('achievementsGrid')?.parentElement?.remove();
+      // 隱藏舊成就區塊（若存在）
+      const oldAch = document.getElementById('achievementsGrid');
+      if (oldAch && oldAch.parentElement && oldAch.parentElement.id !== 'tab-stats') {
+        oldAch.parentElement.style.display = 'none';
+      }
 
       const topSummaryGrid = statsSec.firstElementChild;
       const oshiCard = document.getElementById('topOshiHighlightCard');
@@ -5940,12 +5942,12 @@ let editingCheerEventId = null;
       const idolBoardBox = document.getElementById('idolStatsLeaderboard')?.closest('.neo-box');
       const monthlyBox = document.getElementById('monthlyStatsList')?.closest('.neo-box');
 
-      // 1. 建立或更新頂部「3 大子分頁切換列」
+      // 1. 在 4 格總覽數字正下方插入「👑 偶像排行 ｜ 🏷️ 類型標籤 ｜ 🔥 參戰足跡」3 粒切換掣
       let subNav = document.getElementById('statsSubTabNav');
       if (!subNav && topSummaryGrid) {
         subNav = document.createElement('div');
         subNav.id = 'statsSubTabNav';
-        subNav.className = 'grid grid-cols-3 gap-1.5 bg-pink-100/80 p-1.5 rounded-2xl border-2 border-cheki-dark';
+        subNav.className = 'grid grid-cols-3 gap-1.5 bg-pink-100/90 p-1.5 rounded-2xl neo-box';
         topSummaryGrid.insertAdjacentElement('afterend', subNav);
       }
 
@@ -5958,14 +5960,14 @@ let editingCheerEventId = null;
         subNav.innerHTML = tabs.map(t => {
           const active = currentStatsSubTab === t.id;
           return `
-            <button type="button" onclick="switchStatsSubTab('${t.id}')" class="py-2 rounded-xl text-xs font-black transition active:scale-95 ${active ? 'bg-cheki-accent text-white neo-btn' : 'bg-white/80 text-zinc-600 border border-transparent'}">
+            <button type="button" onclick="switchStatsSubTab('${t.id}')" class="py-2 rounded-xl text-xs font-black transition active:scale-95 ${active ? 'bg-cheki-accent text-white neo-btn' : 'bg-white text-zinc-600 border border-cheki-dark/20'}">
               ${t.label}
             </button>
           `;
         }).join('');
       }
 
-      // 2. 建立動態子分頁內容容器（緊貼於子分頁切換列下方）
+      // 2. 建立動態子分頁內容容器
       let container = document.getElementById('enhancedCustomStatsContainer');
       if (!container && subNav) {
         container = document.createElement('div');
@@ -6182,28 +6184,37 @@ let editingCheerEventId = null;
           </div>
         `;
 
-        // 切換至「🔥 參戰足跡」時，自動刷新地圖尺寸並置中所有座標標記
         setTimeout(() => {
           if (typeof renderStatsFootprintMap === 'function') renderStatsFootprintMap();
         }, 80);
       }
-    }
+    };
 
     function initEnhancedStatsPlugin() {
+      // 建立隱藏虛擬節點，防止舊 renderStats 因找不到 achievementsGrid 而報錯中斷
+      if (!document.getElementById('achievementsGrid')) {
+        const dummy = document.createElement('div');
+        dummy.id = 'achievementsGrid';
+        dummy.style.display = 'none';
+        document.body.appendChild(dummy);
+      }
+
       const origRenderStats = window.renderStats;
-      if (typeof origRenderStats === 'function' && !origRenderStats._wrappedForEnhancedStats) {
+      if (typeof origRenderStats === 'function' && !origRenderStats._wrappedForSubTabs) {
         window.renderStats = function() {
-          origRenderStats.apply(this, arguments);
-          renderEnhancedMultiStats();
+          try {
+            origRenderStats.apply(this, arguments);
+          } catch (_) {}
+          window.renderEnhancedMultiStats();
         };
-        window.renderStats._wrappedForEnhancedStats = true;
+        window.renderStats._wrappedForSubTabs = true;
       }
-      if (currentTab === 'stats') {
-        renderEnhancedMultiStats();
-      }
+
+      // 立即為統計頁注入 3 粒切換掣
+      window.renderEnhancedMultiStats();
     }
 
-    setTimeout(initEnhancedStatsPlugin, 200);
+    initEnhancedStatsPlugin();
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
