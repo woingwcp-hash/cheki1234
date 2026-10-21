@@ -5929,6 +5929,205 @@ let editingCheerEventId = null;
     }
 
     setTimeout(initContinuousAddPlugin, 250);
+// =========================================================================
+    // 🪄 AI 級拍立得「一鍵超清修復 (去霧/立體銳化/色彩還原)」& 雙拍防重影升級模組
+    // =========================================================================
+    function applyChekiSmartRemaster() {
+      if (!rawUploadDataUrl) return;
+      const btn = document.getElementById('smartRemasterBtn');
+      if (btn) {
+        btn.innerHTML = '⏳ 正在超清修復中...';
+        btn.disabled = true;
+      }
+
+      setTimeout(() => {
+        const img = new Image();
+        img.onload = () => {
+          // 1. 若原圖尺寸偏小，先以高品質插值放大至高清基底
+          let w = img.naturalWidth;
+          let h = img.naturalHeight;
+          const minTargetSide = 1400;
+          if (Math.max(w, h) < minTargetSide) {
+            const scale = minTargetSide / Math.max(w, h);
+            w = Math.round(w * scale);
+            h = Math.round(h * scale);
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, w, h);
+
+          const imgData = ctx.getImageData(0, 0, w, h);
+          const d = imgData.data;
+
+          // 2. 分析中心相片區域（排除四周白邊）的亮度分佈，自動計算去霧與暗部提亮曲線
+          const hist = new Uint32Array(256);
+          const startX = Math.floor(w * 0.12), endX = Math.floor(w * 0.88);
+          const startY = Math.floor(h * 0.10), endY = Math.floor(h * 0.78);
+          let sampleCount = 0;
+
+          for (let y = startY; y < endY; y += 2) {
+            for (let x = startX; x < endX; x += 2) {
+              const i = (y * w + x) * 4;
+              const lum = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+              hist[lum]++;
+              sampleCount++;
+            }
+          }
+
+          let lowCut = 8, highCut = 248;
+          let acc = 0;
+          for (let i = 0; i < 256; i++) {
+            acc += hist[i];
+            if (acc >= sampleCount * 0.015) { lowCut = Math.min(35, i); break; }
+          }
+          acc = 0;
+          for (let i = 255; i >= 0; i--) {
+            acc += hist[i];
+            if (acc >= sampleCount * 0.01) { highCut = Math.max(215, i); break; }
+          }
+
+          const range = Math.max(120, highCut - lowCut);
+          const lut = new Uint8Array(256);
+          for (let i = 0; i < 256; i++) {
+            // 自動拉伸色階消除拍立得翻拍灰霧，並以微 S 曲線提升五官立體感
+            let norm = (i - lowCut * 0.65) / (range + lowCut * 0.35);
+            norm = Math.max(0, Math.min(1, norm));
+            const sCurve = norm < 0.5
+              ? 0.5 * Math.pow(2 * norm, 1.06)
+              : 1 - 0.5 * Math.pow(2 * (1 - norm), 1.08);
+            lut[i] = Math.max(0, Math.min(255, Math.round(sCurve * 255)));
+          }
+
+          for (let i = 0; i < d.length; i += 4) {
+            let r = lut[d[i]];
+            let g = lut[d[i + 1]];
+            let b = lut[d[i + 2]];
+
+            // 拍立得自然增豔 (微幅提升 8% 飽和度，令應援服與膚色更清透)
+            const avg = 0.299 * r + 0.587 * g + 0.114 * b;
+            r = Math.max(0, Math.min(255, Math.round(avg + (r - avg) * 1.08)));
+            g = Math.max(0, Math.min(255, Math.round(avg + (g - avg) * 1.08)));
+            b = Math.max(0, Math.min(255, Math.round(avg + (b - avg) * 1.08)));
+
+            d[i] = r;
+            d[i + 1] = g;
+            d[i + 2] = b;
+          }
+          ctx.putImageData(imgData, 0, 0);
+
+          // 3. 執行細膩五官與筆跡銳化 (Fine Unsharp Mask，含抗噪保護閾值)
+          const srcCopy = new Uint8ClampedArray(imgData.data);
+          const dst = imgData.data;
+          const amount = 0.48;
+          const threshold = 6;
+
+          for (let y = 1; y < h - 1; y++) {
+            for (let x = 1; x < w - 1; x++) {
+              const idx = (y * w + x) * 4;
+              const up = ((y - 1) * w + x) * 4;
+              const dn = ((y + 1) * w + x) * 4;
+              const lf = (y * w + (x - 1)) * 4;
+              const rt = (y * w + (x + 1)) * 4;
+
+              for (let c = 0; c < 3; c++) {
+                const center = srcCopy[idx + c];
+                const blur = (srcCopy[up + c] + srcCopy[dn + c] + srcCopy[lf + c] + srcCopy[rt + c]) * 0.25;
+                const diff = center - blur;
+                if (Math.abs(diff) >= threshold) {
+                  dst[idx + c] = Math.max(0, Math.min(255, Math.round(center + diff * amount * 2.2)));
+                }
+              }
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+
+          currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.97);
+          document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+
+          const sizeTag = document.getElementById('detectedSizeTag');
+          if (sizeTag) {
+            sizeTag.textContent = `🪄 已套用超清去霧修復 (${w}×${h}px)`;
+          }
+          if (btn) {
+            btn.innerHTML = '✨ 已套用超清修復（點「🔄 還原原圖」可取消）';
+            btn.disabled = false;
+          }
+        };
+        img.src = rawUploadDataUrl;
+      }, 40);
+    }
+
+    // 修正「雙拍消反光」重影模糊問題：100% 鎖定第 1 張相五官，只局部修補強反光死白點
+    window.blendDualShotAntiGlare = function(c1, c2) {
+      const w = c1.width, h = c1.height;
+      const out = document.createElement('canvas');
+      out.width = w;
+      out.height = h;
+      const ctx = out.getContext('2d');
+      const d1 = c1.getContext('2d').getImageData(0, 0, w, h).data;
+      const d2 = c2.getContext('2d').getImageData(0, 0, w, h).data;
+      const outImg = ctx.createImageData(w, h);
+      const dst = outImg.data;
+
+      for (let i = 0; i < d1.length; i += 4) {
+        const l1 = 0.299 * d1[i] + 0.587 * d1[i + 1] + 0.114 * d1[i + 2];
+        const l2 = 0.299 * d2[i] + 0.587 * d2[i + 1] + 0.114 * d2[i + 2];
+
+        // 只有當第 1 張相該像素屬於「強烈反光死白 (>225)」且第 2 張相明顯無反光時，才平滑填補該反光點
+        if (l1 > 225 && l2 < l1 - 25) {
+          const blendRatio = Math.min(1, (l1 - 225) / 25);
+          dst[i]     = Math.round(d1[i] * (1 - blendRatio) + d2[i] * blendRatio);
+          dst[i + 1] = Math.round(d1[i + 1] * (1 - blendRatio) + d2[i + 1] * blendRatio);
+          dst[i + 2] = Math.round(d1[i + 2] * (1 - blendRatio) + d2[i + 2] * blendRatio);
+        } else {
+          // 其他 95% 區域完全保留第 1 張原圖，徹底杜絕雙拍手震重影與模糊！
+          dst[i]     = d1[i];
+          dst[i + 1] = d1[i + 1];
+          dst[i + 2] = d1[i + 2];
+        }
+        dst[i + 3] = 255;
+      }
+      ctx.putImageData(outImg, 0, 0);
+      return out;
+    };
+
+    function initSmartRemasterPlugin() {
+      // 1. 在修圖面板頂部加入「🪄 一鍵 AI 級超清去霧修復」按鈕
+      const filterPanel = document.getElementById('sharpenSlider')?.closest('.bg-zinc-800');
+      if (filterPanel && !document.getElementById('smartRemasterBtn')) {
+        const remasterBtn = document.createElement('button');
+        remasterBtn.type = 'button';
+        remasterBtn.id = 'smartRemasterBtn';
+        remasterBtn.onclick = applyChekiSmartRemaster;
+        remasterBtn.className = 'w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-300 to-sky-400 text-zinc-950 font-black text-xs border-2 border-white/60 shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition';
+        remasterBtn.innerHTML = '🪄 一鍵超清修復（去灰霧 + 五官立體清晰）';
+        filterPanel.insertBefore(remasterBtn, filterPanel.firstElementChild);
+      }
+
+      // 當按下「還原原圖」時，同步重設按鈕文字
+      const origReset = window.resetAllFiltersToZero;
+      if (typeof origReset === 'function' && !origReset._wrappedRemaster) {
+        window.resetAllFiltersToZero = function() {
+          origReset.apply(this, arguments);
+          const btn = document.getElementById('smartRemasterBtn');
+          if (btn) btn.innerHTML = '🪄 一鍵超清修復（去灰霧 + 五官立體清晰）';
+        };
+        window.resetAllFiltersToZero._wrappedRemaster = true;
+      }
+
+      // 2. 順便修正大圖預覽頂部「✕ 關閉」按鈕文字被擠成兩行的問題
+      const closeInspectBtn = document.querySelector('#inspectModal button[onclick="closeInspectModal()"]');
+      if (closeInspectBtn) {
+        closeInspectBtn.classList.add('shrink-0', 'whitespace-nowrap');
+      }
+    }
+
+    setTimeout(initSmartRemasterPlugin, 250);  
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
