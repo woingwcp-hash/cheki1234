@@ -295,11 +295,6 @@
         <div id="monthlyStatsList" class="space-y-2"></div>
       </div>
 
-      <!-- 應援成就徽章解鎖系統 -->
-      <div class="neo-box bg-white rounded-2xl p-3.5 space-y-3">
-        <h3 class="font-black text-base border-b-2 border-zinc-100 pb-2">🏆 應援成就徽章</h3>
-        <div id="achievementsGrid" class="grid grid-cols-2 gap-2.5"></div>
-      </div>
     </section>
 
     <!-- TAB 5: DESK (桌布 - 直向與橫向 Cheki 1:1 真實比例一致 + 全體超微縮滑桿 + 自訂背景縮放 + 支援即時搜尋過濾) -->
@@ -2623,27 +2618,6 @@
           `;
         }).join('');
       }
-
-      const maxSingleIdol = idolCounts[0]?.count || 0;
-      const achievements = [
-        { icon: '🌱', title: '初次邂逅', desc: '收藏第 1 張拍立得', unlocked: cards.length >= 1 },
-        { icon: '💙', title: '十全十美', desc: '累積收藏達 10 張', unlocked: cards.length >= 10 },
-        { icon: '🔥', title: '熱情應援', desc: '單一偶像達 30 張', unlocked: maxSingleIdol >= 30 },
-        { icon: '🌟', title: '百張紀念', desc: '累積收藏達 100 張', unlocked: cards.length >= 100 },
-        { icon: '👑', title: '一筋傳說', desc: '單一偶像達 200 張', unlocked: maxSingleIdol >= 200 },
-        { icon: '💎', title: '殿堂級收藏家', desc: '累積收藏突破 280 張', unlocked: cards.length >= 280 }
-      ];
-
-      const achGrid = document.getElementById('achievementsGrid');
-      achGrid.innerHTML = achievements.map(a => `
-        <div class="rounded-2xl p-2.5 border-2 border-cheki-dark flex items-center gap-2.5 ${a.unlocked ? 'bg-amber-100' : 'bg-zinc-100 opacity-50'}">
-          <span class="text-2xl">${a.icon}</span>
-          <div class="min-w-0">
-            <p class="font-black text-xs truncate">${a.title}</p>
-            <p class="text-[10px] text-zinc-600 font-bold">${a.desc}</p>
-          </div>
-        </div>
-      `).join('');
     }
 
     function renderStatsFootprintMap() {
@@ -6153,12 +6127,6 @@ let editingCheerEventId = null;
     }
 
     function renderEnhancedMultiStats() {
-      // 1. 徹底移除原本的「🏆 應援成就徽章」區塊
-      const achGrid = document.getElementById('achievementsGrid');
-      if (achGrid && achGrid.parentElement) {
-        achGrid.parentElement.classList.add('hidden');
-        achGrid.parentElement.style.display = 'none';
-      }
 
       const statsSec = document.getElementById('tab-stats');
       if (!statsSec) return;
