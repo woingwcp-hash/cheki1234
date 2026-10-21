@@ -2973,44 +2973,6 @@ function scatterDeskCards() {
       renderDesk();
     }
 
-    function neatArrangeDeskCards() {
-      const q = (document.getElementById('searchInput')?.value || '').trim();
-      const targetList = q ? cards.filter(c => cardMatchesSearchQuery(c, q)) : cards;
-      if (targetList.length === 0) return;
-
-      const canvas = document.getElementById('deskCanvas');
-      const cw = canvas.getBoundingClientRect().width || 360;
-
-      const targetScale = (deskBgConfig.defaultCardScale || 100) / 100;
-      const gap = Math.max(6, Math.round(10 * targetScale));
-      const padX = 10;
-      let curX = padX;
-      let curY = 12;
-      let rowMaxH = 0;
-
-      targetList.forEach((c, i) => {
-        c.deskScale = targetScale;
-        const cardW = Math.round(getDeskCardBaseWidth(c) * targetScale);
-        const cardH = Math.round(getDeskCardBaseHeight(c) * targetScale);
-
-        if (curX > padX && curX + cardW > cw - padX) {
-          curX = padX;
-          curY += rowMaxH + gap;
-          rowMaxH = 0;
-        }
-
-        c.deskX = curX;
-        c.deskY = curY;
-        c.deskRot = 0;
-        c.deskZ = i + 1;
-
-        curX += cardW + gap;
-        if (cardH > rowMaxH) rowMaxH = cardH;
-        saveCardToDB(c);
-      });
-      renderDesk();
-    }
-
     // =========================================================================
     // 📸 LIVE CAMERA SCANNER
     // =========================================================================
@@ -5219,43 +5181,6 @@ let editingCheerEventId = null;
       restoreFastCacheFromLocalStorage();
 
       // 修正：覆蓋重複的舊版整齊排列函數，確保按目前桌布縮放比例排列
-      window.neatArrangeDeskCards = function() {
-        const q = (document.getElementById('searchInput')?.value || '').trim();
-        const targetList = q ? cards.filter(c => cardMatchesSearchQuery(c, q)) : cards;
-        if (targetList.length === 0) return;
-        const canvas = document.getElementById('deskCanvas');
-        const rect = canvas.getBoundingClientRect();
-        const zoomRatio = (deskBgConfig.zoom || 100) / 100;
-        const panX = deskBgConfig.panX || 0;
-        const panY = deskBgConfig.panY || 0;
-        const viewLeft = Math.round(-panX / zoomRatio);
-        const viewTop = Math.round(-panY / zoomRatio);
-        const viewW = (rect.width || 360) / zoomRatio;
-        const targetScale = (deskBgConfig.defaultCardScale || 100) / 100;
-        const gap = Math.max(6, Math.round(10 * targetScale));
-        const padX = Math.round(10 / zoomRatio);
-        let curX = viewLeft + padX;
-        let curY = viewTop + Math.round(12 / zoomRatio);
-        let rowMaxH = 0;
-        targetList.forEach((c, i) => {
-          c.deskScale = targetScale;
-          const cardW = Math.round(getDeskCardBaseWidth(c) * targetScale);
-          const cardH = Math.round(getDeskCardBaseHeight(c) * targetScale);
-          if (curX > viewLeft + padX && curX + cardW > viewLeft + viewW - padX) {
-            curX = viewLeft + padX;
-            curY += rowMaxH + gap;
-            rowMaxH = 0;
-          }
-          c.deskX = Math.round(curX);
-          c.deskY = Math.round(curY);
-          c.deskRot = 0;
-          c.deskZ = i + 1;
-          curX += cardW + gap;
-          if (cardH > rowMaxH) rowMaxH = cardH;
-          saveCardToDB(c);
-        });
-        renderDesk();
-      };
 
       // 強化偶像建議清單：結合快取與現有相片，確保一開即見所有成員
       const origPopulateMembers = window.populateMemberSuggestions;
