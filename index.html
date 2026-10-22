@@ -4040,6 +4040,9 @@ function scatterDeskCards() {
         cards,
         albums,
         deskBgConfig,
+        customChekiTags: typeof customChekiTags !== 'undefined' ? customChekiTags : [],
+        cheerEvents: typeof cheerEvents !== 'undefined' ? cheerEvents : [],
+        cheerTopics: typeof cheerTopics !== 'undefined' ? cheerTopics : [],
         exportedAt: new Date().toISOString()
       });
       const blob = new Blob([data], { type: 'application/json' });
@@ -4066,6 +4069,26 @@ function scatterDeskCards() {
             await saveDeskBgConfigToDB();
           }
 
+          // 1. 還原自訂標籤清單 (customChekiTags)
+          if (Array.isArray(parsed.customChekiTags) && typeof customChekiTags !== 'undefined') {
+            parsed.customChekiTags.forEach(tagObj => {
+              if (tagObj && tagObj.id && !customChekiTags.some(t => t.id === tagObj.id)) {
+                customChekiTags.push(tagObj);
+              }
+            });
+            if (typeof saveCustomTagsToDB === 'function') saveCustomTagsToDB();
+          }
+
+          // 2. 還原應援倒數行程與特典會話題備忘錄 (cheerEvents & cheerTopics)
+          if (Array.isArray(parsed.cheerEvents) && parsed.cheerEvents.length > 0 && typeof cheerEvents !== 'undefined') {
+            cheerEvents = parsed.cheerEvents;
+          }
+          if (Array.isArray(parsed.cheerTopics) && typeof cheerTopics !== 'undefined') {
+            cheerTopics = parsed.cheerTopics;
+          }
+          if (typeof saveCheerDataToDB === 'function') saveCheerDataToDB();
+          if (typeof updateCountdownDisplays === 'function') updateCountdownDisplays();
+
           for (const alb of importedAlbums) {
             if (alb && !albums.includes(alb)) albums.push(alb);
           }
@@ -4077,7 +4100,13 @@ function scatterDeskCards() {
               : [raw.album || albums[0] || '預設相簿'];
 
             const imgStr = raw.image || raw.img || raw.dataUrl || '';
+            const rawTags = Array.isArray(raw.chekiTags)
+              ? raw.chekiTags
+              : (Array.isArray(raw.tags) ? raw.tags : []);
+
+            // 保留 raw 內所有擴充欄位（包括 chekiTags、uncroppedImage 等）
             const normalized = {
+              ...raw,
               id: raw.id || (Date.now() + Math.floor(Math.random() * 100000)),
               createdAt: raw.createdAt || Date.now(),
               member: raw.member || raw.idol || raw.name || '遠藤まりん',
@@ -4088,6 +4117,7 @@ function scatterDeskCards() {
               note: raw.note || raw.memo || '',
               image: imgStr,
               baseImage: raw.baseImage || imgStr,
+              uncroppedImage: raw.uncroppedImage || raw.baseImage || imgStr,
               filterConfig: raw.filterConfig || { sharpen: 0, deglare: 0, brightness: 100, contrast: 100 },
               isLandscape: Boolean(raw.isLandscape),
               backColor: raw.backColor || '#60A5FA',
@@ -4097,8 +4127,10 @@ function scatterDeskCards() {
               deskRot: typeof raw.deskRot === 'number' ? raw.deskRot : (count % 2 === 0 ? 5 : -5),
               deskScale: raw.deskScale || 1,
               deskZ: raw.deskZ || (count + 1),
-              deskFlipped: Boolean(raw.deskFlipped)
+              deskFlipped: Boolean(raw.deskFlipped),
+              chekiTags: rawTags
             };
+
             setCardAlbums(normalized, rawAlbs);
             getCardAlbums(normalized).forEach(a => {
               if (a && !albums.includes(a)) albums.push(a);
@@ -4112,16 +4144,16 @@ function scatterDeskCards() {
 
           await saveAlbumsToDB();
           await loadDataFromDB();
+          if (typeof syncFastCacheToLocalStorage === 'function') syncFastCacheToLocalStorage();
           closeBackupModal();
           e.target.value = '';
-          alert(`✅ 成功匯入還原 ${count} 張拍立得！`);
+          alert(`✅ 成功匯入還原 ${count} 張拍立得（含所有類型標籤、相簿與設定）！`);
         } catch (err) {
           alert('❌ 備份檔案格式不正確，請確認選取的是 .json 備份檔！');
         }
       };
       reader.readAsText(file);
     }
-
     window.addEventListener('DOMContentLoaded', () => {
       initDB();
     });
