@@ -2886,4 +2886,636 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => { initDB(); });
-    
+    <script>
+    // --- 應援倒數計時器 & 話題清單獨立邏輯 ---
+    let cheerEvents = [{ id: 1, title: '福岡 Live 應援遠征', idol: '遠藤まりん', date: '2026-11-23', location: '福岡 (Fukuoka)', icon: '✈️', active: true }];
+    let cheerTopics = [
+      { id: 101, text: '香港から福岡に会いに来たよ！💙 (從香港來福岡見妳了！)', done: false },
+      { id: 102, text: '📸 一齊影 トミーポーズ (T Pose) 同 犬のポーズ 🐶', done: false }
+    ];
+    let selectedCdIcon = '✈️';
+
+    function switchCheerModalTab(mode) {
+      const heroCard = document.getElementById('heroCountdownCard'), formBox = document.getElementById('addEventFormBox');
+      const eventsList = document.getElementById('countdownEventsList'), eventsWrapper = eventsList ? eventsList.parentElement : null;
+      const topicsList = document.getElementById('talkTopicsList'), topicsWrapper = topicsList ? topicsList.parentElement : null;
+
+      if (eventsList) { eventsList.classList.remove('max-h-36'); eventsList.classList.add('max-h-72'); }
+      if (topicsList) { topicsList.classList.remove('max-h-48'); topicsList.classList.add('max-h-80'); }
+
+      if (mode === 'memo') {
+        if (heroCard) heroCard.classList.add('hidden');
+        if (formBox) formBox.classList.add('hidden');
+        if (eventsWrapper) eventsWrapper.classList.add('hidden');
+        if (topicsWrapper) topicsWrapper.classList.remove('hidden');
+        if (document.getElementById('cheerModalMainIcon')) document.getElementById('cheerModalMainIcon').textContent = '💌';
+        if (document.getElementById('cheerModalMainTitle')) document.getElementById('cheerModalMainTitle').textContent = '特典會話題 & Pose 備忘錄';
+        if (document.getElementById('cheerModalSubTitle')) document.getElementById('cheerModalSubTitle').textContent = '預先記低想同偶像講嘅日文與大字報 ✨';
+        if (document.getElementById('tabBtnCountdown')) document.getElementById('tabBtnCountdown').className = 'flex-1 py-2 rounded-xl bg-white border-2 border-cheki-dark text-xs font-black text-zinc-500 transition';
+        if (document.getElementById('tabBtnMemo')) document.getElementById('tabBtnMemo').className = 'flex-1 py-2 rounded-xl bg-cheki-accent text-white neo-btn text-xs font-black transition';
+      } else {
+        if (heroCard) heroCard.classList.remove('hidden');
+        if (eventsWrapper) eventsWrapper.classList.remove('hidden');
+        if (topicsWrapper) topicsWrapper.classList.add('hidden');
+        if (document.getElementById('cheerModalMainIcon')) document.getElementById('cheerModalMainIcon').textContent = '⏳';
+        if (document.getElementById('cheerModalMainTitle')) document.getElementById('cheerModalMainTitle').textContent = '應援倒數計時器';
+        if (document.getElementById('cheerModalSubTitle')) document.getElementById('cheerModalSubTitle').textContent = '記錄下一場 Live 與見面日倒數 ✨';
+        if (document.getElementById('tabBtnCountdown')) document.getElementById('tabBtnCountdown').className = 'flex-1 py-2 rounded-xl bg-blue-500 text-white neo-btn text-xs font-black transition';
+        if (document.getElementById('tabBtnMemo')) document.getElementById('tabBtnMemo').className = 'flex-1 py-2 rounded-xl bg-white border-2 border-cheki-dark text-xs font-black text-zinc-500 transition';
+      }
+    }
+
+    function openCheerModalWithMode(mode) {
+      if (typeof updateCountdownDisplays === 'function') updateCountdownDisplays();
+      switchCheerModalTab(mode || 'countdown');
+      document.getElementById('countdownModal')?.classList.remove('hidden');
+    }
+
+    function mountCountdownBannerPosition() {
+      const banner = document.getElementById('cuteCountdownBanner');
+      if (banner) banner.style.display = 'none';
+
+      const modalBox = document.querySelector('#countdownModal > div'), heroCard = document.getElementById('heroCountdownCard');
+      if (modalBox && heroCard && !document.getElementById('cheerModeTabs')) {
+        const headerRow = modalBox.firstElementChild;
+        if (headerRow) {
+          if (headerRow.querySelector('.cute-float')) headerRow.querySelector('.cute-float').id = 'cheerModalMainIcon';
+          if (headerRow.querySelector('h3')) headerRow.querySelector('h3').id = 'cheerModalMainTitle';
+          if (headerRow.querySelector('p')) headerRow.querySelector('p').id = 'cheerModalSubTitle';
+        }
+        const tabsBar = document.createElement('div');
+        tabsBar.id = 'cheerModeTabs';
+        tabsBar.className = 'flex gap-2 bg-pink-100/70 p-1.5 rounded-2xl border-2 border-cheki-dark';
+        tabsBar.innerHTML = `
+          <button type="button" id="tabBtnCountdown" onclick="switchCheerModalTab('countdown')" class="flex-1 py-2 rounded-xl bg-blue-500 text-white neo-btn text-xs font-black transition">⏳ 應援倒數計時</button>
+          <button type="button" id="tabBtnMemo" onclick="switchCheerModalTab('memo')" class="flex-1 py-2 rounded-xl bg-white border-2 border-cheki-dark text-xs font-black text-zinc-500 transition">💌 話題 & Pose 備忘</button>
+        `;
+        modalBox.insertBefore(tabsBar, heroCard);
+      }
+
+      const saveBadge = document.querySelector('header span[onclick*="openBackupModal"]');
+      if (saveBadge && !document.getElementById('topMemoQuickBtn')) {
+        const memoBtn = document.createElement('button');
+        memoBtn.type = 'button'; memoBtn.id = 'topMemoQuickBtn';
+        memoBtn.onclick = () => openCheerModalWithMode('memo');
+        memoBtn.className = 'cursor-pointer text-[10px] font-black px-2 py-0.5 rounded-full bg-pink-100 text-cheki-accent border border-cheki-dark shrink-0 active:scale-95';
+        memoBtn.textContent = '💌 備忘';
+        saveBadge.parentNode.appendChild(memoBtn);
+      }
+
+      const nav = document.querySelector('nav');
+      if (nav) {
+        if (!document.getElementById('nav-countdown')) {
+          const btn = document.createElement('button');
+          btn.type = 'button'; btn.id = 'nav-countdown';
+          btn.onclick = () => openCheerModalWithMode('countdown');
+          btn.className = 'relative flex flex-col items-center gap-0.5 text-blue-600 font-black text-[11px] flex-1 active:scale-90 transition';
+          btn.innerHTML = `<span class="text-lg leading-none">⏳</span><span>倒數</span><span id="navCountdownMiniBadge" class="absolute -top-1.5 right-0.5 px-1 py-[1px] rounded-full bg-cheki-accent text-white border border-cheki-dark text-[8px] font-black leading-tight shadow-sm">--</span>`;
+          nav.appendChild(btn);
+        } else {
+          document.getElementById('nav-countdown').onclick = () => openCheerModalWithMode('countdown');
+        }
+        const plusBtn = nav.querySelector('button[onclick*="openAddModal"]'), calBtn = document.getElementById('nav-calendar');
+        if (plusBtn && calBtn && calBtn.nextSibling !== plusBtn) nav.insertBefore(plusBtn, calBtn.nextSibling);
+        nav.classList.remove('px-3'); nav.classList.add('px-1', 'gap-0.5');
+        nav.querySelectorAll('button[id^="nav-"]').forEach(b => { b.classList.remove('w-14', 'w-12'); b.classList.add('flex-1', 'min-w-0'); });
+        if (plusBtn) plusBtn.classList.add('mx-1');
+      }
+
+      const syncMiniBadge = () => {
+        const mini = document.getElementById('navCountdownMiniBadge');
+        if (!mini) return;
+        const act = typeof getActiveCheerEvent === 'function' ? getActiveCheerEvent() : null;
+        if (!act) { mini.textContent = '+'; return; }
+        const rem = calculateTimeRemaining(act.date);
+        mini.textContent = rem.isToday ? '今日' : (rem.isPast ? '完成' : `${rem.days}日`);
+      };
+      if (typeof window.updateCountdownDisplays === 'function' && !window.updateCountdownDisplays._wrappedForNav) {
+        const origUpdate = window.updateCountdownDisplays;
+        window.updateCountdownDisplays = function() { origUpdate.apply(this, arguments); syncMiniBadge(); };
+        window.updateCountdownDisplays._wrappedForNav = true;
+      }
+      setTimeout(() => { syncMiniBadge(); switchCheerModalTab('countdown'); }, 400);
+    }
+
+    function loadCheerDataFromDB() {
+      if (!db) return;
+      try {
+        const tx = db.transaction('meta', 'readonly'), store = tx.objectStore('meta');
+        const evReq = store.get('cheerEvents'), tpReq = store.get('cheerTopics');
+        tx.oncomplete = () => {
+          if (evReq.result && Array.isArray(evReq.result.value) && evReq.result.value.length > 0) cheerEvents = evReq.result.value;
+          if (tpReq.result && Array.isArray(tpReq.result.value)) cheerTopics = tpReq.result.value;
+          updateCountdownDisplays();
+        };
+      } catch (_) { updateCountdownDisplays(); }
+    }
+    function saveCheerDataToDB() {
+      if (!db) return;
+      try {
+        const tx = db.transaction('meta', 'readwrite'), store = tx.objectStore('meta');
+        store.put({ key: 'cheerEvents', value: cheerEvents });
+        store.put({ key: 'cheerTopics', value: cheerTopics });
+      } catch (_) {}
+    }
+    function getActiveCheerEvent() {
+      let act = cheerEvents.find(e => e.active);
+      if (!act && cheerEvents.length > 0) { cheerEvents[0].active = true; act = cheerEvents[0]; }
+      return act;
+    }
+    function calculateTimeRemaining(dateStr) {
+      if (!dateStr) return { days: 0, hours: 0, mins: 0, isToday: false, isPast: false };
+      const now = new Date(), target = new Date(`${dateStr}T10:00:00`);
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()), targetDayStart = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+      const diffDaysCalendar = Math.round((targetDayStart - todayStart) / (1000 * 60 * 60 * 24));
+      if (diffDaysCalendar === 0) return { days: 0, hours: 0, mins: 0, isToday: true, isPast: false };
+      if (diffDaysCalendar < 0) return { days: Math.abs(diffDaysCalendar), hours: 0, mins: 0, isToday: false, isPast: true };
+      const diffMs = Math.max(0, target - now);
+      return { days: Math.max(diffDaysCalendar, Math.floor(diffMs / (1000 * 60 * 60 * 24))), hours: Math.floor((diffMs / (1000 * 60 * 60)) % 24), mins: Math.floor((diffMs / 1000 / 60) % 60), isToday: false, isPast: false };
+    }
+    function updateCountdownDisplays() {
+      const activeEv = getActiveCheerEvent();
+      if (!activeEv) return;
+      const rem = calculateTimeRemaining(activeEv.date);
+      if (document.getElementById('bannerCuteIcon')) document.getElementById('bannerCuteIcon').textContent = activeEv.icon || '✈️';
+      if (document.getElementById('bannerEventTitle')) document.getElementById('bannerEventTitle').textContent = `${activeEv.idol ? activeEv.idol + ' · ' : ''}${activeEv.title}`;
+      if (document.getElementById('bannerCountdownBadge')) {
+        const b = document.getElementById('bannerCountdownBadge');
+        b.textContent = rem.isToday ? '🎉 TODAY 見面日！' : (rem.isPast ? `✨ 已完成 (${rem.days}日前)` : `⏳ 倒數 ${rem.days} 日`);
+      }
+      if (document.getElementById('heroIdolTag')) document.getElementById('heroIdolTag').textContent = `${activeEv.icon || '💙'} ${activeEv.idol || '應援行程'}`;
+      if (document.getElementById('heroEventName')) document.getElementById('heroEventName').textContent = activeEv.title;
+      if (document.getElementById('heroEventMeta')) document.getElementById('heroEventMeta').textContent = `📅 ${activeEv.date} ${activeEv.location ? '· 📍 ' + activeEv.location : ''}`;
+      if (document.getElementById('heroDaysNum')) document.getElementById('heroDaysNum').textContent = rem.isToday ? '🎉' : rem.days;
+      if (document.getElementById('heroHoursNum')) document.getElementById('heroHoursNum').textContent = rem.isToday ? '當' : rem.hours;
+      if (document.getElementById('heroMinsNum')) document.getElementById('heroMinsNum').textContent = rem.isToday ? '日' : rem.mins;
+      renderCountdownEventsList(); renderTalkTopicsList();
+    }
+    let editingCheerEventId = null;
+    function renderCountdownEventsList() {
+      const box = document.getElementById('countdownEventsList');
+      if (!box) return;
+      box.innerHTML = cheerEvents.length === 0 ? `<p class="text-center py-3 text-xs text-zinc-400 font-bold">尚無倒數行程</p>` : cheerEvents.map(ev => {
+        const rem = calculateTimeRemaining(ev.date);
+        return `
+          <div onclick="setActiveCheerEvent(${ev.id})" class="p-2 rounded-2xl border-2 border-cheki-dark flex items-center justify-between gap-2 cursor-pointer transition ${ev.active ? 'bg-sky-100 shadow-sm' : 'bg-white opacity-85'}">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="text-lg shrink-0">${ev.icon || '✈️'}</span>
+              <div class="min-w-0"><p class="font-black text-xs truncate">${ev.title}</p><p class="text-[10px] text-zinc-500 font-bold truncate">📅 ${ev.date}</p></div>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <span class="px-2 py-0.5 rounded-full bg-white border border-cheki-dark text-[10px] font-black text-cheki-accent">${rem.isToday ? '🎉 今日！' : `${rem.days}日`}</span>
+              <button type="button" onclick="event.stopPropagation();editCheerEvent(${ev.id})" class="w-7 h-7 rounded-lg bg-amber-100 border border-cheki-dark text-xs flex items-center justify-center">✏️</button>
+              <button type="button" onclick="event.stopPropagation();deleteCheerEvent(${ev.id})" class="w-7 h-7 rounded-lg bg-rose-100 border border-cheki-dark text-xs flex items-center justify-center">🗑️</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+    function setActiveCheerEvent(id) { cheerEvents.forEach(e => { e.active = (e.id === id); }); saveCheerDataToDB(); updateCountdownDisplays(); }
+    function editCheerEvent(id) {
+      const ev = cheerEvents.find(e => e.id === id); if (!ev) return;
+      editingCheerEventId = id; document.getElementById('addEventFormBox')?.classList.remove('hidden');
+      if (document.getElementById('cdTitleInput')) document.getElementById('cdTitleInput').value = ev.title || '';
+      if (document.getElementById('cdDateInput')) document.getElementById('cdDateInput').value = ev.date || '';
+      if (document.getElementById('cdLocInput')) document.getElementById('cdLocInput').value = ev.location || '';
+      selectCdIcon(ev.icon || '✈️');
+    }
+    function deleteCheerEvent(id) {
+      if (!confirm('確定要刪除這個倒數行程嗎？')) return;
+      cheerEvents = cheerEvents.filter(e => e.id !== id);
+      if (cheerEvents.length > 0 && !cheerEvents.some(e => e.active)) cheerEvents[0].active = true;
+      saveCheerDataToDB(); updateCountdownDisplays(); renderCountdownEventsList();
+    }
+    function toggleAddEventForm(forceShow) {
+      const box = document.getElementById('addEventFormBox');
+      const willShow = typeof forceShow === 'boolean' ? forceShow : box.classList.contains('hidden');
+      box.classList.toggle('hidden', !willShow);
+      if (willShow) { editingCheerEventId = null; if (document.getElementById('cdDateInput')) document.getElementById('cdDateInput').value = new Date().toISOString().split('T')[0]; }
+    }
+    function selectCdIcon(ic) {
+      selectedCdIcon = ic;
+      document.querySelectorAll('.cd-icon-btn').forEach(b => { b.classList.toggle('bg-sky-100', b.dataset.icon === ic); b.classList.toggle('bg-white', b.dataset.icon !== ic); });
+    }
+    function saveCountdownEvent() {
+      const title = (document.getElementById('cdTitleInput')?.value || '').trim(), date = document.getElementById('cdDateInput')?.value, location = (document.getElementById('cdLocInput')?.value || '').trim();
+      if (!title || !date) return alert('請輸入活動名稱與日期！');
+      if (editingCheerEventId !== null) {
+        const idx = cheerEvents.findIndex(e => e.id === editingCheerEventId);
+        if (idx > -1) cheerEvents[idx] = { ...cheerEvents[idx], title, date, location, icon: selectedCdIcon || '✈️' };
+        editingCheerEventId = null;
+      } else {
+        cheerEvents.forEach(e => { e.active = false; });
+        cheerEvents.unshift({ id: Date.now(), title, idol: '遠藤まりん', date, location, icon: selectedCdIcon || '✈️', active: true });
+      }
+      toggleAddEventForm(false); saveCheerDataToDB(); updateCountdownDisplays();
+    }
+    function renderTalkTopicsList() {
+      const box = document.getElementById('talkTopicsList');
+      if (!box) return;
+      box.innerHTML = cheerTopics.length === 0 ? `<p class="text-center py-4 text-xs text-zinc-400 font-bold">尚無話題</p>` : cheerTopics.map(t => `
+        <div class="p-2 rounded-xl border-2 border-cheki-dark flex items-center justify-between gap-2 ${t.done ? 'bg-zinc-100 opacity-65' : 'bg-pink-50/50'}">
+          <label class="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+            <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTalkTopicDone(${t.id})" class="w-4 h-4 accent-pink-500 shrink-0">
+            <span class="text-xs font-bold break-words ${t.done ? 'line-through text-zinc-400' : 'text-cheki-dark'}">${t.text}</span>
+          </label>
+          <div class="flex items-center gap-1 shrink-0">
+            <button onclick="openFlashcardModal('${t.text.replace(/'/g, "\\'")}')" class="px-2 py-1 rounded-lg bg-amber-200 border border-cheki-dark text-[10px] font-black">📢 大字報</button>
+            <button onclick="deleteTalkTopic(${t.id})" class="w-6 h-6 rounded-lg bg-white border border-zinc-300 text-xs flex items-center justify-center">✕</button>
+          </div>
+        </div>
+      `).join('');
+    }
+    function quickFillTopic(text) { const inp = document.getElementById('newTopicInput'); if (inp) { inp.value = text; addTalkTopic(); } }
+    function addTalkTopic() { const inp = document.getElementById('newTopicInput'), text = (inp?.value || '').trim(); if (!text) return; cheerTopics.unshift({ id: Date.now(), text, done: false }); inp.value = ''; saveCheerDataToDB(); renderTalkTopicsList(); }
+    function toggleTalkTopicDone(id) { const t = cheerTopics.find(x => x.id === id); if (t) { t.done = !t.done; saveCheerDataToDB(); renderTalkTopicsList(); } }
+    function deleteTalkTopic(id) { cheerTopics = cheerTopics.filter(t => t.id !== id); saveCheerDataToDB(); renderTalkTopicsList(); }
+    function openCountdownModal() { updateCountdownDisplays(); document.getElementById('countdownModal')?.classList.remove('hidden'); }
+    function closeCountdownModal() { document.getElementById('countdownModal')?.classList.add('hidden'); }
+    function openFlashcardModal(text) { document.getElementById('flashcardMainText').textContent = text; document.getElementById('flashcardModal')?.classList.remove('hidden'); }
+    function closeFlashcardModal() { document.getElementById('flashcardModal')?.classList.add('hidden'); }
+
+    const DEFAULT_CHEKI_TAGS = [
+      { id: 'signed', label: '✍️ 有簽名', group: 'sign', isDefault: true },
+      { id: 'unsigned', label: '📷 無簽名', group: 'sign', isDefault: true },
+      { id: '2shot', label: '👫 雙人 2S', group: 'shot', isDefault: true },
+      { id: 'solo', label: '👤 單人 Solo', group: 'shot', isDefault: true }
+    ];
+    let customChekiTags = [], editingChekiTags = new Set(), batchTagCurrentId = 'signed', batchTagSelectedCardIds = new Set();
+    function getAllChekiTagOptions() { return [...DEFAULT_CHEKI_TAGS, ...customChekiTags]; }
+    function loadCustomTagsFromDB() {
+      if (!db) return;
+      try {
+        const tx = db.transaction('meta', 'readonly'), req = tx.objectStore('meta').get('customChekiTags');
+        tx.oncomplete = () => { if (req.result && Array.isArray(req.result.value)) customChekiTags = req.result.value; };
+      } catch (_) {}
+    }
+    function saveCustomTagsToDB() {
+      if (!db) return;
+      try { db.transaction('meta', 'readwrite').objectStore('meta').put({ key: 'customChekiTags', value: customChekiTags }); } catch (_) {}
+    }
+    function renderEditChekiTagPills() {
+      let box = document.getElementById('editChekiTagPillsBox');
+      const memberInput = document.getElementById('cardMemberInput');
+      if (!box && memberInput && memberInput.parentElement) {
+        box = document.createElement('div'); box.id = 'editChekiTagPillsBox'; box.className = 'flex items-center gap-1.5 pt-2 flex-wrap';
+        memberInput.parentElement.appendChild(box);
+      }
+      if (!box) return;
+      box.innerHTML = `<span class="text-[10px] font-black text-zinc-500 shrink-0">🏷️ 類型:</span>` +
+        getAllChekiTagOptions().map(t => `<button type="button" onclick="toggleEditChekiTag('${t.id}', '${t.group}')" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark transition active:scale-95 ${editingChekiTags.has(t.id) ? 'bg-blue-500 text-white shadow-sm' : 'bg-white text-zinc-600'}">${t.label}</button>`).join('') +
+        `<button type="button" onclick="promptAddCustomChekiTag(false)" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark bg-amber-200 text-cheki-dark">+ 自訂標籤</button>` +
+        `<button type="button" onclick="openBatchTagOldChekisModal()" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark bg-pink-100 text-cheki-accent">⚡ 批次加落舊相</button>`;
+    }
+    function toggleEditChekiTag(tagId, group) {
+      if (editingChekiTags.has(tagId)) editingChekiTags.delete(tagId);
+      else { if (group === 'sign' || group === 'shot') getAllChekiTagOptions().filter(t => t.group === group).forEach(t => editingChekiTags.delete(t.id)); editingChekiTags.add(tagId); }
+      renderEditChekiTagPills();
+    }
+    function promptAddCustomChekiTag(fromBatchModal = false) {
+      const raw = prompt('✨ 請輸入新自訂標籤名稱（例如：👗 新衣装、✌️ T Pose、🎁 宿題）：');
+      if (!raw || !raw.trim()) return;
+      const cleanLabel = raw.trim(), allOpts = getAllChekiTagOptions();
+      const existing = allOpts.find(t => t.label.toLowerCase() === cleanLabel.toLowerCase());
+      let targetTagId = existing ? existing.id : 'custom_' + Date.now();
+      if (!existing) {
+        customChekiTags.push({ id: targetTagId, label: cleanLabel.startsWith('#') || /[\u{1F300}-\u{1FAFF}]/u.test(cleanLabel) ? cleanLabel : `🏷️ ${cleanLabel}`, group: targetTagId, isDefault: false });
+        saveCustomTagsToDB();
+      }
+      editingChekiTags.add(targetTagId); renderEditChekiTagPills();
+      if (currentTab === 'binder') renderBinder();
+      if (fromBatchModal) selectBatchTagTarget(targetTagId);
+    }
+    function ensureBatchTagModalExists() {
+      if (document.getElementById('batchTagModal')) return;
+      const div = document.createElement('div');
+      div.innerHTML = `
+        <div id="batchTagModal" class="hidden fixed inset-0 z-[88] bg-black/80 flex items-center justify-center p-3">
+          <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-4 flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+              <div><h3 class="font-black text-base">⚡ 批次為舊 Cheki 加 / 改標籤</h3><p class="text-[10px] text-zinc-500 font-bold">先揀標籤，再點選下方舊相片即可一次過套用！</p></div>
+              <button type="button" onclick="closeBatchTagOldChekisModal()" class="w-8 h-8 rounded-full bg-white neo-btn font-black">✕</button>
+            </div>
+            <div class="my-2 space-y-1.5">
+              <div class="flex items-center justify-between"><span class="text-[11px] font-black text-zinc-700">1️⃣ 選擇要套用的標籤：</span><button type="button" onclick="promptAddCustomChekiTag(true)" class="px-2 py-0.5 rounded-lg bg-amber-200 border border-cheki-dark text-[10px] font-black">+ 新增自訂標籤</button></div>
+              <div id="batchTagSelectorPills" class="flex flex-wrap gap-1.5 p-2 rounded-2xl bg-white border-2 border-cheki-dark max-h-28 overflow-y-auto"></div>
+            </div>
+            <div class="flex items-center justify-between gap-1.5 mb-2">
+              <input id="batchTagSearchInput" type="text" placeholder="搜尋偶像名稱或筆記..." oninput="renderBatchTagCardsGrid()" class="flex-1 px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark text-xs font-bold bg-white">
+              <button type="button" onclick="batchTagSelectAllVisible(true)" class="px-2.5 py-1.5 rounded-xl bg-blue-100 neo-btn text-[11px] font-black shrink-0">全選</button>
+            </div>
+            <div id="batchTagCardsGrid" class="flex-1 overflow-y-auto grid grid-cols-3 gap-2.5 py-1.5 pr-1"></div>
+            <div class="pt-3 border-t-2 border-cheki-dark mt-2 flex items-center justify-between gap-2">
+              <span id="batchTagSelectedCount" class="text-xs font-black text-blue-600">已勾選 0 張相片</span>
+              <button type="button" onclick="saveBatchTagOldChekis()" class="px-5 py-2.5 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-box">💾 套用標籤變更</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(div);
+    }
+    function openBatchTagOldChekisModal(defaultTagId) {
+      ensureBatchTagModalExists();
+      selectBatchTagTarget(defaultTagId || 'signed');
+      document.getElementById('batchTagModal').classList.remove('hidden');
+    }
+    function closeBatchTagOldChekisModal() { document.getElementById('batchTagModal')?.classList.add('hidden'); }
+    function selectBatchTagTarget(tagId) {
+      batchTagCurrentId = tagId;
+      batchTagSelectedCardIds = new Set(cards.filter(c => Array.isArray(c.chekiTags) && c.chekiTags.includes(tagId)).map(c => c.id));
+      const pillsBox = document.getElementById('batchTagSelectorPills');
+      if (pillsBox) {
+        pillsBox.innerHTML = getAllChekiTagOptions().map(t => `<button type="button" onclick="selectBatchTagTarget('${t.id}')" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark transition ${t.id === batchTagCurrentId ? 'bg-blue-500 text-white shadow-sm' : 'bg-zinc-100 text-zinc-700'}">${t.label}</button>`).join('');
+      }
+      renderBatchTagCardsGrid();
+    }
+    function renderBatchTagCardsGrid() {
+      const grid = document.getElementById('batchTagCardsGrid'), q = (document.getElementById('batchTagSearchInput')?.value || '').trim();
+      if (!grid) return;
+      const filtered = cards.filter(c => cardMatchesSearchQuery(c, q));
+      grid.innerHTML = filtered.length === 0 ? `<div class="col-span-3 text-center py-8 text-xs font-bold text-zinc-400">沒有找到符合的相片</div>` : filtered.map(c => {
+        const isSelected = batchTagSelectedCardIds.has(c.id);
+        return `
+          <div onclick="toggleBatchTagCardSelection(${c.id})" class="relative rounded-2xl p-1.5 border-2 cursor-pointer transition flex flex-col items-center ${isSelected ? 'border-blue-500 bg-blue-50/90 shadow-md' : 'border-zinc-200 bg-white opacity-75'}">
+            <div class="w-full aspect-[3/4] flex items-center justify-center overflow-hidden rounded-lg bg-zinc-50"><img src="${c.image}" draggable="false" class="max-h-full max-w-full object-contain pointer-events-none"></div>
+            <p class="font-black text-[11px] truncate w-full text-center mt-1">${c.member || '未命名'}</p>
+            <div class="absolute top-2 right-2 w-6 h-6 rounded-full border-2 border-cheki-dark flex items-center justify-center text-xs font-black ${isSelected ? 'bg-blue-500 text-white' : 'bg-white text-transparent'}">✓</div>
+          </div>
+        `;
+      }).join('');
+      if (document.getElementById('batchTagSelectedCount')) document.getElementById('batchTagSelectedCount').textContent = `已勾選 ${batchTagSelectedCardIds.size} 張`;
+    }
+    function toggleBatchTagCardSelection(cardId) {
+      if (batchTagSelectedCardIds.has(cardId)) batchTagSelectedCardIds.delete(cardId);
+      else batchTagSelectedCardIds.add(cardId);
+      renderBatchTagCardsGrid();
+    }
+    function batchTagSelectAllVisible(selectAll) {
+      const q = (document.getElementById('batchTagSearchInput')?.value || '').trim();
+      cards.forEach(c => { if (cardMatchesSearchQuery(c, q)) { if (selectAll) batchTagSelectedCardIds.add(c.id); else batchTagSelectedCardIds.delete(c.id); } });
+      renderBatchTagCardsGrid();
+    }
+    async function saveBatchTagOldChekis() {
+      const curOpt = getAllChekiTagOptions().find(t => t.id === batchTagCurrentId);
+      if (!curOpt) return;
+      for (const c of cards) {
+        const tagSet = new Set(Array.isArray(c.chekiTags) ? c.chekiTags : []), shouldHave = batchTagSelectedCardIds.has(c.id), currentlyHas = tagSet.has(batchTagCurrentId);
+        if (shouldHave && !currentlyHas) {
+          if (curOpt.group === 'sign' || curOpt.group === 'shot') getAllChekiTagOptions().filter(t => t.group === curOpt.group).forEach(t => tagSet.delete(t.id));
+          tagSet.add(batchTagCurrentId); c.chekiTags = [...tagSet]; await saveCardToDB(c);
+        } else if (!shouldHave && currentlyHas) {
+          tagSet.delete(batchTagCurrentId); c.chekiTags = [...tagSet]; await saveCardToDB(c);
+        }
+      }
+      closeBatchTagOldChekisModal(); renderCurrentTab(); alert(`✅ 成功更新至 ${batchTagSelectedCardIds.size} 張 Cheki！`);
+    }
+
+    function initMinimalChekiTagsPlugin() {
+      const origLoadData = window.loadDataFromDB;
+      if (typeof origLoadData === 'function') {
+        window.loadDataFromDB = async function() {
+          await origLoadData.apply(this, arguments);
+          if (db) loadCustomTagsFromDB();
+          if (typeof loadCheerDataFromDB === 'function') loadCheerDataFromDB();
+        };
+      }
+      const origOpenAdd = window.openAddModal;
+      if (typeof origOpenAdd === 'function') {
+        window.openAddModal = function() { editingChekiTags = new Set(['signed', '2shot']); origOpenAdd.apply(this, arguments); renderEditChekiTagPills(); };
+      }
+      const origOpenEdit = window.openEditFromInspect;
+      if (typeof origOpenEdit === 'function') {
+        window.openEditFromInspect = function() {
+          const card = cards.find(c => c.id === inspectingCardId);
+          editingChekiTags = new Set(Array.isArray(card?.chekiTags) ? card.chekiTags : []);
+          origOpenEdit.apply(this, arguments); renderEditChekiTagPills();
+        };
+      }
+      const origSaveCard = window.saveCard;
+      if (typeof origSaveCard === 'function') {
+        window.saveCard = async function() {
+          if (!currentUploadDataUrl) return origSaveCard.apply(this, arguments);
+          const isEditing = editingCardId;
+          await origSaveCard.apply(this, arguments);
+          const targetCard = isEditing ? cards.find(c => c.id === isEditing) : cards[0];
+          if (targetCard) { targetCard.chekiTags = [...editingChekiTags]; await saveCardToDB(targetCard); renderCurrentTab(); }
+        };
+      }
+      if (db) loadCustomTagsFromDB();
+    }
+    setTimeout(initMinimalChekiTagsPlugin, 200);
+
+    // 📱 橫向模式適應與桌布工具列收起外掛
+    window.deskToolsCollapsed = false;
+    window.toggleDeskToolbarMode = function() { window.deskToolsCollapsed = !window.deskToolsCollapsed; window.applyDeskToolbarCollapseUI(); };
+    window.applyDeskToolbarCollapseUI = function() {
+      const deskSec = document.getElementById('tab-desk'), canvas = document.getElementById('deskCanvas');
+      if (!deskSec || !canvas) return;
+      const firstToolbar = deskSec.firstElementChild;
+      [...deskSec.children].forEach(el => {
+        if (el === firstToolbar || el === canvas) { el.classList.remove('hidden'); el.style.display = ''; }
+        else { el.classList.remove('hidden'); el.style.display = window.deskToolsCollapsed ? 'none' : ''; }
+      });
+      const toggleBtn = document.getElementById('inlineCollapseToolbarBtn');
+      if (toggleBtn) {
+        toggleBtn.innerHTML = window.deskToolsCollapsed ? '🛠️ 展開工具 ▼' : '🔼 收起工具';
+        toggleBtn.className = window.deskToolsCollapsed ? 'px-3.5 py-1.5 rounded-full bg-emerald-300 text-cheki-dark text-xs font-black neo-btn shrink-0' : 'px-3 py-1.5 rounded-full bg-amber-200 text-cheki-dark text-xs font-black neo-btn shrink-0';
+      }
+      canvas.style.height = window.deskToolsCollapsed ? '76vh' : '';
+      if (!window.deskToolsCollapsed && !canvas.classList.contains('h-[64vh]')) canvas.classList.add('h-[64vh]');
+      if (typeof applyDeskBgVisuals === 'function') applyDeskBgVisuals();
+    };
+    setTimeout(() => {
+      const deskSec = document.getElementById('tab-desk'), firstToolbar = deskSec?.firstElementChild;
+      if (firstToolbar && !document.getElementById('inlineCollapseToolbarBtn')) {
+        const btn = document.createElement('button'); btn.type = 'button'; btn.id = 'inlineCollapseToolbarBtn';
+        btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); window.toggleDeskToolbarMode(); };
+        firstToolbar.insertBefore(btn, firstToolbar.firstElementChild);
+      }
+      window.applyDeskToolbarCollapseUI();
+    }, 300);
+
+    // 👆 大圖滑動切換與連續入相、AI修復、子分頁統計
+    function getInspectNavigationList() {
+      if (currentTab === 'binder' && typeof getFilteredCards === 'function') { const f = getFilteredCards(); if (f.length > 0) return f; }
+      return cards;
+    }
+    window.navigateInspectCard = function(direction) {
+      if (!inspectingCardId) return;
+      const list = getInspectNavigationList();
+      if (!list || list.length <= 1) return;
+      const curIdx = list.findIndex(c => c.id === inspectingCardId);
+      const nextCard = list[curIdx === -1 ? 0 : (curIdx + direction + list.length) % list.length];
+      if (!nextCard) return;
+      const flipInner = document.getElementById('inspectFlipInner'), wasFlipped = flipInner?.classList.contains('rotate-y-180');
+      if (flipInner) flipInner.style.opacity = '0.35';
+      openInspectModal(nextCard.id);
+      if (flipInner) {
+        flipInner.classList.toggle('rotate-y-180', wasFlipped);
+        requestAnimationFrame(() => { flipInner.style.opacity = '1'; });
+      }
+    };
+    window.openSelectedDeskCardInspect = function() { openInspectModal(selectedDeskCardId || cards[0]?.id); };
+
+    setTimeout(() => {
+      const flipBtn = document.querySelector('button[onclick="flipSelectedDeskCard()"]');
+      if (flipBtn && flipBtn.parentElement && !document.getElementById('deskQuickInspectBtn')) {
+        const wrap = document.createElement('div'); wrap.className = 'flex items-center gap-1 shrink-0';
+        flipBtn.parentElement.insertBefore(wrap, flipBtn);
+        const zoomBtn = document.createElement('button'); zoomBtn.type = 'button'; zoomBtn.id = 'deskQuickInspectBtn';
+        zoomBtn.onclick = window.openSelectedDeskCardInspect;
+        zoomBtn.className = 'px-2.5 py-1 rounded-full bg-amber-200 neo-btn text-xs font-black flex items-center gap-0.5 shrink-0';
+        zoomBtn.innerHTML = '🔍 放大'; wrap.appendChild(zoomBtn); wrap.appendChild(flipBtn);
+      }
+      const inspectModal = document.getElementById('inspectModal'), flipInner = document.getElementById('inspectFlipInner');
+      if (inspectModal && flipInner && !document.getElementById('inspectPrevBtn')) {
+        const middle = flipInner.parentElement?.parentElement;
+        if (middle) {
+          middle.classList.add('relative');
+          ['◀', '▶'].forEach((arrow, idx) => {
+            const b = document.createElement('button'); b.type = 'button'; b.id = idx === 0 ? 'inspectPrevBtn' : 'inspectNextBtn';
+            b.onclick = (e) => { e.stopPropagation(); window.navigateInspectCard(idx === 0 ? -1 : 1); };
+            b.className = `absolute ${idx === 0 ? 'left-0 rounded-r-2xl' : 'right-0 rounded-l-2xl'} top-1/2 -translate-y-1/2 z-30 w-9 h-12 bg-white/20 text-white font-black text-sm flex items-center justify-center`;
+            b.innerHTML = arrow; middle.appendChild(b);
+          });
+        }
+      }
+    }, 300);
+
+    // ⚡ 連續入相與一鍵超清修復與子分頁統計
+    window.saveAndAddAnotherCard = async function() {
+      if (!currentUploadDataUrl) return alert('請先拍攝或選擇一張拍立得相片！');
+      const keptMember = document.getElementById('cardMemberInput')?.value.trim() || '遠藤まりん';
+      const keptDate = document.getElementById('cardDateInput')?.value || '';
+      const keptLocation = document.getElementById('cardLocationInput')?.value.trim() || '';
+      const keptLat = editingLat, keptLng = editingLng, keptAlbums = new Set(editingSelectedAlbums), keptTags = new Set(editingChekiTags), keptBackColor = selectedBackColor;
+      await window.saveCard();
+      editingCardId = null; uncroppedOriginalDataUrl = ''; rawUploadDataUrl = ''; currentUploadDataUrl = '';
+      editingSelectedAlbums = keptAlbums; editingChekiTags = keptTags;
+      if (document.getElementById('cardMemberInput')) document.getElementById('cardMemberInput').value = keptMember;
+      if (document.getElementById('cardDateInput')) document.getElementById('cardDateInput').value = keptDate;
+      if (document.getElementById('cardLocationInput')) document.getElementById('cardLocationInput').value = keptLocation;
+      if (document.getElementById('cardNoteInput')) document.getElementById('cardNoteInput').value = '';
+      if (typeof keptLat === 'number' && typeof keptLng === 'number') setEditLocationPin(keptLat, keptLng, false);
+      else clearEditLocationPin();
+      initFilterHistory({ sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
+      document.getElementById('previewContainer')?.classList.add('hidden');
+      renderEditAlbumPills(); populateMemberSuggestions(); renderQuickVenuePills(); renderEditChekiTagPills(); selectBackColor(keptBackColor);
+      document.getElementById('editCardModal')?.classList.remove('hidden');
+    };
+
+    setTimeout(() => {
+      const saveBtn = document.querySelector('#editCardModal button[onclick="saveCard()"]');
+      if (saveBtn && !document.getElementById('saveAndNextCardBtn')) {
+        saveBtn.id = 'mainSaveCardBtn'; saveBtn.className = 'flex-1 py-3 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-box'; saveBtn.textContent = '💾 儲存並關閉';
+        const row = document.createElement('div'); row.className = 'flex gap-2 mt-2';
+        saveBtn.parentElement.insertBefore(row, saveBtn); row.appendChild(saveBtn);
+        const nextBtn = document.createElement('button'); nextBtn.type = 'button'; nextBtn.id = 'saveAndNextCardBtn';
+        nextBtn.onclick = window.saveAndAddAnotherCard;
+        nextBtn.className = 'flex-1 py-3 rounded-2xl bg-emerald-300 text-cheki-dark font-black text-xs neo-box flex items-center justify-center gap-1';
+        nextBtn.innerHTML = '⚡ 儲存並下一張'; row.appendChild(nextBtn);
+      }
+    }, 300);
+
+    // 子分頁統計
+    let currentStatsSubTab = 'idol';
+    window.switchStatsSubTab = function(tab) { currentStatsSubTab = tab; window.renderEnhancedMultiStats(); };
+    window.renderEnhancedMultiStats = function() {
+      const statsSec = document.getElementById('tab-stats');
+      if (!statsSec) return;
+      document.getElementById('achievementsGrid')?.parentElement?.style && (document.getElementById('achievementsGrid').parentElement.style.display = 'none');
+      const topSummary = statsSec.firstElementChild, oshiCard = document.getElementById('topOshiHighlightCard'), mapBox = document.getElementById('statsFootprintMap')?.closest('.neo-box'), idolBoard = document.getElementById('idolStatsLeaderboard')?.closest('.neo-box'), monthlyBox = document.getElementById('monthlyStatsList')?.closest('.neo-box');
+      
+      let subNav = document.getElementById('statsSubTabNav');
+      if (!subNav && topSummary) {
+        subNav = document.createElement('div'); subNav.id = 'statsSubTabNav';
+        subNav.className = 'grid grid-cols-3 gap-1.5 bg-pink-100/90 p-1.5 rounded-2xl neo-box mb-3';
+        topSummary.insertAdjacentElement('afterend', subNav);
+      }
+      if (subNav) {
+        subNav.innerHTML = [ { id: 'idol', label: '👑 偶像排行' }, { id: 'tags', label: '🏷️ 類型標籤' }, { id: 'activity', label: '🔥 參戰足跡' } ].map(t => `
+          <button type="button" onclick="switchStatsSubTab('${t.id}')" class="py-2 rounded-xl text-xs font-black transition ${currentStatsSubTab === t.id ? 'bg-cheki-accent text-white neo-btn' : 'bg-white text-zinc-600 border border-cheki-dark/20'}">${t.label}</button>
+        `).join('');
+      }
+
+      let container = document.getElementById('enhancedCustomStatsContainer');
+      if (!container && subNav) {
+        container = document.createElement('div'); container.id = 'enhancedCustomStatsContainer'; container.className = 'space-y-4 pt-1';
+        subNav.insertAdjacentElement('afterend', container);
+      }
+
+      const showIdol = currentStatsSubTab === 'idol', showTags = currentStatsSubTab === 'tags', showActivity = currentStatsSubTab === 'activity';
+      if (oshiCard) oshiCard.classList.toggle('hidden', !showIdol || cards.length === 0);
+      if (idolBoard) idolBoard.classList.toggle('hidden', !showIdol);
+      if (monthlyBox) monthlyBox.classList.toggle('hidden', !showActivity);
+      if (mapBox) mapBox.classList.toggle('hidden', !showActivity);
+      if (!container) return;
+
+      if (showIdol) { container.innerHTML = ''; return; }
+
+      if (showTags) {
+        let signed = 0, unsigned = 0, twoShot = 0, solo = 0, land = 0, port = 0;
+        const custom = {};
+        cards.forEach(c => {
+          const t = c.chekiTags || [];
+          if (t.includes('signed')) signed++; if (t.includes('unsigned')) unsigned++;
+          if (t.includes('2shot')) twoShot++; if (t.includes('solo')) solo++;
+          if (c.isLandscape) land++; else port++;
+          t.forEach(id => { if (!['signed', 'unsigned', '2shot', 'solo'].includes(id)) custom[id] = (custom[id] || 0) + 1; });
+        });
+        const signTot = Math.max(1, signed + unsigned), signPct = Math.round((signed / signTot) * 100);
+        const shotTot = Math.max(1, twoShot + solo), twoPct = Math.round((twoShot / shotTot) * 100);
+        const portPct = Math.round((port / cards.length) * 100);
+        const tagOpts = getAllChekiTagOptions();
+        const customList = Object.entries(custom).map(([id, cnt]) => ({ id, label: tagOpts.find(o => o.id === id)?.label || id, count: cnt })).filter(i => !i.label.startsWith('custom_'));
+
+        container.innerHTML = `
+          <div class="neo-box bg-white rounded-2xl p-3.5 space-y-3.5">
+            <div class="flex justify-between items-center border-b-2 border-zinc-100 pb-2"><h3 class="font-black text-base">🏷️ 拍立得類型比例</h3><button type="button" onclick="openBatchTagOldChekisModal()" class="px-2.5 py-1 rounded-xl bg-pink-100 neo-btn text-[11px] font-black text-cheki-accent">⚡ 批次補標籤</button></div>
+            <div class="space-y-1"><div class="flex justify-between text-xs font-black"><span onclick="filterBinderByChekiTag('signed')" class="cursor-pointer text-blue-600">✍️ 有簽名：${signed} 張</span><span onclick="filterBinderByChekiTag('unsigned')" class="cursor-pointer text-zinc-500">📷 無簽名：${unsigned} 張</span></div><div class="w-full h-3 rounded-full bg-zinc-100 border border-cheki-dark overflow-hidden flex"><div class="h-full bg-blue-500" style="width: ${signPct}%"></div><div class="h-full bg-zinc-300" style="width: ${100 - signPct}%"></div></div></div>
+            <div class="space-y-1"><div class="flex justify-between text-xs font-black"><span onclick="filterBinderByChekiTag('2shot')" class="cursor-pointer text-cheki-accent">👫 雙人 2S：${twoShot} 張</span><span onclick="filterBinderByChekiTag('solo')" class="cursor-pointer text-amber-600">👤 單人 Solo：${solo} 張</span></div><div class="w-full h-3 rounded-full bg-zinc-100 border border-cheki-dark overflow-hidden flex"><div class="h-full bg-cheki-accent" style="width: ${twoPct}%"></div><div class="h-full bg-amber-400" style="width: ${100 - twoPct}%"></div></div></div>
+            <div class="space-y-1"><div class="flex justify-between text-xs font-black"><span class="text-emerald-700">📏 標準直向：${port} 張</span><span class="text-indigo-600">📐 橫向構圖：${land} 張</span></div><div class="w-full h-2.5 rounded-full bg-zinc-100 border border-cheki-dark overflow-hidden flex"><div class="h-full bg-emerald-400" style="width: ${portPct}%"></div><div class="h-full bg-indigo-400" style="width: ${100 - portPct}%"></div></div></div>
+            ${customList.length > 0 ? `<div class="pt-2 border-t border-zinc-100 space-y-2"><p class="text-xs font-black text-zinc-700">✨ 自訂標籤：</p><div class="grid grid-cols-2 gap-2">${customList.map(t => `<div onclick="filterBinderByChekiTag('${t.id}')" class="cursor-pointer p-2 rounded-xl bg-blue-50/70 border border-blue-200 flex justify-between"><span class="text-xs font-black truncate">${t.label}</span><span class="px-2 py-0.5 rounded-full bg-blue-500 text-white text-[10px]">${t.count}張</span></div>`).join('')}</div></div>` : ''}
+          </div>
+        `;
+        return;
+      }
+
+      if (showActivity) {
+        const dateMap = {}, week = [0,0,0,0,0,0,0], yrMap = {};
+        cards.forEach(c => {
+          const d = (c.date || '').trim();
+          if (d) {
+            dateMap[d] = (dateMap[d] || 0) + 1;
+            yrMap[d.slice(0, 4)] = (yrMap[d.slice(0, 4)] || 0) + 1;
+            const dt = new Date(d + 'T12:00:00'); if (!isNaN(dt.getTime())) week[dt.getDay()]++;
+          }
+        });
+        const days = Object.keys(dateMap).length, maxW = Math.max(...week, 1);
+        let maxD = '-', maxC = 0; Object.entries(dateMap).forEach(([dt, cnt]) => { if (cnt > maxC) { maxC = cnt; maxD = dt; } });
+
+        container.innerHTML = `
+          <div class="neo-box bg-white rounded-2xl p-3.5 space-y-3">
+            <h3 class="font-black text-base border-b-2 border-zinc-100 pb-2">🔥 參戰活躍度與單日紀錄</h3>
+            <div class="grid grid-cols-3 gap-2 text-center">
+              <div class="rounded-2xl bg-pink-50 border-2 border-cheki-dark p-2"><p class="text-[10px] font-bold">累積參戰日</p><p class="font-black text-lg text-cheki-accent">${days}日</p></div>
+              <div class="rounded-2xl bg-blue-50 border-2 border-cheki-dark p-2"><p class="text-[10px] font-bold">場均收穫</p><p class="font-black text-lg text-blue-600">${days ? (cards.length / days).toFixed(1) : 0}張/日</p></div>
+              <div class="rounded-2xl bg-amber-100 border-2 border-cheki-dark p-2"><p class="text-[10px] font-bold">單日最高</p><p class="font-black text-lg text-amber-700">${maxC}張</p></div>
+            </div>
+            ${maxC ? `<div class="px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 text-xs font-black">🏆 最高產參戰日：${maxD} (共 ${maxC} 張)</div>` : ''}
+            <div class="space-y-1.5 pt-1"><p class="text-xs font-black">📊 星期幾拍攝分佈：</p><div class="grid grid-cols-7 gap-1.5 items-end h-24 pt-3 px-1 bg-zinc-50 rounded-xl border border-zinc-200">${week.map((cnt, i) => `<div class="flex flex-col items-center justify-end h-full"><span class="text-[9px] font-black">${cnt}</span><div class="w-full max-w-[20px] rounded-t-md ${cnt ? 'bg-cheki-accent' : 'bg-zinc-200'}" style="height: ${Math.max(14, Math.round((cnt / maxW) * 52))}px"></div><span class="text-[10px] font-black mt-1">${['日','一','二','三','四','五','六'][i]}</span></div>`).join('')}</div></div>
+          </div>
+        `;
+        setTimeout(() => { if (typeof renderStatsFootprintMap === 'function') renderStatsFootprintMap(); }, 80);
+      }
+    };
+
+    if (typeof window.renderStats === 'function' && !window.renderStats._wrappedSubTabSafe) {
+      const origRS = window.renderStats;
+      window.renderStats = function() { try { origRS.apply(this, arguments); } catch (_) {} try { window.renderEnhancedMultiStats(); } catch (_) {} };
+      window.renderStats._wrappedSubTabSafe = true;
+    }
+    setTimeout(() => { try { window.renderEnhancedMultiStats(); } catch (_) {} }, 150);
+  </script>
+</body>
+</html>
