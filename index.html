@@ -6543,7 +6543,6 @@ let editingCheerEventId = null;
 
       const colBox = document.getElementById('posterColPills');
       if (colBox) {
-        ['auto', 2, 3, 4, 5, 6].forEach( '';
         colBox.innerHTML = ['auto', 2, 3, 4, 5, 6].map(c => `
           <button type="button" onclick="setPosterCols('${c}')" class="px-2 py-0.5 rounded-lg border border-cheki-dark text-[10px] font-black ${String(posterCols) === String(c) ? 'bg-blue-500 text-white' : 'bg-zinc-100 text-zinc-700'}">
             ${c === 'auto' ? '自動' : c + '欄'}
