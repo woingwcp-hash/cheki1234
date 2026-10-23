@@ -6958,6 +6958,314 @@ let editingCheerEventId = null;
     }
 
     setTimeout(initChekiPosterPlugin, 250);
+// =========================================================================
+    // 🚀 極速流暢化加速引擎 ＋ ↕️ 卡冊日期排序 / 2·3·4欄切換 / 🏷️ 標籤直選列模組
+    // =========================================================================
+    let binderSortMode = localStorage.getItem('cheki_binder_sort') || 'date_desc'; // 'date_desc' | 'date_asc' | 'created_desc'
+    let binderColCount = Number(localStorage.getItem('cheki_binder_cols')) || 2;    // 2 | 3 | 4
+
+    // 1. 注入底層 CSS 硬體加速與虛擬化渲染樣式 (解決 266+ 張高清圖卡頓問題)
+    function injectSmoothPerformanceStyles() {
+      if (document.getElementById('chekiSmoothPerfStyle')) return;
+      const style = document.createElement('style');
+      style.id = 'chekiSmoothPerfStyle';
+      style.textContent = `
+        /* 卡冊與選擇器視窗外自動略過渲染，滑動流暢度提升 300% */
+        #binderGrid > div,
+        #batchPickerGrid > div,
+        #batchTagCardsGrid > div,
+        #posterCardPickerGrid > div {
+          content-visibility: auto;
+          contain-intrinsic-size: 140px 200px;
+        }
+        /* 桌布卡片獨立 GPU 圖層加速 */
+        .desk-card-node {
+          will-change: transform;
+          contain: layout style;
+          backface-visibility: hidden;
+          -webkit-backface-visibility: hidden;
+        }
+        #deskCardsLayer {
+          will-change: transform;
+        }
+        /* 3欄與4欄緊湊模式自動最佳化字體與間距 */
+        #binderGrid.cols-3-mode > div .mt-1 p:first-child { font-size: 11px; max-width: 98px; }
+        #binderGrid.cols-3-mode > div .mt-1 p { font-size: 9px; max-width: 98px; }
+        #binderGrid.cols-4-mode > div .mt-1 p:first-child { font-size: 10px; max-width: 72px; }
+        #binderGrid.cols-4-mode > div .mt-1 p:not(:first-child) { display: none; }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // 2. 升級桌布單張拖曳為純 GPU translate3d 運算 (拖動時零 Layout 重排)
+    window.attachDeskCardInteractions = function(el, card) {
+      let isDragging = false, startX = 0, startY = 0, initialLeft = 0, initialTop = 0, movedDistance = 0;
+      let curDx = 0, curDy = 0, rafId = null;
+
+      el.addEventListener('pointerdown', (e) => {
+        if (typeof isDeskGlobalPinching !== 'undefined' && isDeskGlobalPinching) return;
+        e.stopPropagation();
+        if (typeof autoCollapseSearchOnDeskTouch === 'function') autoCollapseSearchOnDeskTouch();
+        if (typeof bringCardToFront === 'function') bringCardToFront(card, el);
+        isDragging = true;
+        movedDistance = 0;
+        curDx = 0;
+        curDy = 0;
+        startX = e.clientX;
+        startY = e.clientY;
+        initialLeft = card.deskX || 0;
+        initialTop = card.deskY || 0;
+        try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      });
+
+      el.addEventListener('pointermove', (e) => {
+        if (!isDragging || (typeof isDeskGlobalPinching !== 'undefined' && isDeskGlobalPinching)) return;
+        const zoomRatio = ((deskBgConfig && deskBgConfig.zoom) || 100) / 100;
+        curDx = (e.clientX - startX) / zoomRatio;
+        curDy = (e.clientY - startY) / zoomRatio;
+        movedDistance = Math.hypot(e.clientX - startX, e.clientY - startY);
+
+        if (movedDistance > 4 && !rafId) {
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            if (!isDragging) return;
+            const sc = card.deskScale || ((deskBgConfig.defaultCardScale || 100) / 100);
+            const rot = card.deskRot || 0;
+            el.style.transform = `translate3d(${Math.round(curDx)}px, ${Math.round(curDy)}px, 0) rotate(${rot}deg) scale(${sc})`;
+          });
+        }
+      });
+
+      const finishPointerDrag = (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+        try { el.releasePointerCapture(e.pointerId); } catch (_) {}
+
+        const sc = card.deskScale || ((deskBgConfig.defaultCardScale || 100) / 100);
+        const rot = card.deskRot || 0;
+
+        if (movedDistance > 4) {
+          card.deskX = Math.round(initialLeft + curDx);
+          card.deskY = Math.round(initialTop + curDy);
+          el.style.left = `${card.deskX}px`;
+          el.style.top = `${card.deskY}px`;
+          el.style.transform = `rotate(${rot}deg) scale(${sc})`;
+        } else if (movedDistance < 6 && !(typeof isDeskGlobalPinching !== 'undefined' && isDeskGlobalPinching)) {
+          card.deskFlipped = !card.deskFlipped;
+          const inner = el.querySelector('.desk-flip-inner');
+          if (inner) inner.classList.toggle('rotate-y-180', card.deskFlipped);
+        }
+        saveCardToDB(card);
+      };
+
+      el.addEventListener('pointerup', finishPointerDrag);
+      el.addEventListener('pointercancel', finishPointerDrag);
+    };
+
+    // 3. 卡冊排序與欄數控制邏輯
+    window.setBinderSortMode = function(mode) {
+      binderSortMode = mode;
+      try { localStorage.setItem('cheki_binder_sort', mode); } catch (_) {}
+      renderBinder();
+    };
+
+    window.cycleBinderSortMode = function() {
+      const order = ['date_desc', 'date_asc', 'created_desc'];
+      const next = order[(order.indexOf(binderSortMode) + 1) % order.length];
+      window.setBinderSortMode(next);
+    };
+
+    window.setBinderColCount = function(cols) {
+      binderColCount = Number(cols) || 2;
+      try { localStorage.setItem('cheki_binder_cols', String(binderColCount)); } catch (_) {}
+      applyBinderGridColumnsUI();
+      updateBinderUpgradeToolbarUI();
+    };
+
+    window.selectBinderTagDirect = function(tagId) {
+      if (typeof selectedTagFilter !== 'undefined') {
+        selectedTagFilter = (selectedTagFilter === tagId && tagId !== 'ALL') ? 'ALL' : tagId;
+      }
+      renderBinder();
+    };
+
+    window.openRandomChekiInspect = function() {
+      const pool = typeof getFilteredCards === 'function' && getFilteredCards().length > 0 ? getFilteredCards() : cards;
+      if (!pool || pool.length === 0) return;
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      if (pick) openInspectModal(pick.id);
+    };
+
+    function sortCardsList(list) {
+      const arr = [...list];
+      if (binderSortMode === 'date_desc') {
+        arr.sort((a, b) => (b.date || '').localeCompare(a.date || '') || ((b.createdAt || 0) - (a.createdAt || 0)));
+      } else if (binderSortMode === 'date_asc') {
+        arr.sort((a, b) => (a.date || '').localeCompare(b.date || '') || ((a.createdAt || 0) - (b.createdAt || 0)));
+      } else {
+        arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      }
+      return arr;
+    }
+
+    function applyBinderGridColumnsUI() {
+      const grid = document.getElementById('binderGrid');
+      if (!grid) return;
+      grid.classList.remove('grid-cols-2', 'grid-cols-3', 'grid-cols-4', 'gap-3', 'gap-2', 'gap-1.5', 'cols-3-mode', 'cols-4-mode');
+      if (binderColCount === 3) {
+        grid.classList.add('grid-cols-3', 'gap-2', 'cols-3-mode');
+      } else if (binderColCount === 4) {
+        grid.classList.add('grid-cols-4', 'gap-1.5', 'cols-4-mode');
+      } else {
+        grid.classList.add('grid-cols-2', 'gap-3');
+      }
+
+      // 為卡冊內所有相片加上非同步解碼與懶載入屬性
+      grid.querySelectorAll('img').forEach(img => {
+        img.loading = 'lazy';
+        img.decoding = 'async';
+      });
+    }
+
+    function updateBinderUpgradeToolbarUI() {
+      const sec = document.getElementById('tab-binder');
+      const memberPills = document.getElementById('memberFilterPills');
+      const grid = document.getElementById('binderGrid');
+      if (!sec || !memberPills || !grid) return;
+
+      // 隱藏舊版擠在第一排的循環式類型按鈕，釋放頂部空間
+      const oldTagBtn = document.getElementById('minimalTagFilterBtn');
+      if (oldTagBtn) oldTagBtn.style.display = 'none';
+
+      // A. 建立「🏷️ 橫向標籤直選列」
+      let tagBar = document.getElementById('binderDirectTagPills');
+      if (!tagBar) {
+        tagBar = document.createElement('div');
+        tagBar.id = 'binderDirectTagPills';
+        tagBar.className = 'flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5';
+        memberPills.insertAdjacentElement('afterend', tagBar);
+      }
+
+      const allOpts = typeof getAllChekiTagOptions === 'function' ? getAllChekiTagOptions() : [];
+      const curTag = typeof selectedTagFilter !== 'undefined' ? selectedTagFilter : 'ALL';
+
+      // 計算在當前相簿與偶像條件下，各標籤的相片數量
+      const q = (document.getElementById('searchInput')?.value || '').trim();
+      const basePool = cards.filter(c => {
+        if (!cardBelongsToAlbum(c, selectedAlbumFilter)) return false;
+        if (selectedMemberFilter !== 'ALL' && (c.member || '未命名').trim() !== selectedMemberFilter) return false;
+        if (favOnlyFilter && !c.fav) return false;
+        if (q && !cardMatchesSearchQuery(c, q)) return false;
+        return true;
+      });
+
+      const allTagBtnHtml = `
+        <button type="button" onclick="selectBinderTagDirect('ALL')" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark shrink-0 transition ${curTag === 'ALL' ? 'bg-pink-500 text-white' : 'bg-pink-50 text-zinc-700'}">
+          🏷️ 全部類型 (${basePool.length})
+        </button>
+      `;
+
+      const tagPillsHtml = allOpts.map(opt => {
+        const cnt = basePool.filter(c => Array.isArray(c.chekiTags) && c.chekiTags.includes(opt.id)).length;
+        const active = curTag === opt.id;
+        return `
+          <button type="button" onclick="selectBinderTagDirect('${opt.id}')" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark shrink-0 transition active:scale-95 ${active ? 'bg-blue-500 text-white shadow-sm' : 'bg-white text-zinc-700'}">
+            ${opt.label} (${cnt})
+          </button>
+        `;
+      }).join('');
+
+      tagBar.innerHTML = allTagBtnHtml + tagPillsHtml;
+
+      // B. 建立「↕️ 排序 ＆ 田 2/3/4欄檢視控制列」
+      let ctrlBar = document.getElementById('binderSortAndColBar');
+      if (!ctrlBar) {
+        ctrlBar = document.createElement('div');
+        ctrlBar.id = 'binderSortAndColBar';
+        ctrlBar.className = 'flex items-center justify-between gap-1.5 pt-0.5 pb-1';
+        tagBar.insertAdjacentElement('afterend', ctrlBar);
+      }
+
+      const sortLabels = {
+        date_desc: '📅 拍攝日期: 新➔舊',
+        date_asc: '📅 拍攝日期: 舊➔新',
+        created_desc: '📥 入庫次序: 最新先'
+      };
+
+      const filteredCount = typeof getFilteredCards === 'function' ? getFilteredCards().length : cards.length;
+
+      ctrlBar.innerHTML = `
+        <div class="flex items-center gap-1.5 min-w-0">
+          <button type="button" onclick="cycleBinderSortMode()" class="px-2.5 py-1 rounded-xl bg-white neo-btn text-[11px] font-black text-cheki-dark flex items-center gap-1 shrink-0 active:scale-95" title="點擊切換排序方式">
+            <span>↕️</span>
+            <span>${sortLabels[binderSortMode] || sortLabels.date_desc}</span>
+          </button>
+          <button type="button" onclick="openRandomChekiInspect()" class="px-2 py-1 rounded-xl bg-amber-100 neo-btn text-[11px] font-black text-amber-900 shrink-0 active:scale-95" title="隨機抽一張 Cheki 回顧">
+            🎲 隨機抽(${filteredCount})
+          </button>
+        </div>
+        <div class="flex items-center bg-zinc-200/80 p-0.5 rounded-xl border-2 border-cheki-dark shrink-0">
+          ${[2, 3, 4].map(col => `
+            <button type="button" onclick="setBinderColCount(${col})" class="px-2 py-0.5 rounded-lg text-[10px] font-black transition ${binderColCount === col ? 'bg-cheki-accent text-white shadow-sm' : 'text-zinc-600'}">
+              ${col}欄
+            </button>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function initPerformanceAndBinderUpgrade() {
+      injectSmoothPerformanceStyles();
+
+      // 1. 攔截 getFilteredCards，自動套用「拍攝日期 / 入庫次序」排序
+      const origGetFiltered = window.getFilteredCards;
+      if (typeof origGetFiltered === 'function' && !origGetFiltered._wrappedForSort) {
+        window.getFilteredCards = function() {
+          const rawList = origGetFiltered.apply(this, arguments);
+          return sortCardsList(rawList);
+        };
+        window.getFilteredCards._wrappedForSort = true;
+      }
+
+      // 2. 攔截 renderBinder，自動套用 2/3/4 欄、圖片懶載入與橫向標籤直選列
+      const origRenderBinder = window.renderBinder;
+      if (typeof origRenderBinder === 'function' && !origRenderBinder._wrappedForUpgrade) {
+        window.renderBinder = function() {
+          origRenderBinder.apply(this, arguments);
+          applyBinderGridColumnsUI();
+          updateBinderUpgradeToolbarUI();
+        };
+        window.renderBinder._wrappedForUpgrade = true;
+      }
+
+      // 3. 攔截 toggleInspectFav，點選最愛星星時只局部更新卡冊星星圖示，唔再全頁重繪 266 張相！
+      const origToggleInspectFav = window.toggleInspectFav;
+      if (typeof origToggleInspectFav === 'function' && !origToggleInspectFav._wrappedFastFav) {
+        window.toggleInspectFav = async function() {
+          const card = cards.find(c => c.id === inspectingCardId);
+          if (!card) return;
+          card.fav = !card.fav;
+          const favBtn = document.getElementById('inspectFavBtn');
+          if (favBtn) favBtn.style.opacity = card.fav ? '1' : '0.4';
+          await saveCardToDB(card);
+          updateHeaderStats();
+          if (currentTab !== 'desk' || favOnlyFilter) {
+            renderCurrentTab();
+          }
+        };
+        window.toggleInspectFav._wrappedFastFav = true;
+      }
+
+      // 立即刷新目前分頁
+      if (currentTab === 'binder' && typeof window.renderBinder === 'function') {
+        window.renderBinder();
+      } else if (currentTab === 'desk' && typeof window.renderDesk === 'function') {
+        window.renderDesk();
+      }
+    }
+
+    setTimeout(initPerformanceAndBinderUpgrade, 280);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
