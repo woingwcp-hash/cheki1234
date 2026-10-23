@@ -5861,7 +5861,7 @@ let editingCheerEventId = null;
 
     setTimeout(initContinuousAddPlugin, 250);
 // =========================================================================
-    // 🪄 AI 級拍立得「一鍵超清修復 (真正更新底圖版)」& 雙拍防重影升級模組
+    // 🪄 AI 級拍立得「一鍵超清修復 (2K 超解析度 + 暗部提亮 + 真正更新底圖版)」
     // =========================================================================
     let _preRemasterTrueOriginal = '';
 
@@ -5869,11 +5869,10 @@ let editingCheerEventId = null;
       if (!rawUploadDataUrl) return;
       const btn = document.getElementById('smartRemasterBtn');
       if (btn) {
-        btn.innerHTML = '⏳ 正在超清修復底圖中...';
+        btn.innerHTML = '⏳ 正在執行 2K 超解析度與五官清晰化...';
         btn.disabled = true;
       }
 
-      // 首次執行超清修復前，先備份最原始底圖，供「🔄 還原原圖」隨時退回
       if (!_preRemasterTrueOriginal) {
         _preRemasterTrueOriginal = rawUploadDataUrl;
       }
@@ -5881,12 +5880,12 @@ let editingCheerEventId = null;
       setTimeout(() => {
         const img = new Image();
         img.onload = () => {
-          // 1. 若原圖尺寸偏小，先以高品質插值放大至高清基底
+          // 1. 升級至 2200px 超高清基底
           let w = img.naturalWidth;
           let h = img.naturalHeight;
-          const minTargetSide = 1400;
-          if (Math.max(w, h) < minTargetSide) {
-            const scale = minTargetSide / Math.max(w, h);
+          const targetLongSide = 2200;
+          if (Math.max(w, h) < targetLongSide) {
+            const scale = targetLongSide / Math.max(w, h);
             w = Math.round(w * scale);
             h = Math.round(h * scale);
           }
@@ -5902,97 +5901,89 @@ let editingCheerEventId = null;
           const imgData = ctx.getImageData(0, 0, w, h);
           const d = imgData.data;
 
-          // 2. 分析中心相片區域（排除四周白邊）的亮度分佈，自動計算去霧與暗部保護曲線
-          const hist = new Uint32Array(256);
+          // 2. 分析相片中心區域平均亮度，自動決定「暗部提亮 (Shadow Lift)」強度
           const startX = Math.floor(w * 0.12), endX = Math.floor(w * 0.88);
           const startY = Math.floor(h * 0.10), endY = Math.floor(h * 0.78);
-          let sampleCount = 0;
-
-          for (let y = startY; y < endY; y += 2) {
-            for (let x = startX; x < endX; x += 2) {
+          let sumLum = 0, sampleCount = 0;
+          for (let y = startY; y < endY; y += 3) {
+            for (let x = startX; x < endX; x += 3) {
               const i = (y * w + x) * 4;
-              const lum = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
-              hist[lum]++;
+              sumLum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
               sampleCount++;
             }
           }
+          const avgCenterLum = sampleCount > 0 ? (sumLum / sampleCount) : 128;
+          const shadowGamma = avgCenterLum < 115 ? 0.82 : 0.90;
 
-          let lowCut = 6, highCut = 248;
-          let acc = 0;
-          for (let i = 0; i < 256; i++) {
-            acc += hist[i];
-            if (acc >= sampleCount * 0.015) { lowCut = Math.min(24, i); break; }
-          }
-          acc = 0;
-          for (let i = 255; i >= 0; i--) {
-            acc += hist[i];
-            if (acc >= sampleCount * 0.01) { highCut = Math.max(220, i); break; }
-          }
-
-          const range = Math.max(130, highCut - lowCut);
           const lut = new Uint8Array(256);
           for (let i = 0; i < 256; i++) {
-            let norm = (i - lowCut * 0.55) / (range + lowCut * 0.45);
-            norm = Math.max(0, Math.min(1, norm));
-            const sCurve = norm < 0.5
-              ? 0.5 * Math.pow(2 * norm, 1.04)
-              : 1 - 0.5 * Math.pow(2 * (1 - norm), 1.06);
-            lut[i] = Math.max(0, Math.min(255, Math.round(sCurve * 255)));
+            let norm = i / 255;
+            let lifted = Math.pow(norm, shadowGamma);
+            let finalNorm = lifted < 0.5
+              ? 0.5 * Math.pow(2 * lifted, 1.03)
+              : 1 - 0.5 * Math.pow(2 * (1 - lifted), 1.04);
+            lut[i] = Math.max(0, Math.min(255, Math.round(finalNorm * 255)));
           }
 
           for (let i = 0; i < d.length; i += 4) {
-            // 白邊像素保護（避免拍立得白框變色）
-            if (d[i] > 242 && d[i + 1] > 242 && d[i + 2] > 242) continue;
+            if (d[i] > 240 && d[i + 1] > 240 && d[i + 2] > 240) continue;
 
             let r = lut[d[i]];
             let g = lut[d[i + 1]];
             let b = lut[d[i + 2]];
 
-            const avg = 0.299 * r + 0.587 * g + 0.114 * b;
-            r = Math.max(0, Math.min(255, Math.round(avg + (r - avg) * 1.06)));
-            g = Math.max(0, Math.min(255, Math.round(avg + (g - avg) * 1.06)));
-            b = Math.max(0, Math.min(255, Math.round(avg + (b - avg) * 1.06)));
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            r = Math.max(0, Math.min(255, Math.round(lum + (r - lum) * 1.06)));
+            g = Math.max(0, Math.min(255, Math.round(lum + (g - lum) * 1.06)));
+            b = Math.max(0, Math.min(255, Math.round(lum + (b - lum) * 1.06)));
 
             d[i] = r;
             d[i + 1] = g;
             d[i + 2] = b;
           }
-          ctx.putImageData(imgData, 0, 0);
 
-          // 3. 執行細膩五官與筆跡銳化 (Fine Unsharp Mask)
-          const srcCopy = new Uint8ClampedArray(imgData.data);
-          const dst = imgData.data;
-          const amount = 0.46;
-          const threshold = 6;
+          // 3. 雙半徑混合超清銳化（同時強化「五官立體輪廓」與「眼神/髮絲極細微細節」）
+          const srcCopy = new Uint8ClampedArray(d);
+          const fineStrength = 1.35;
+          const midStrength = 0.45;
+          const noiseThreshold = 4;
 
-          for (let y = 1; y < h - 1; y++) {
-            for (let x = 1; x < w - 1; x++) {
+          for (let y = 2; y < h - 2; y++) {
+            for (let x = 2; x < w - 2; x++) {
               const idx = (y * w + x) * 4;
-              const up = ((y - 1) * w + x) * 4;
-              const dn = ((y + 1) * w + x) * 4;
-              const lf = (y * w + (x - 1)) * 4;
-              const rt = (y * w + (x + 1)) * 4;
+              const curLum = 0.299 * srcCopy[idx] + 0.587 * srcCopy[idx + 1] + 0.114 * srcCopy[idx + 2];
+              if (curLum > 242 || curLum < 12) continue;
+
+              const up1 = ((y - 1) * w + x) * 4, dn1 = ((y + 1) * w + x) * 4;
+              const lf1 = (y * w + (x - 1)) * 4, rt1 = (y * w + (x + 1)) * 4;
+              const up2 = ((y - 2) * w + x) * 4, dn2 = ((y + 2) * w + x) * 4;
+              const lf2 = (y * w + (x - 2)) * 4, rt2 = (y * w + (x + 2)) * 4;
 
               for (let c = 0; c < 3; c++) {
                 const center = srcCopy[idx + c];
-                const blur = (srcCopy[up + c] + srcCopy[dn + c] + srcCopy[lf + c] + srcCopy[rt + c]) * 0.25;
-                const diff = center - blur;
-                if (Math.abs(diff) >= threshold) {
-                  dst[idx + c] = Math.max(0, Math.min(255, Math.round(center + diff * amount * 2.1)));
-                }
+                const blurFine = (srcCopy[up1 + c] + srcCopy[dn1 + c] + srcCopy[lf1 + c] + srcCopy[rt1 + c]) * 0.25;
+                const blurMid  = (srcCopy[up2 + c] + srcCopy[dn2 + c] + srcCopy[lf2 + c] + srcCopy[rt2 + c]) * 0.25;
+
+                const diffFine = center - blurFine;
+                const diffMid  = center - blurMid;
+
+                let delta = 0;
+                if (Math.abs(diffFine) >= noiseThreshold) delta += diffFine * fineStrength;
+                if (Math.abs(diffMid) >= noiseThreshold)  delta += diffMid * midStrength;
+
+                d[idx + c] = Math.max(0, Math.min(255, Math.round(center + delta)));
               }
             }
           }
           ctx.putImageData(imgData, 0, 0);
 
-          const remasteredUrl = canvas.toDataURL('image/jpeg', 0.97);
+          const remasteredUrl = canvas.toDataURL('image/jpeg', 0.98);
 
-          // 關鍵修復：同步更新底圖 (rawUploadDataUrl) 與裁切底圖 (uncroppedOriginalDataUrl)！
+          // 同步更新底圖與裁切底圖
           rawUploadDataUrl = remasteredUrl;
           uncroppedOriginalDataUrl = remasteredUrl;
           currentUploadDataUrl = remasteredUrl;
 
-          // 如果下方滑桿已有設定數值，喺新超清底圖上繼續套用滑桿微調；否則直接顯示新底圖
           const cfg = typeof getCurrentFilterConfig === 'function' ? getCurrentFilterConfig() : { sharpen: 0, deglare: 0, brightness: 100, contrast: 100 };
           if (cfg.sharpen !== 0 || cfg.deglare !== 0 || cfg.brightness !== 100 || cfg.contrast !== 100) {
             applyImageFilterPreview();
@@ -6002,10 +5993,10 @@ let editingCheerEventId = null;
 
           const sizeTag = document.getElementById('detectedSizeTag');
           if (sizeTag) {
-            sizeTag.textContent = `🪄 已套用超清底圖 (${w}×${h}px)`;
+            sizeTag.textContent = `💎 已套用 2K 超清五官與暗部修復 (${w}×${h}px)`;
           }
           if (btn) {
-            btn.innerHTML = '✨ 已套用超清修復（點「🔄 還原原圖」可取消）';
+            btn.innerHTML = '✨ 已套用 2K 超清修復（點「🔄 還原原圖」可取消）';
             btn.disabled = false;
           }
         };
@@ -6013,7 +6004,7 @@ let editingCheerEventId = null;
       }, 40);
     }
 
-    // 修正「雙拍消反光」重影模糊問題：100% 鎖定第 1 張相五官，只局部修補強反光死白點
+    // 修正「雙拍消反光」重影模糊問題
     window.blendDualShotAntiGlare = function(c1, c2) {
       const w = c1.width, h = c1.height;
       const out = document.createElement('canvas');
@@ -6046,7 +6037,6 @@ let editingCheerEventId = null;
     };
 
     function initSmartRemasterPlugin() {
-      // 1. 在修圖面板頂部加入「🪄 一鍵 AI 級超清去霧修復」按鈕
       const filterPanel = document.getElementById('sharpenSlider')?.closest('.bg-zinc-800');
       if (filterPanel && !document.getElementById('smartRemasterBtn')) {
         const remasterBtn = document.createElement('button');
@@ -6066,7 +6056,6 @@ let editingCheerEventId = null;
         }
       };
 
-      // 2. 每次新開視窗或新揀相片時，清空上一張相的備份狀態
       ['openAddModal', 'openEditFromInspect', 'compressAndSetImage'].forEach(fnName => {
         const origFn = window[fnName];
         if (typeof origFn === 'function' && !origFn._wrappedClearRemasterBackup) {
@@ -6079,7 +6068,6 @@ let editingCheerEventId = null;
         }
       });
 
-      // 3. 當按下「🔄 還原原圖」時，真正還原回超清修復前的原始底圖！
       const origReset = window.resetAllFiltersToZero;
       if (typeof origReset === 'function' && !origReset._wrappedRemaster) {
         window.resetAllFiltersToZero = function() {
@@ -6095,7 +6083,6 @@ let editingCheerEventId = null;
         window.resetAllFiltersToZero._wrappedRemaster = true;
       }
 
-      // 4. 儲存時確保 uncroppedImage 與 baseImage 同步更新為最新底圖
       const origSave = window.saveCard;
       if (typeof origSave === 'function' && !origSave._wrappedRemasterSave) {
         window.saveCard = async function() {
@@ -6111,14 +6098,13 @@ let editingCheerEventId = null;
         window.saveCard._wrappedRemasterSave = true;
       }
 
-      // 5. 修正大圖預覽頂部「✕ 關閉」按鈕文字不換行
       const closeInspectBtn = document.querySelector('#inspectModal button[onclick="closeInspectModal()"]');
       if (closeInspectBtn) {
         closeInspectBtn.classList.add('shrink-0', 'whitespace-nowrap');
       }
     }
 
-    setTimeout(initSmartRemasterPlugin, 250); 
+    setTimeout(initSmartRemasterPlugin, 250);
   // =========================================================================
     // 📊 子分頁切換式統計系統（👑 偶像排行 ｜ 🏷️ 類型標籤 ｜ 🔥 參戰足跡）
     // =========================================================================
