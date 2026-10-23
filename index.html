@@ -6959,45 +6959,56 @@ let editingCheerEventId = null;
 
     setTimeout(initChekiPosterPlugin, 250);
 // =========================================================================
-    // 🚀 極速流暢化加速引擎 ＋ ↕️ 卡冊日期排序 / 2·3·4欄切換 / 🏷️ 標籤直選列模組
+    // 🚀 極速流暢化加速引擎（防破圖省記憶體版）＋ ↕️ 卡冊日期排序 / 2·3·4欄切換 / 🏷️ 標籤直選列
     // =========================================================================
     let binderSortMode = localStorage.getItem('cheki_binder_sort') || 'date_desc'; // 'date_desc' | 'date_asc' | 'created_desc'
     let binderColCount = Number(localStorage.getItem('cheki_binder_cols')) || 2;    // 2 | 3 | 4
 
-    // 1. 注入底層 CSS 硬體加速與虛擬化渲染樣式 (解決 266+ 張高清圖卡頓問題)
+    // 1. 注入安全版 CSS 樣式（移除會令 285 張相爆 GPU 記憶體的全局 will-change）
     function injectSmoothPerformanceStyles() {
-      if (document.getElementById('chekiSmoothPerfStyle')) return;
+      const oldStyle = document.getElementById('chekiSmoothPerfStyle');
+      if (oldStyle) oldStyle.remove();
+
       const style = document.createElement('style');
       style.id = 'chekiSmoothPerfStyle';
       style.textContent = `
-        /* 卡冊與選擇器視窗外自動略過渲染，滑動流暢度提升 300% */
-        #binderGrid > div,
-        #batchPickerGrid > div,
-        #batchTagCardsGrid > div,
-        #posterCardPickerGrid > div {
-          content-visibility: auto;
-          contain-intrinsic-size: 140px 200px;
-        }
-        /* 桌布卡片獨立 GPU 圖層加速 */
-        .desk-card-node {
-          will-change: transform;
-          contain: layout style;
-          backface-visibility: hidden;
-          -webkit-backface-visibility: hidden;
-        }
-        #deskCardsLayer {
-          will-change: transform;
-        }
         /* 3欄與4欄緊湊模式自動最佳化字體與間距 */
         #binderGrid.cols-3-mode > div .mt-1 p:first-child { font-size: 11px; max-width: 98px; }
         #binderGrid.cols-3-mode > div .mt-1 p { font-size: 9px; max-width: 98px; }
         #binderGrid.cols-4-mode > div .mt-1 p:first-child { font-size: 10px; max-width: 72px; }
         #binderGrid.cols-4-mode > div .mt-1 p:not(:first-child) { display: none; }
+
+        /* 桌布省記憶體模式：關閉 285 張相同時開啟 3D 雙面圖層，避免手機 Chrome 爆 VRAM 破圖 */
+        #deskCardsLayer .desk-card-node {
+          perspective: none !important;
+        }
+        #deskCardsLayer .desk-flip-inner {
+          transform-style: flat !important;
+          transition: none !important;
+        }
+        #deskCardsLayer .desk-flip-inner > div:first-child {
+          display: block;
+        }
+        #deskCardsLayer .desk-flip-inner > div:last-child {
+          display: none;
+          transform: none !important;
+        }
+        #deskCardsLayer .desk-flip-inner.rotate-y-180 {
+          transform: none !important;
+        }
+        #deskCardsLayer .desk-flip-inner.rotate-y-180 > div:first-child {
+          display: none;
+        }
+        #deskCardsLayer .desk-flip-inner.rotate-y-180 > div:last-child {
+          display: flex;
+          position: relative !important;
+          aspect-ratio: 54 / 86;
+        }
       `;
       document.head.appendChild(style);
     }
 
-    // 2. 升級桌布單張拖曳為純 GPU translate3d 運算 (拖動時零 Layout 重排)
+    // 2. 桌布單張拖曳：只在手指按住嗰 1 張相時動態開啟 GPU 加速，放手即釋放記憶體！
     window.attachDeskCardInteractions = function(el, card) {
       let isDragging = false, startX = 0, startY = 0, initialLeft = 0, initialTop = 0, movedDistance = 0;
       let curDx = 0, curDy = 0, rafId = null;
@@ -7015,6 +7026,7 @@ let editingCheerEventId = null;
         startY = e.clientY;
         initialLeft = card.deskX || 0;
         initialTop = card.deskY || 0;
+        el.style.willChange = 'transform';
         try { el.setPointerCapture(e.pointerId); } catch (_) {}
       });
 
@@ -7040,6 +7052,7 @@ let editingCheerEventId = null;
         if (!isDragging) return;
         isDragging = false;
         if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+        el.style.willChange = 'auto';
         try { el.releasePointerCapture(e.pointerId); } catch (_) {}
 
         const sc = card.deskScale || ((deskBgConfig.defaultCardScale || 100) / 100);
@@ -7120,8 +7133,6 @@ let editingCheerEventId = null;
       } else {
         grid.classList.add('grid-cols-2', 'gap-3');
       }
-
-      // 為卡冊內所有相片加上非同步解碼與懶載入屬性
       grid.querySelectorAll('img').forEach(img => {
         img.loading = 'lazy';
         img.decoding = 'async';
@@ -7134,11 +7145,9 @@ let editingCheerEventId = null;
       const grid = document.getElementById('binderGrid');
       if (!sec || !memberPills || !grid) return;
 
-      // 隱藏舊版擠在第一排的循環式類型按鈕，釋放頂部空間
       const oldTagBtn = document.getElementById('minimalTagFilterBtn');
       if (oldTagBtn) oldTagBtn.style.display = 'none';
 
-      // A. 建立「🏷️ 橫向標籤直選列」
       let tagBar = document.getElementById('binderDirectTagPills');
       if (!tagBar) {
         tagBar = document.createElement('div');
@@ -7150,7 +7159,6 @@ let editingCheerEventId = null;
       const allOpts = typeof getAllChekiTagOptions === 'function' ? getAllChekiTagOptions() : [];
       const curTag = typeof selectedTagFilter !== 'undefined' ? selectedTagFilter : 'ALL';
 
-      // 計算在當前相簿與偶像條件下，各標籤的相片數量
       const q = (document.getElementById('searchInput')?.value || '').trim();
       const basePool = cards.filter(c => {
         if (!cardBelongsToAlbum(c, selectedAlbumFilter)) return false;
@@ -7178,7 +7186,6 @@ let editingCheerEventId = null;
 
       tagBar.innerHTML = allTagBtnHtml + tagPillsHtml;
 
-      // B. 建立「↕️ 排序 ＆ 田 2/3/4欄檢視控制列」
       let ctrlBar = document.getElementById('binderSortAndColBar');
       if (!ctrlBar) {
         ctrlBar = document.createElement('div');
@@ -7218,7 +7225,6 @@ let editingCheerEventId = null;
     function initPerformanceAndBinderUpgrade() {
       injectSmoothPerformanceStyles();
 
-      // 1. 攔截 getFilteredCards，自動套用「拍攝日期 / 入庫次序」排序
       const origGetFiltered = window.getFilteredCards;
       if (typeof origGetFiltered === 'function' && !origGetFiltered._wrappedForSort) {
         window.getFilteredCards = function() {
@@ -7228,7 +7234,6 @@ let editingCheerEventId = null;
         window.getFilteredCards._wrappedForSort = true;
       }
 
-      // 2. 攔截 renderBinder，自動套用 2/3/4 欄、圖片懶載入與橫向標籤直選列
       const origRenderBinder = window.renderBinder;
       if (typeof origRenderBinder === 'function' && !origRenderBinder._wrappedForUpgrade) {
         window.renderBinder = function() {
@@ -7239,7 +7244,17 @@ let editingCheerEventId = null;
         window.renderBinder._wrappedForUpgrade = true;
       }
 
-      // 3. 攔截 toggleInspectFav，點選最愛星星時只局部更新卡冊星星圖示，唔再全頁重繪 266 張相！
+      const origRenderDesk = window.renderDesk;
+      if (typeof origRenderDesk === 'function' && !origRenderDesk._wrappedAsyncDecode) {
+        window.renderDesk = function() {
+          origRenderDesk.apply(this, arguments);
+          document.querySelectorAll('#deskCardsLayer img').forEach(img => {
+            img.decoding = 'async';
+          });
+        };
+        window.renderDesk._wrappedAsyncDecode = true;
+      }
+
       const origToggleInspectFav = window.toggleInspectFav;
       if (typeof origToggleInspectFav === 'function' && !origToggleInspectFav._wrappedFastFav) {
         window.toggleInspectFav = async function() {
@@ -7257,7 +7272,6 @@ let editingCheerEventId = null;
         window.toggleInspectFav._wrappedFastFav = true;
       }
 
-      // 立即刷新目前分頁
       if (currentTab === 'binder' && typeof window.renderBinder === 'function') {
         window.renderBinder();
       } else if (currentTab === 'desk' && typeof window.renderDesk === 'function') {
