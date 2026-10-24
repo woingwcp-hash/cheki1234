@@ -5861,28 +5861,191 @@ let editingCheerEventId = null;
 
     setTimeout(initContinuousAddPlugin, 250);
 // =========================================================================
-    // 🪄 AI 級拍立得「真・有感超清引擎 (雙模式切換 + 跨像素立體清晰度 + 防爆光亮度曲線)」
+    // 🪄 AI 級拍立得「真・有感超清引擎 ＋ ⬜ 拍立得白邊自動漂白系統」
     // =========================================================================
     let _preRemasterTrueOriginal = '';
-    let _remasterMode = 0; // 0: 原圖 | 1: ✨ 標準五官立體超清 | 2: 🔥 強效去白霧+救閃光燈過曝
+    let _remasterMode = 0; // 0: 原圖 | 1: ✨ 標準五官立體超清 | 2: 🔥 強效去白霧+救過曝
 
     function updateRemasterButtonUI() {
       const btn = document.getElementById('smartRemasterBtn');
       if (!btn) return;
       btn.disabled = false;
       if (_remasterMode === 1) {
-        btn.innerHTML = '✨ 已套用：標準超清（再按切換「🔥 強效去霧救過曝」）';
+        btn.innerHTML = '✨ 已套用：標準超清（再按切換「🔥 強效去霧」）';
         btn.className = 'w-full py-2 px-3 rounded-xl bg-gradient-to-r from-sky-400 via-blue-500 to-indigo-500 text-white font-black text-xs border-2 border-white shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition';
       } else if (_remasterMode === 2) {
-        btn.innerHTML = '🔥 已套用：強效去白霧+救過曝（再按切換「✨ 標準超清」）';
+        btn.innerHTML = '🔥 已套用：強效去白霧（再按切換「✨ 標準超清」）';
         btn.className = 'w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 text-zinc-950 font-black text-xs border-2 border-white shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition';
       } else {
-        btn.innerHTML = '🪄 一鍵 AI 超清修復（五官立體重塑 + 去膠膜白霧）';
+        btn.innerHTML = '🪄 一鍵 AI 超清修復（五官立體重塑 + 白邊淨化）';
         btn.className = 'w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-300 to-sky-400 text-zinc-950 font-black text-xs border-2 border-white/60 shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition';
       }
     }
 
-    // 高速可分離式盒狀高斯模糊（用於計算真正肉眼可見的跨像素五官立體對比度 Clarity）
+    // ⬜ 核心演算法：四邊向內智慧偵測拍立得外框並漂白為純白 (#FFFDF9)，不影響內框人像與簽名筆跡！
+    function whitenChekiFramePixels(d, w, h, strength = 0.94) {
+      // 1. 取樣最外圍 2% 邊緣像素，找出目前拍立得相紙邊框的基底灰/白亮度
+      const edgeLums = [];
+      const stepX = Math.max(2, Math.floor(w / 80));
+      const stepY = Math.max(2, Math.floor(h / 80));
+      const marginX = Math.max(2, Math.floor(w * 0.025));
+      const marginY = Math.max(2, Math.floor(h * 0.025));
+
+      for (let x = 0; x < w; x += stepX) {
+        for (const y of [marginY, h - 1 - marginY]) {
+          const i = (y * w + x) * 4;
+          const sat = Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]);
+          const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          if (sat < 45 && lum > 125) edgeLums.push(lum);
+        }
+      }
+      for (let y = 0; y < h; y += stepY) {
+        for (const x of [marginX, w - 1 - marginX]) {
+          const i = (y * w + x) * 4;
+          const sat = Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]);
+          const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          if (sat < 45 && lum > 125) edgeLums.push(lum);
+        }
+      }
+
+      if (edgeLums.length < 10) return;
+      edgeLums.sort((a, b) => a - b);
+      const baseFrameLum = edgeLums[Math.floor(edgeLums.length * 0.6)];
+      const minFrameLum = Math.max(125, baseFrameLum - 48);
+
+      const isPaperPixel = (idx) => {
+        const r = d[idx], g = d[idx + 1], b = d[idx + 2];
+        const sat = Math.max(r, g, b) - Math.min(r, g, b);
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        return sat < 42 && lum >= minFrameLum;
+      };
+
+      // 2. 由四條邊向內掃描，定位內框相片的四條直線邊界 (boxTop, boxBottom, boxLeft, boxRight)
+      const maxTopScan = Math.floor(h * 0.24);
+      const maxBotScan = Math.floor(h * 0.28);
+      const maxLeftScan = Math.floor(w * 0.28);
+      const maxRightScan = Math.floor(w * 0.28);
+
+      const topStops = [], botStops = [], leftStops = [], rightStops = [];
+
+      for (let x = Math.floor(w * 0.15); x < Math.floor(w * 0.85); x += stepX) {
+        let t = 0;
+        while (t < maxTopScan && isPaperPixel((t * w + x) * 4)) t++;
+        topStops.push(t);
+
+        let b = 0;
+        while (b < maxBotScan && isPaperPixel(((h - 1 - b) * w + x) * 4)) b++;
+        botStops.push(b);
+      }
+
+      for (let y = Math.floor(h * 0.15); y < Math.floor(h * 0.85); y += stepY) {
+        let l = 0;
+        while (l < maxLeftScan && isPaperPixel((y * w + l) * 4)) l++;
+        leftStops.push(l);
+
+        let r = 0;
+        while (r < maxRightScan && isPaperPixel((y * w + (w - 1 - r)) * 4)) r++;
+        rightStops.push(r);
+      }
+
+      const getPercentile = (arr, p) => {
+        if (!arr.length) return 0;
+        const sorted = [...arr].sort((a, b) => a - b);
+        return sorted[Math.floor(sorted.length * p)];
+      };
+
+      const borderTop = getPercentile(topStops, 0.35);
+      const borderBot = getPercentile(botStops, 0.35);
+      const borderLeft = getPercentile(leftStops, 0.35);
+      const borderRight = getPercentile(rightStops, 0.35);
+
+      const boxTop = borderTop;
+      const boxBottom = h - 1 - borderBot;
+      const boxLeft = borderLeft;
+      const boxRight = w - 1 - borderRight;
+      const feather = Math.max(4, Math.round(Math.min(w, h) * 0.008));
+
+      // 3. 將外框區域內的相紙像素（排除深色或彩色簽名筆跡）漂白至純白 (#FFFDF9)
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const inInnerX = x >= boxLeft && x <= boxRight;
+          const inInnerY = y >= boxTop && y <= boxBottom;
+          if (inInnerX && inInnerY) continue;
+
+          const idx = (y * w + x) * 4;
+          const r = d[idx], g = d[idx + 1], b = d[idx + 2];
+          const sat = Math.max(r, g, b) - Math.min(r, g, b);
+          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+          // 保護簽名筆跡：若該像素明顯偏暗（黑筆簽名）或高飽和度（彩色筆簽名），不進行漂白
+          if (lum < minFrameLum || sat > 42) continue;
+
+          // 計算距離內框邊界的柔化權重，避免交界處出現生硬白線
+          let distToInner = 999;
+          if (inInnerX) {
+            distToInner = y < boxTop ? (boxTop - y) : (y - boxBottom);
+          } else if (inInnerY) {
+            distToInner = x < boxLeft ? (boxLeft - x) : (x - boxRight);
+          }
+          const edgeFade = distToInner < feather ? (distToInner / feather) : 1.0;
+          const satFade = sat > 22 ? Math.max(0, (42 - sat) / 20) : 1.0;
+          const blend = strength * edgeFade * satFade;
+
+          d[idx]     = Math.min(255, Math.round(r + (254 - r) * blend));
+          d[idx + 1] = Math.min(255, Math.round(g + (253 - g) * blend));
+          d[idx + 2] = Math.min(255, Math.round(b + (251 - b) * blend));
+        }
+      }
+    }
+
+    // 獨立按鈕功能：只漂白拍立得四邊白框，不改變內框人像對比
+    window.applyStandaloneBorderWhitening = function() {
+      if (!rawUploadDataUrl) return;
+      if (!_preRemasterTrueOriginal) {
+        _preRemasterTrueOriginal = rawUploadDataUrl;
+      }
+      const wBtn = document.getElementById('whitenBorderBtn');
+      if (wBtn) {
+        wBtn.innerHTML = '⏳ 正在漂白拍立得白邊...';
+        wBtn.disabled = true;
+      }
+
+      setTimeout(() => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(img, 0, 0);
+
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          whitenChekiFramePixels(imgData.data, canvas.width, canvas.height, 0.96);
+          ctx.putImageData(imgData, 0, 0);
+
+          const whitenedUrl = canvas.toDataURL('image/jpeg', 0.97);
+          rawUploadDataUrl = whitenedUrl;
+          uncroppedOriginalDataUrl = whitenedUrl;
+          currentUploadDataUrl = whitenedUrl;
+
+          const cfg = typeof getCurrentFilterConfig === 'function' ? getCurrentFilterConfig() : { sharpen: 0, deglare: 0, brightness: 100, contrast: 100 };
+          if (cfg.sharpen !== 0 || cfg.deglare !== 0 || cfg.brightness !== 100 || cfg.contrast !== 100) {
+            applyImageFilterPreview();
+          } else {
+            document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+          }
+
+          if (wBtn) {
+            wBtn.innerHTML = '⬜ 已漂白 Cheki 白邊（可再按加強）';
+            wBtn.disabled = false;
+          }
+          const sizeTag = document.getElementById('detectedSizeTag');
+          if (sizeTag) sizeTag.textContent = '⬜ 已將拍立得外框漂白為純白相紙色';
+        };
+        img.src = rawUploadDataUrl;
+      }, 25);
+    };
+
     function fastSeparableBlurRGB(src, w, h, radius) {
       const len = w * h * 4;
       const tmp = new Float32Array(len);
@@ -5890,7 +6053,6 @@ let editingCheerEventId = null;
       const windowSize = radius * 2 + 1;
       const invWin = 1 / windowSize;
 
-      // 水平方向模糊
       for (let y = 0; y < h; y++) {
         const rowOff = y * w * 4;
         let sumR = 0, sumG = 0, sumB = 0;
@@ -5901,21 +6063,13 @@ let editingCheerEventId = null;
         }
         for (let x = 0; x < w; x++) {
           const idx = rowOff + x * 4;
-          tmp[idx] = sumR * invWin;
-          tmp[idx + 1] = sumG * invWin;
-          tmp[idx + 2] = sumB * invWin;
-
-          const leftX = Math.max(0, x - radius);
-          const rightX = Math.min(w - 1, x + radius + 1);
-          const lIdx = rowOff + leftX * 4;
-          const rIdx = rowOff + rightX * 4;
-          sumR += src[rIdx] - src[lIdx];
-          sumG += src[rIdx + 1] - src[lIdx + 1];
-          sumB += src[rIdx + 2] - src[lIdx + 2];
+          tmp[idx] = sumR * invWin; tmp[idx + 1] = sumG * invWin; tmp[idx + 2] = sumB * invWin;
+          const leftX = Math.max(0, x - radius), rightX = Math.min(w - 1, x + radius + 1);
+          const lIdx = rowOff + leftX * 4, rIdx = rowOff + rightX * 4;
+          sumR += src[rIdx] - src[lIdx]; sumG += src[rIdx + 1] - src[lIdx + 1]; sumB += src[rIdx + 2] - src[lIdx + 2];
         }
       }
 
-      // 垂直方向模糊
       const stride = w * 4;
       for (let x = 0; x < w; x++) {
         const colOff = x * 4;
@@ -5927,18 +6081,10 @@ let editingCheerEventId = null;
         }
         for (let y = 0; y < h; y++) {
           const idx = y * stride + colOff;
-          out[idx] = Math.round(sumR * invWin);
-          out[idx + 1] = Math.round(sumG * invWin);
-          out[idx + 2] = Math.round(sumB * invWin);
-          out[idx + 3] = 255;
-
-          const topY = Math.max(0, y - radius);
-          const botY = Math.min(h - 1, y + radius + 1);
-          const tIdx = topY * stride + colOff;
-          const bIdx = botY * stride + colOff;
-          sumR += tmp[bIdx] - tmp[tIdx];
-          sumG += tmp[bIdx + 1] - tmp[tIdx + 1];
-          sumB += tmp[bIdx + 2] - tmp[tIdx + 2];
+          out[idx] = Math.round(sumR * invWin); out[idx + 1] = Math.round(sumG * invWin); out[idx + 2] = Math.round(sumB * invWin); out[idx + 3] = 255;
+          const topY = Math.max(0, y - radius), botY = Math.min(h - 1, y + radius + 1);
+          const tIdx = topY * stride + colOff, bIdx = botY * stride + colOff;
+          sumR += tmp[bIdx] - tmp[tIdx]; sumG += tmp[bIdx + 1] - tmp[tIdx + 1]; sumB += tmp[bIdx + 2] - tmp[tIdx + 2];
         }
       }
       return out;
@@ -5946,28 +6092,24 @@ let editingCheerEventId = null;
 
     function applyChekiSmartRemaster() {
       if (!rawUploadDataUrl) return;
-
-      // 首次執行前備份最原始未超清底圖（保證每次切換模式都由原圖乾淨起算，絕不重複疊加劣化！）
       if (!_preRemasterTrueOriginal) {
         _preRemasterTrueOriginal = rawUploadDataUrl;
       }
 
-      // 循環切換模式：模式 1 (✨ 標準立體超清) ⇄ 模式 2 (🔥 強效去白霧+救過曝)
       _remasterMode = (_remasterMode === 1) ? 2 : 1;
       const targetMode = _remasterMode;
 
       const btn = document.getElementById('smartRemasterBtn');
       if (btn) {
         btn.innerHTML = targetMode === 2
-          ? '⏳ 正在執行「🔥 強效去白霧 + 閃光燈過曝修復」...'
-          : '⏳ 正在執行「✨ AI 五官立體重塑 + 超清銳化」...';
+          ? '⏳ 正在執行「🔥 強效去白霧 + 白邊淨化」...'
+          : '⏳ 正在執行「✨ AI 五官立體重塑 + 白邊淨化」...';
         btn.disabled = true;
       }
 
       setTimeout(() => {
         const img = new Image();
         img.onload = () => {
-          // 1. 高品質放大至 1800px 超清基底（兼顧極速運算與高解析度細節）
           let srcW = img.naturalWidth, srcH = img.naturalHeight;
           const targetLongSide = 1800;
           let w = srcW, h = srcH;
@@ -5988,9 +6130,8 @@ let editingCheerEventId = null;
           const imgData = ctx.getImageData(0, 0, w, h);
           const d = imgData.data;
 
-          // 2. 取樣相片中心區域（排除拍立得四周白邊），精準測量「相紙灰霧黑位 (Black Floor)」與「閃光燈過曝高光」
-          const startX = Math.floor(w * 0.15), endX = Math.floor(w * 0.85);
-          const startY = Math.floor(h * 0.12), endY = Math.floor(h * 0.75);
+          const startX = Math.floor(w * 0.16), endX = Math.floor(w * 0.84);
+          const startY = Math.floor(h * 0.14), endY = Math.floor(h * 0.74);
           const hist = new Uint32Array(256);
           let sumLum = 0, sampleCount = 0;
 
@@ -5998,7 +6139,7 @@ let editingCheerEventId = null;
             for (let x = startX; x < endX; x += 3) {
               const i = (y * w + x) * 4;
               const lum = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
-              if (lum < 245) {
+              if (lum < 242) {
                 hist[lum]++;
                 sumLum += lum;
                 sampleCount++;
@@ -6007,63 +6148,46 @@ let editingCheerEventId = null;
           }
 
           const avgLum = sampleCount > 0 ? (sumLum / sampleCount) : 135;
-
-          // 找出第 4% 暗位作為相紙反光灰霧基準 (Black Floor)
-          let blackFloor = 12;
+          let blackFloor = 10;
           let acc = 0;
-          const pctThreshold = sampleCount * (targetMode === 2 ? 0.055 : 0.035);
+          const pctThreshold = sampleCount * (targetMode === 2 ? 0.05 : 0.03);
           for (let i = 0; i < 256; i++) {
             acc += hist[i];
             if (acc >= pctThreshold) {
-              blackFloor = Math.min(targetMode === 2 ? 62 : 45, i);
+              blackFloor = Math.min(targetMode === 2 ? 55 : 38, i);
               break;
             }
           }
 
-          // 建立去霧與閃光燈高光修復查找表 (Dehaze & Flash Recovery LUT)
+          // 建立去霧查找表（重要修正：移除會令白邊變灰的頂部壓縮，保證高光 245~255 直達純白 255！）
           const lut = new Uint8Array(256);
-          const dehazePull = targetMode === 2 ? blackFloor * 0.82 : blackFloor * 0.65;
-          // 若相片偏光泛白 (avgLum > 135)，自動收緊中調 Gamma，退走閃光燈白霧！
+          const dehazePull = targetMode === 2 ? blackFloor * 0.78 : blackFloor * 0.60;
+          const whiteCeil = 248;
           let midGamma = 1.0;
           if (targetMode === 2) {
-            midGamma = avgLum > 125 ? 1.16 : 1.06;
+            midGamma = avgLum > 130 ? 1.12 : 1.04;
           } else {
-            midGamma = avgLum < 105 ? 0.88 : (avgLum > 140 ? 1.08 : 0.98);
+            midGamma = avgLum < 105 ? 0.88 : (avgLum > 145 ? 1.05 : 0.96);
           }
-
-          const sContrast = targetMode === 2 ? 1.14 : 1.08;
+          const sContrast = targetMode === 2 ? 1.12 : 1.06;
 
           for (let i = 0; i < 256; i++) {
-            // A. 扣除相紙表面灰白反光霧氣
-            let norm = Math.max(0, (i - dehazePull) / Math.max(1, 255 - dehazePull));
-            // B. 中調 Gamma 校正
+            let norm = Math.max(0, Math.min(1, (i - dehazePull) / Math.max(1, whiteCeil - dehazePull)));
             let curved = Math.pow(norm, midGamma);
-            // C. S-Curve 立體對比強化
             curved = curved < 0.5
               ? 0.5 * Math.pow(2 * curved, sContrast)
               : 1 - 0.5 * Math.pow(2 * (1 - curved), sContrast);
-            // D. 拍立得閃光燈高光柔化壓制（救回偶像臉部與白色衣服細節）
-            if (curved > 0.78) {
-              const compress = targetMode === 2 ? 0.72 : 0.82;
-              curved = 0.78 + (curved - 0.78) * compress;
-            }
             lut[i] = Math.max(0, Math.min(255, Math.round(curved * 255)));
           }
 
-          // 套用色階去霧與自然飽和度補償
-          const satFactor = targetMode === 2 ? 1.14 : 1.09;
+          const satFactor = targetMode === 2 ? 1.12 : 1.08;
           for (let i = 0; i < d.length; i += 4) {
-            const origR = d[i], origG = d[i + 1], origB = d[i + 2];
-            // 保護拍立得純白外框（RGB 均大於 240 的區域不壓暗）
-            if (origR > 240 && origG > 240 && origB > 240) continue;
-
-            let r = lut[origR];
-            let g = lut[origG];
-            let b = lut[origB];
+            let r = lut[d[i]];
+            let g = lut[d[i + 1]];
+            let b = lut[d[i + 2]];
 
             const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            // 去霧後補償衣服與膚色鮮明度（臉部極高光處不加飽和度以保持白皙清透）
-            const localSat = lum > 195 ? 1.02 : satFactor;
+            const localSat = lum > 200 ? 1.0 : satFactor;
             r = Math.max(0, Math.min(255, Math.round(lum + (r - lum) * localSat)));
             g = Math.max(0, Math.min(255, Math.round(lum + (g - lum) * localSat)));
             b = Math.max(0, Math.min(255, Math.round(lum + (b - lum) * localSat)));
@@ -6071,18 +6195,17 @@ let editingCheerEventId = null;
             d[i] = r; d[i + 1] = g; d[i + 2] = b;
           }
 
-          // 3. 真正跨像素「大半徑立體清晰度 (Clarity, Radius=6) + 細膩五官銳化 (Fine Sharp, Radius=2)」
-          // 即使縮細喺手機螢幕預覽，都能一眼睇出五官、眼睛、衣服線條變得極之立體清晰！
+          // 跨像素五官立體清晰度 (Clarity) + 細微銳化
           const basePixels = new Uint8ClampedArray(d);
           const blurFine = fastSeparableBlurRGB(basePixels, w, h, 2);
           const blurClarity = fastSeparableBlurRGB(basePixels, w, h, 6);
 
-          const fineGain = targetMode === 2 ? 1.35 : 1.15;
-          const clarityGain = targetMode === 2 ? 0.58 : 0.42;
+          const fineGain = targetMode === 2 ? 1.30 : 1.15;
+          const clarityGain = targetMode === 2 ? 0.52 : 0.40;
 
           for (let i = 0; i < d.length; i += 4) {
             const curLum = 0.299 * basePixels[i] + 0.587 * basePixels[i + 1] + 0.114 * basePixels[i + 2];
-            if (curLum > 242 || curLum < 8) continue;
+            if (curLum > 240 || curLum < 8) continue;
 
             for (let c = 0; c < 3; c++) {
               const center = basePixels[i + c];
@@ -6090,12 +6213,10 @@ let editingCheerEventId = null;
               const diffClarity = center - blurClarity[i + c];
 
               let delta = 0;
-              // 細微噪點 (<3) 自動平滑美肌，五官邊緣 (>=3) 強效銳化
               if (Math.abs(diffFine) >= 3) {
                 const haloGuard = (diffFine > 0 && curLum > 205) ? 0.4 : 1.0;
                 delta += diffFine * fineGain * haloGuard;
               }
-              // 跨像素立體感 (Clarity)：令鼻樑、眼神、手指與衣服皺褶立體突出
               if (Math.abs(diffClarity) >= 3) {
                 const clarityGuard = (diffClarity > 0 && curLum > 200) ? 0.35 : 1.0;
                 delta += diffClarity * clarityGain * clarityGuard;
@@ -6105,6 +6226,9 @@ let editingCheerEventId = null;
             }
           }
 
+          // 自動執行四邊拍立得白框淨白處理，確保外框永遠純白唔變灰！
+          whitenChekiFramePixels(d, w, h, 0.92);
+
           ctx.putImageData(imgData, 0, 0);
 
           const remasteredUrl = canvas.toDataURL('image/jpeg', 0.97);
@@ -6112,7 +6236,6 @@ let editingCheerEventId = null;
           uncroppedOriginalDataUrl = remasteredUrl;
           currentUploadDataUrl = remasteredUrl;
 
-          // 同步套用下方滑桿（如有調整過）
           const cfg = typeof getCurrentFilterConfig === 'function' ? getCurrentFilterConfig() : { sharpen: 0, deglare: 0, brightness: 100, contrast: 100 };
           if (cfg.sharpen !== 0 || cfg.deglare !== 0 || cfg.brightness !== 100 || cfg.contrast !== 100) {
             applyImageFilterPreview();
@@ -6123,8 +6246,8 @@ let editingCheerEventId = null;
           const sizeTag = document.getElementById('detectedSizeTag');
           if (sizeTag) {
             sizeTag.textContent = targetMode === 2
-              ? `🔥 已套用強效去白霧+救過曝 (${w}×${h}px · 長按圖片可對比原圖)`
-              : `✨ 已套用標準五官立體超清 (${w}×${h}px · 長按圖片可對比原圖)`;
+              ? `🔥 已套用強效去霧 + 白邊淨白 (${w}×${h}px)`
+              : `✨ 已套用標準超清 + 白邊淨白 (${w}×${h}px)`;
           }
           updateRemasterButtonUI();
         };
@@ -6132,7 +6255,7 @@ let editingCheerEventId = null;
       }, 30);
     }
 
-    // 4. 全新重寫「☀️ 亮度微調」與「🌤️ 消反光」光學引擎（徹底解決拉高亮度變白濛濛、塊面爆光問題！）
+    // 修正版亮度與消反光微調（拉高亮度時可順暢推白淺灰邊框，唔再鎖死）
     window.applyImageFilterPreview = function() {
       if (!rawUploadDataUrl) return;
       if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
@@ -6160,36 +6283,32 @@ let editingCheerEventId = null;
           const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const d = imgData.data;
 
-          const bDiff = (b - 100) / 100; // -0.30 ~ +0.35
-          const cDiff = (c - 100) / 100; // -0.30 ~ +0.35
+          const bDiff = (b - 100) / 100;
+          const cDiff = (c - 100) / 100;
           const deglareStrength = deglare / 100;
 
-          // 建立「鎖黑位 + 護臉部高光」的智慧型曝光查找表
           const expLut = new Uint8Array(256);
           for (let i = 0; i < 256; i++) {
             let v = i / 255;
 
             if (bDiff > 0) {
-              // 拉高亮度 (>100%)：只提亮暗部與中調，黑位 (v<0.12) 保持紮實唔起白霧，高光臉部 (v>0.82) 自動鎖定唔爆白！
-              const shadowWeight = Math.sin(Math.min(1, v / 0.88) * Math.PI);
-              const blackAnchor = v < 0.15 ? (v / 0.15) : 1.0;
-              v = v + bDiff * 0.52 * shadowWeight * blackAnchor;
+              // 提亮暗部與白邊，同時保持深黑位 (<0.12) 不起白霧
+              const blackAnchor = v < 0.12 ? (v / 0.12) : 1.0;
+              v = Math.pow(v, Math.max(0.68, 1 - bDiff * 0.85));
+              v = v + bDiff * 0.25 * blackAnchor * (1 - v * 0.35);
             } else if (bDiff < 0) {
-              // 拉低亮度 (<100%)：專門壓低過曝泛白的臉部與中調，救回閃光燈細節！
-              const highlightWeight = Math.pow(v, 0.75);
-              v = v + bDiff * 0.65 * highlightWeight;
+              v = v + bDiff * 0.60 * Math.pow(v, 0.75);
             }
 
-            // 消反光 / 去白霧滑桿 (🌤️ 消反光)：同時壓制刺眼高光並收緊灰霧黑位
             if (deglareStrength > 0) {
-              const fogCut = deglareStrength * 0.08;
+              const fogCut = deglareStrength * 0.07;
               v = Math.max(0, (v - fogCut) / (1 - fogCut));
-              if (v > 0.65) {
-                v = 0.65 + (v - 0.65) * (1 - deglareStrength * 0.42);
+              // 只壓制 165~225 的臉部反光區，保留 >230 的純白相紙外框不變灰！
+              if (v > 0.64 && v < 0.90) {
+                v = 0.64 + (v - 0.64) * (1 - deglareStrength * 0.35);
               }
             }
 
-            // 對比度微調 (◐ 對比微調)：以柔和 S 曲線調整，唔會死黑或死白
             if (cDiff !== 0) {
               const cPower = Math.max(0.65, Math.min(1.55, 1 + cDiff * 1.1));
               v = v < 0.5
@@ -6200,28 +6319,15 @@ let editingCheerEventId = null;
             expLut[i] = Math.max(0, Math.min(255, Math.round(v * 255)));
           }
 
-          // 按原圖色彩比例套用亮度變化（保持膚色與衣服顏色自然，絕不泛白褪色！）
           for (let i = 0; i < d.length; i += 4) {
             const r = d[i], g = d[i + 1], bl = d[i + 2];
-            if (r > 244 && g > 244 && bl > 244) continue;
-
             const oldLum = Math.max(1, Math.round(0.299 * r + 0.587 * g + 0.114 * bl));
             const newLum = expLut[oldLum];
             const ratio = newLum / oldLum;
 
-            let nr = Math.min(255, Math.round(r * ratio));
-            let ng = Math.min(255, Math.round(g * ratio));
-            let nb = Math.min(255, Math.round(bl * ratio));
-
-            // 提亮或消反光時微幅保護飽和度，防止畫面變灰白
-            if (bDiff > 0 || deglareStrength > 0) {
-              const satKeep = 1.05;
-              nr = Math.max(0, Math.min(255, Math.round(newLum + (nr - newLum) * satKeep)));
-              ng = Math.max(0, Math.min(255, Math.round(newLum + (ng - newLum) * satKeep)));
-              nb = Math.max(0, Math.min(255, Math.round(newLum + (nb - newLum) * satKeep)));
-            }
-
-            d[i] = nr; d[i + 1] = ng; d[i + 2] = nb;
+            d[i]     = Math.min(255, Math.round(r * ratio));
+            d[i + 1] = Math.min(255, Math.round(g * ratio));
+            d[i + 2] = Math.min(255, Math.round(bl * ratio));
           }
           ctx.putImageData(imgData, 0, 0);
 
@@ -6236,7 +6342,6 @@ let editingCheerEventId = null;
       }, 40);
     };
 
-    // 修正「雙拍消反光」重影模糊問題
     window.blendDualShotAntiGlare = function(c1, c2) {
       const w = c1.width, h = c1.height;
       const out = document.createElement('canvas');
@@ -6266,16 +6371,34 @@ let editingCheerEventId = null;
 
     function initSmartRemasterPlugin() {
       const filterPanel = document.getElementById('sharpenSlider')?.closest('.bg-zinc-800');
-      if (filterPanel && !document.getElementById('smartRemasterBtn')) {
-        const remasterBtn = document.createElement('button');
-        remasterBtn.type = 'button';
-        remasterBtn.id = 'smartRemasterBtn';
-        remasterBtn.onclick = applyChekiSmartRemaster;
-        filterPanel.insertBefore(remasterBtn, filterPanel.firstElementChild);
+      if (filterPanel) {
+        if (!document.getElementById('whitenBorderBtn')) {
+          const wBtn = document.createElement('button');
+          wBtn.type = 'button';
+          wBtn.id = 'whitenBorderBtn';
+          wBtn.onclick = window.applyStandaloneBorderWhitening;
+          wBtn.className = 'w-full py-1.5 px-3 rounded-xl bg-white text-zinc-900 font-black text-xs border-2 border-zinc-400 shadow-sm flex items-center justify-center gap-1 active:scale-95 transition';
+          wBtn.innerHTML = '⬜ 一鍵漂白 Cheki 白邊（灰框變純白・不影響人像）';
+          filterPanel.insertBefore(wBtn, filterPanel.firstElementChild);
+        }
+        if (!document.getElementById('smartRemasterBtn')) {
+          const remasterBtn = document.createElement('button');
+          remasterBtn.type = 'button';
+          remasterBtn.id = 'smartRemasterBtn';
+          remasterBtn.onclick = applyChekiSmartRemaster;
+          filterPanel.insertBefore(remasterBtn, filterPanel.firstElementChild);
+        }
       }
       updateRemasterButtonUI();
 
-      // 綁定「按住預覽圖即時對比未修復原圖 (Before / After)」功能
+      const resetWhitenBtnText = () => {
+        const wBtn = document.getElementById('whitenBorderBtn');
+        if (wBtn) {
+          wBtn.innerHTML = '⬜ 一鍵漂白 Cheki 白邊（灰框變純白・不影響人像）';
+          wBtn.disabled = false;
+        }
+      };
+
       const previewImg = document.getElementById('editPreviewImg');
       if (previewImg && !previewImg._compareBound) {
         previewImg._compareBound = true;
@@ -6307,6 +6430,7 @@ let editingCheerEventId = null;
             _preRemasterTrueOriginal = '';
             _remasterMode = 0;
             updateRemasterButtonUI();
+            resetWhitenBtnText();
             return origFn.apply(this, arguments);
           };
           window[fnName]._wrappedClearRemasterBackup = true;
@@ -6321,6 +6445,7 @@ let editingCheerEventId = null;
           _preRemasterTrueOriginal = (card && card.preRemasterOriginal) ? card.preRemasterOriginal : (card ? (card.baseImage || card.image) : '');
           const res = origOpenEdit.apply(this, arguments);
           updateRemasterButtonUI();
+          resetWhitenBtnText();
           return res;
         };
         window.openEditFromInspect._wrappedRestoreRemasterState = true;
@@ -6332,7 +6457,7 @@ let editingCheerEventId = null;
           _remasterMode = 0;
           _preRemasterTrueOriginal = '';
           const res = origApplyCrop.apply(this, arguments);
-          setTimeout(updateRemasterButtonUI, 120);
+          setTimeout(() => { updateRemasterButtonUI(); resetWhitenBtnText(); }, 120);
           return res;
         };
         window.applyFreeCrop._wrappedUnlockAfterCrop = true;
@@ -6349,6 +6474,7 @@ let editingCheerEventId = null;
           _remasterMode = 0;
           origReset.apply(this, arguments);
           updateRemasterButtonUI();
+          resetWhitenBtnText();
           const sizeTag = document.getElementById('detectedSizeTag');
           if (sizeTag) sizeTag.textContent = '💎 已還原為最初原始底圖';
         };
