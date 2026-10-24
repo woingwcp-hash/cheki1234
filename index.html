@@ -5861,15 +5861,30 @@ let editingCheerEventId = null;
 
     setTimeout(initContinuousAddPlugin, 250);
 // =========================================================================
-    // 🪄 AI 級拍立得「一鍵超清修復 (2K 超解析度 + 暗部提亮 + 真正更新底圖版)」
+    // 🪄 AI 級拍立得「一鍵超清修復 (防重複疊加鎖定 + 人像防爆光 HDR + 雙邊濾波五官重塑)」
     // =========================================================================
     let _preRemasterTrueOriginal = '';
+    let _isCurrentCardRemastered = false;
+
+    function updateRemasterButtonUI() {
+      const btn = document.getElementById('smartRemasterBtn');
+      if (!btn) return;
+      if (_isCurrentCardRemastered) {
+        btn.innerHTML = '🔒 已套用 2K 超清修復（點「🔄 還原原圖」可重設）';
+        btn.disabled = true;
+        btn.className = 'w-full py-2 px-3 rounded-xl bg-zinc-700 text-emerald-300 font-black text-xs border-2 border-emerald-400/50 flex items-center justify-center gap-1.5 opacity-90 cursor-not-allowed';
+      } else {
+        btn.innerHTML = '🪄 一鍵 AI 超清修復（Cut相後五官重塑 + 去膠膜霧氣）';
+        btn.disabled = false;
+        btn.className = 'w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-300 to-sky-400 text-zinc-950 font-black text-xs border-2 border-white/60 shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition';
+      }
+    }
 
     function applyChekiSmartRemaster() {
-      if (!rawUploadDataUrl) return;
+      if (!rawUploadDataUrl || _isCurrentCardRemastered) return;
       const btn = document.getElementById('smartRemasterBtn');
       if (btn) {
-        btn.innerHTML = '⏳ 正在執行 2K 超解析度與五官清晰化...';
+        btn.innerHTML = '⏳ AI 正在重塑五官細節與消除霧氣中...';
         btn.disabled = true;
       }
 
@@ -5880,10 +5895,11 @@ let editingCheerEventId = null;
       setTimeout(() => {
         const img = new Image();
         img.onload = () => {
-          // 1. 升級至 2200px 超高清基底
-          let w = img.naturalWidth;
-          let h = img.naturalHeight;
+          // 1. 多階平滑超解析放大至 2200px（先以中繼尺寸過渡，令斜線與眼神邊緣更平滑）
+          let srcW = img.naturalWidth;
+          let srcH = img.naturalHeight;
           const targetLongSide = 2200;
+          let w = srcW, h = srcH;
           if (Math.max(w, h) < targetLongSide) {
             const scale = targetLongSide / Math.max(w, h);
             w = Math.round(w * scale);
@@ -5896,63 +5912,90 @@ let editingCheerEventId = null;
           const ctx = canvas.getContext('2d', { willReadFrequently: true });
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, w, h);
+
+          if (Math.max(srcW, srcH) * 1.4 < Math.max(w, h)) {
+            const midCanvas = document.createElement('canvas');
+            midCanvas.width = Math.round((srcW + w) * 0.5);
+            midCanvas.height = Math.round((srcH + h) * 0.5);
+            const mCtx = midCanvas.getContext('2d');
+            mCtx.imageSmoothingEnabled = true;
+            mCtx.imageSmoothingQuality = 'high';
+            mCtx.drawImage(img, 0, 0, midCanvas.width, midCanvas.height);
+            ctx.drawImage(midCanvas, 0, 0, w, h);
+          } else {
+            ctx.drawImage(img, 0, 0, w, h);
+          }
 
           const imgData = ctx.getImageData(0, 0, w, h);
           const d = imgData.data;
 
-          // 2. 分析相片中心區域平均亮度，自動決定「暗部提亮 (Shadow Lift)」強度
+          // 2. 分析中心人像區亮度與黑位，執行「暗部提亮 + 閃光燈臉部高光防爆保護 (HDR Tone Mapping)」
           const startX = Math.floor(w * 0.12), endX = Math.floor(w * 0.88);
           const startY = Math.floor(h * 0.10), endY = Math.floor(h * 0.78);
+          const hist = new Uint32Array(256);
           let sumLum = 0, sampleCount = 0;
+
           for (let y = startY; y < endY; y += 3) {
             for (let x = startX; x < endX; x += 3) {
               const i = (y * w + x) * 4;
-              sumLum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+              const lum = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+              hist[lum]++;
+              sumLum += lum;
               sampleCount++;
             }
           }
+
           const avgCenterLum = sampleCount > 0 ? (sumLum / sampleCount) : 128;
-          const shadowGamma = avgCenterLum < 115 ? 0.82 : 0.90;
+          let blackPoint = 6;
+          let acc = 0;
+          for (let i = 0; i < 256; i++) {
+            acc += hist[i];
+            if (acc >= sampleCount * 0.012) { blackPoint = Math.min(22, i); break; }
+          }
+
+          // 若原圖偏暗才提亮暗部；若已經夠光則保護高光立體感
+          const shadowGamma = avgCenterLum < 110 ? 0.84 : (avgCenterLum > 155 ? 0.98 : 0.91);
 
           const lut = new Uint8Array(256);
           for (let i = 0; i < 256; i++) {
-            let norm = i / 255;
+            let norm = Math.max(0, (i - blackPoint * 0.6) / (255 - blackPoint * 0.6));
             let lifted = Math.pow(norm, shadowGamma);
-            let finalNorm = lifted < 0.5
-              ? 0.5 * Math.pow(2 * lifted, 1.03)
-              : 1 - 0.5 * Math.pow(2 * (1 - lifted), 1.04);
-            lut[i] = Math.max(0, Math.min(255, Math.round(finalNorm * 255)));
+            // 高光柔化壓制（195 以上閃光燈臉部區域保留漸層，唔會爆死白）
+            if (lifted > 0.76) {
+              lifted = 0.76 + (lifted - 0.76) * 0.88;
+            }
+            lut[i] = Math.max(0, Math.min(255, Math.round(lifted * 255)));
           }
 
           for (let i = 0; i < d.length; i += 4) {
-            if (d[i] > 240 && d[i + 1] > 240 && d[i + 2] > 240) continue;
+            if (d[i] > 243 && d[i + 1] > 243 && d[i + 2] > 243) continue;
 
             let r = lut[d[i]];
             let g = lut[d[i + 1]];
             let b = lut[d[i + 2]];
 
             const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            r = Math.max(0, Math.min(255, Math.round(lum + (r - lum) * 1.06)));
-            g = Math.max(0, Math.min(255, Math.round(lum + (g - lum) * 1.06)));
-            b = Math.max(0, Math.min(255, Math.round(lum + (b - lum) * 1.06)));
+            // 高光臉部區域唔過度加飽和度，避免臉部偏黃或偏紅
+            const satBoost = lum > 195 ? 1.02 : 1.07;
+            r = Math.max(0, Math.min(255, Math.round(lum + (r - lum) * satBoost)));
+            g = Math.max(0, Math.min(255, Math.round(lum + (g - lum) * satBoost)));
+            b = Math.max(0, Math.min(255, Math.round(lum + (b - lum) * satBoost)));
 
             d[i] = r;
             d[i + 1] = g;
             d[i + 2] = b;
           }
 
-          // 3. 雙半徑混合超清銳化（同時強化「五官立體輪廓」與「眼神/髮絲極細微細節」）
+          // 3. AI 級「雙邊自適應銳化 + 皮膚防噪保護 (Edge-Aware Bilateral Unsharp Mask)」
           const srcCopy = new Uint8ClampedArray(d);
-          const fineStrength = 1.35;
-          const midStrength = 0.45;
-          const noiseThreshold = 4;
+          const fineStrength = 1.45; // 眼神、睫毛、髮絲極細銳化
+          const clarityStrength = 0.52; // 五官鼻樑立體感強化
 
           for (let y = 2; y < h - 2; y++) {
             for (let x = 2; x < w - 2; x++) {
               const idx = (y * w + x) * 4;
               const curLum = 0.299 * srcCopy[idx] + 0.587 * srcCopy[idx + 1] + 0.114 * srcCopy[idx + 2];
-              if (curLum > 242 || curLum < 12) continue;
+              if (curLum > 244 || curLum < 10) continue;
 
               const up1 = ((y - 1) * w + x) * 4, dn1 = ((y + 1) * w + x) * 4;
               const lf1 = (y * w + (x - 1)) * 4, rt1 = (y * w + (x + 1)) * 4;
@@ -5966,10 +6009,22 @@ let editingCheerEventId = null;
 
                 const diffFine = center - blurFine;
                 const diffMid  = center - blurMid;
+                const absFine = Math.abs(diffFine);
 
                 let delta = 0;
-                if (Math.abs(diffFine) >= noiseThreshold) delta += diffFine * fineStrength;
-                if (Math.abs(diffMid) >= noiseThreshold)  delta += diffMid * midStrength;
+                // 若差異極小 (<4) 代表係平滑皮膚或背景膠膜噪點，微幅柔化去噪；若屬於五官邊緣 (>=4) 則精準銳化！
+                if (absFine < 3.5) {
+                  delta = -diffFine * 0.25;
+                } else {
+                  // 防止高光邊緣產生白邊光暈 (Halo Suppression)
+                  const haloGuard = (diffFine > 0 && curLum > 210) ? 0.45 : 1.0;
+                  delta += diffFine * fineStrength * haloGuard;
+                }
+
+                if (Math.abs(diffMid) >= 4.5) {
+                  const midGuard = (diffMid > 0 && curLum > 205) ? 0.5 : 1.0;
+                  delta += diffMid * clarityStrength * midGuard;
+                }
 
                 d[idx + c] = Math.max(0, Math.min(255, Math.round(center + delta)));
               }
@@ -5978,11 +6033,10 @@ let editingCheerEventId = null;
           ctx.putImageData(imgData, 0, 0);
 
           const remasteredUrl = canvas.toDataURL('image/jpeg', 0.98);
-
-          // 同步更新底圖與裁切底圖
           rawUploadDataUrl = remasteredUrl;
           uncroppedOriginalDataUrl = remasteredUrl;
           currentUploadDataUrl = remasteredUrl;
+          _isCurrentCardRemastered = true;
 
           const cfg = typeof getCurrentFilterConfig === 'function' ? getCurrentFilterConfig() : { sharpen: 0, deglare: 0, brightness: 100, contrast: 100 };
           if (cfg.sharpen !== 0 || cfg.deglare !== 0 || cfg.brightness !== 100 || cfg.contrast !== 100) {
@@ -5993,16 +6047,93 @@ let editingCheerEventId = null;
 
           const sizeTag = document.getElementById('detectedSizeTag');
           if (sizeTag) {
-            sizeTag.textContent = `💎 已套用 2K 超清五官與暗部修復 (${w}×${h}px)`;
+            sizeTag.textContent = `💎 已鎖定 2K 超清五官重塑 (${w}×${h}px)`;
           }
-          if (btn) {
-            btn.innerHTML = '✨ 已套用 2K 超清修復（點「🔄 還原原圖」可取消）';
-            btn.disabled = false;
-          }
+          updateRemasterButtonUI();
         };
         img.src = _preRemasterTrueOriginal || rawUploadDataUrl;
       }, 40);
     }
+
+    // 升級版畫質微調預覽：將「☀️ 亮度微調」改為智慧暗部提亮（拉到 125% 都唔會令偶像臉部爆光變死白！）
+    window.applyImageFilterPreview = function() {
+      if (!rawUploadDataUrl) return;
+      if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
+
+      filterDebounceTimer = setTimeout(() => {
+        const cfg = getCurrentFilterConfig();
+        const { sharpen, deglare, brightness: b, contrast: c } = cfg;
+
+        if (sharpen === 0 && deglare === 0 && b === 100 && c === 100) {
+          currentUploadDataUrl = rawUploadDataUrl;
+          document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+          return;
+        }
+
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const d = imgData.data;
+
+          // 建立智慧型「防爆光亮度 + 對比度」查找表 (Highlight-Safe Brightness & Contrast LUT)
+          const bDiff = (b - 100) / 100; // 例如 125% -> +0.25
+          const gamma = bDiff > 0 ? Math.max(0.55, 1 - bDiff * 1.15) : Math.min(1.6, 1 - bDiff * 1.1);
+          const cFactor = c / 100;
+          const deglareStrength = deglare / 100;
+
+          const toneLut = new Uint8Array(256);
+          for (let i = 0; i < 256; i++) {
+            let v = i / 255;
+            // 非線性 Gamma 提亮：專救暗位與中調，高光位 (臉部 >210) 自動保護唔爆白！
+            v = Math.pow(v, gamma);
+            if (bDiff > 0 && i < 235) {
+              v = v + bDiff * 0.18 * (1 - v);
+            }
+            // 對比度調整
+            v = (v - 0.5) * cFactor + 0.5;
+            toneLut[i] = Math.max(0, Math.min(255, Math.round(v * 255)));
+          }
+
+          for (let i = 0; i < d.length; i += 4) {
+            let r = toneLut[d[i]];
+            let g = toneLut[d[i + 1]];
+            let bl = toneLut[d[i + 2]];
+
+            if (deglareStrength > 0) {
+              const lum = 0.299 * r + 0.587 * g + 0.114 * bl;
+              if (lum > 170) {
+                const pull = (lum - 170) * 0.55 * deglareStrength;
+                const factor = (lum - pull) / (lum || 1);
+                r = Math.max(0, Math.min(255, Math.round(r * factor)));
+                g = Math.max(0, Math.min(255, Math.round(g * factor)));
+                bl = Math.max(0, Math.min(255, Math.round(bl * factor)));
+              }
+            }
+
+            d[i] = r;
+            d[i + 1] = g;
+            d[i + 2] = bl;
+          }
+          ctx.putImageData(imgData, 0, 0);
+
+          if (sharpen > 0) {
+            applySharpenFilter(ctx, canvas.width, canvas.height, sharpen);
+          }
+
+          currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.96);
+          document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+        };
+        img.src = rawUploadDataUrl;
+      }, 45);
+    };
 
     // 修正「雙拍消反光」重影模糊問題
     window.blendDualShotAntiGlare = function(c1, c2) {
@@ -6043,31 +6174,56 @@ let editingCheerEventId = null;
         remasterBtn.type = 'button';
         remasterBtn.id = 'smartRemasterBtn';
         remasterBtn.onclick = applyChekiSmartRemaster;
-        remasterBtn.className = 'w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-300 to-sky-400 text-zinc-950 font-black text-xs border-2 border-white/60 shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition';
-        remasterBtn.innerHTML = '🪄 一鍵超清修復（去灰霧 + 五官立體清晰）';
         filterPanel.insertBefore(remasterBtn, filterPanel.firstElementChild);
       }
+      updateRemasterButtonUI();
 
-      const resetRemasterBtnText = () => {
-        const btn = document.getElementById('smartRemasterBtn');
-        if (btn) {
-          btn.innerHTML = '🪄 一鍵超清修復（去灰霧 + 五官立體清晰）';
-          btn.disabled = false;
-        }
-      };
-
-      ['openAddModal', 'openEditFromInspect', 'compressAndSetImage'].forEach(fnName => {
+      // 1. 新增拍立得或新揀相片時：重設為未超清狀態
+      ['openAddModal', 'compressAndSetImage'].forEach(fnName => {
         const origFn = window[fnName];
         if (typeof origFn === 'function' && !origFn._wrappedClearRemasterBackup) {
           window[fnName] = function() {
             _preRemasterTrueOriginal = '';
-            resetRemasterBtnText();
+            _isCurrentCardRemastered = false;
+            updateRemasterButtonUI();
             return origFn.apply(this, arguments);
           };
           window[fnName]._wrappedClearRemasterBackup = true;
         }
       });
 
+      // 2. 打開「✏️ 編輯」時：自動讀取該卡是否已套用過超清，若已套用則直接鎖定按鈕，不再重複疊加！
+      const origOpenEdit = window.openEditFromInspect;
+      if (typeof origOpenEdit === 'function' && !origOpenEdit._wrappedRestoreRemasterState) {
+        window.openEditFromInspect = function() {
+          const card = cards.find(c => c.id === inspectingCardId);
+          _isCurrentCardRemastered = Boolean(card && card.isRemastered);
+          _preRemasterTrueOriginal = (card && card.preRemasterOriginal) ? card.preRemasterOriginal : '';
+          const res = origOpenEdit.apply(this, arguments);
+          updateRemasterButtonUI();
+          if (_isCurrentCardRemastered) {
+            const sizeTag = document.getElementById('detectedSizeTag');
+            if (sizeTag) sizeTag.textContent = '💎 已鎖定 2K 超清五官重塑底圖';
+          }
+          return res;
+        };
+        window.openEditFromInspect._wrappedRestoreRemasterState = true;
+      }
+
+      // 3. 完成「📐 四點拉直 / 對齊白邊」裁切時：針對新 Cut 好的範圍自動解鎖「一鍵 AI 超清修復」
+      const origApplyCrop = window.applyFreeCrop;
+      if (typeof origApplyCrop === 'function' && !origApplyCrop._wrappedUnlockAfterCrop) {
+        window.applyFreeCrop = function() {
+          _isCurrentCardRemastered = false;
+          _preRemasterTrueOriginal = '';
+          const res = origApplyCrop.apply(this, arguments);
+          setTimeout(updateRemasterButtonUI, 120);
+          return res;
+        };
+        window.applyFreeCrop._wrappedUnlockAfterCrop = true;
+      }
+
+      // 4. 當按下「🔄 還原原圖」時：真正還原回未超清前的原始底圖，並重新解鎖一鍵超清按鈕！
       const origReset = window.resetAllFiltersToZero;
       if (typeof origReset === 'function' && !origReset._wrappedRemaster) {
         window.resetAllFiltersToZero = function() {
@@ -6075,23 +6231,32 @@ let editingCheerEventId = null;
             rawUploadDataUrl = _preRemasterTrueOriginal;
             uncroppedOriginalDataUrl = _preRemasterTrueOriginal;
             currentUploadDataUrl = _preRemasterTrueOriginal;
-            _preRemasterTrueOriginal = '';
           }
+          _isCurrentCardRemastered = false;
           origReset.apply(this, arguments);
-          resetRemasterBtnText();
+          updateRemasterButtonUI();
+          const sizeTag = document.getElementById('detectedSizeTag');
+          if (sizeTag) sizeTag.textContent = '💎 已還原為最初原始底圖';
         };
         window.resetAllFiltersToZero._wrappedRemaster = true;
       }
 
+      // 5. 儲存時：將 isRemastered 鎖定狀態與 preRemasterOriginal 一併永久存入資料庫 IndexedDB
       const origSave = window.saveCard;
       if (typeof origSave === 'function' && !origSave._wrappedRemasterSave) {
         window.saveCard = async function() {
           const targetEditId = editingCardId;
+          const savedRemasteredState = _isCurrentCardRemastered;
+          const savedPreRemasterOrig = _preRemasterTrueOriginal;
           await origSave.apply(this, arguments);
           const savedCard = targetEditId ? cards.find(c => c.id === targetEditId) : cards[0];
           if (savedCard) {
             savedCard.baseImage = rawUploadDataUrl || savedCard.image;
             savedCard.uncroppedImage = uncroppedOriginalDataUrl || savedCard.baseImage;
+            savedCard.isRemastered = savedRemasteredState;
+            if (savedPreRemasterOrig) {
+              savedCard.preRemasterOriginal = savedPreRemasterOrig;
+            }
             await saveCardToDB(savedCard);
           }
         };
