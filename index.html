@@ -5861,7 +5861,7 @@ let editingCheerEventId = null;
 
     setTimeout(initContinuousAddPlugin, 250);
 // =========================================================================
-    // 🪄 AI 級拍立得「純淨超清引擎 (零黑邊修復 + Y通道無噪點銳化 + 100%原畫質匯出)」
+    // 🪄 AI 級拍立得「內框獨立修圖保護罩 ＋ 零溢出直線白邊淨化 ＋ 100%原畫質匯出」
     // =========================================================================
     let _preRemasterTrueOriginal = '';
     let _remasterMode = 0; // 0: 原圖 | 1: ✨ 純淨五官超清 | 2: 🔥 強效清透+去灰霧
@@ -5877,12 +5877,140 @@ let editingCheerEventId = null;
         btn.innerHTML = '🔥 已套用：強效清透去霧（再按切換「✨ 純淨五官超清」）';
         btn.className = 'w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 text-zinc-950 font-black text-xs border-2 border-white shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition';
       } else {
-        btn.innerHTML = '🪄 一鍵 AI 超清修復（純淨五官銳化 + 色彩降噪）';
+        btn.innerHTML = '🪄 一鍵 AI 超清修復（只執內框人像・絕不溢出白邊）';
         btn.className = 'w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-300 to-sky-400 text-zinc-950 font-black text-xs border-2 border-white/60 shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition';
       }
     }
 
-    // 🛠️ 關鍵修復 1：徹底解決「🔄 微調拉直」旋轉時產生黑邊的問題！
+    // 🎯 核心突破：精準直線投影偵測拍立得「內框相片長方形邊界 (boxLeft, boxTop, boxRight, boxBottom)」
+    // 確保白邊漂白與內框修圖 100% 貼齊真實相片黑線邊界，徹底杜絕顏色或陰影溢出白框！
+    function detectChekiInnerBox(d, w, h) {
+      // 1. 取樣四邊外圍相紙亮度基準
+      const edgeLums = [];
+      const step = Math.max(2, Math.floor(Math.min(w, h) / 90));
+      const mX = Math.max(3, Math.floor(w * 0.025));
+      const mY = Math.max(3, Math.floor(h * 0.025));
+
+      for (let x = mX; x < w - mX; x += step) {
+        for (const y of [mY, h - 1 - mY]) {
+          const i = (y * w + x) * 4;
+          const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          if (lum > 130) edgeLums.push(lum);
+        }
+      }
+      if (edgeLums.length < 6) {
+        return {
+          left: Math.round(w * 0.075),
+          right: Math.round(w * 0.925),
+          top: Math.round(h * 0.075),
+          bottom: Math.round(h * 0.79),
+          paperLum: 235
+        };
+      }
+      edgeLums.sort((a, b) => a - b);
+      const paperLum = edgeLums[Math.floor(edgeLums.length * 0.6)];
+      const thresholdLum = Math.max(135, paperLum - 32);
+
+      const isNonPaper = (x, y) => {
+        const i = (y * w + x) * 4;
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        const sat = Math.max(r, g, b) - Math.min(r, g, b);
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        return lum < thresholdLum || sat > 38;
+      };
+
+      // 2. 利用整行/整列佔比掃描，精準定位內框四條直線邊界（免疫背景白牆或局部反光干擾）
+      const scanX0 = Math.floor(w * 0.18), scanX1 = Math.floor(w * 0.82);
+      const scanY0 = Math.floor(h * 0.16), scanY1 = Math.floor(h * 0.74);
+
+      let boxTop = Math.round(h * 0.072);
+      for (let y = Math.floor(h * 0.025); y < Math.floor(h * 0.22); y++) {
+        let hits = 0, total = 0;
+        for (let x = scanX0; x <= scanX1; x += step) {
+          total++;
+          if (isNonPaper(x, y)) hits++;
+        }
+        if (hits / total >= 0.35) { boxTop = y; break; }
+      }
+
+      let boxBottom = Math.round(h * 0.795);
+      for (let y = h - 1 - Math.floor(h * 0.03); y > Math.floor(h * 0.62); y--) {
+        let hits = 0, total = 0;
+        for (let x = scanX0; x <= scanX1; x += step) {
+          total++;
+          if (isNonPaper(x, y)) hits++;
+        }
+        if (hits / total >= 0.35) { boxBottom = y; break; }
+      }
+
+      let boxLeft = Math.round(w * 0.072);
+      for (let x = Math.floor(w * 0.025); x < Math.floor(w * 0.22); x++) {
+        let hits = 0, total = 0;
+        for (let y = scanY0; y <= scanY1; y += step) {
+          total++;
+          if (isNonPaper(x, y)) hits++;
+        }
+        if (hits / total >= 0.35) { boxLeft = x; break; }
+      }
+
+      let boxRight = Math.round(w * 0.928);
+      for (let x = w - 1 - Math.floor(w * 0.025); x > Math.floor(w * 0.78); x--) {
+        let hits = 0, total = 0;
+        for (let y = scanY0; y <= scanY1; y += step) {
+          total++;
+          if (isNonPaper(x, y)) hits++;
+        }
+        if (hits / total >= 0.35) { boxRight = x; break; }
+      }
+
+      return { left: boxLeft, right: boxRight, top: boxTop, bottom: boxBottom, paperLum };
+    }
+
+    // ⬜ 零溢出直線白邊淨化演算法：直接貼齊內框邊界將外圍相紙漂白為純白 (#FFFDF9)，絕不留灰圈！
+    function whitenChekiFramePixels(d, w, h, strength = 0.98) {
+      const box = detectChekiInnerBox(d, w, h);
+      const minSignLum = Math.max(95, box.paperLum - 75);
+      const outerCleanBand = Math.max(4, Math.round(Math.min(w, h) * 0.008));
+
+      for (let y = 0; y < h; y++) {
+        const inY = (y >= box.top && y <= box.bottom);
+        for (let x = 0; x < w; x++) {
+          const inX = (x >= box.left && x <= box.right);
+          // 內框相片區域 100% 保持原樣，完全不觸碰
+          if (inX && inY) continue;
+
+          const idx = (y * w + x) * 4;
+          const r = d[idx], g = d[idx + 1], b = d[idx + 2];
+
+          // 最外圍邊緣強制清除任何裁切殘留黑邊
+          if (x < outerCleanBand || x >= w - outerCleanBand || y < outerCleanBand || y >= h - outerCleanBand) {
+            d[idx] = 254; d[idx + 1] = 253; d[idx + 2] = 251;
+            continue;
+          }
+
+          const sat = Math.max(r, g, b) - Math.min(r, g, b);
+          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+          // 保護白邊上的深色或彩色簽名筆跡
+          if (lum < minSignLum || sat > 45) continue;
+
+          // 緊貼內框邊界（僅保留 2px 微米級抗鋸齒過渡），徹底消除 30px 灰藍光暈溢出！
+          let dist = 999;
+          if (inX) dist = y < box.top ? (box.top - y) : (y - box.bottom);
+          else if (inY) dist = x < box.left ? (box.left - x) : (x - box.right);
+          else dist = Math.hypot(x < box.left ? (box.left - x) : (x - box.right), y < box.top ? (box.top - y) : (y - box.bottom));
+
+          const edgeWeight = dist <= 2 ? (dist / 2) : 1.0;
+          const blend = strength * edgeWeight;
+
+          d[idx]     = Math.min(255, Math.round(r + (254 - r) * blend));
+          d[idx + 1] = Math.min(255, Math.round(g + (253 - g) * blend));
+          d[idx + 2] = Math.min(255, Math.round(b + (251 - b) * blend));
+        }
+      }
+    }
+
+    // 🛠️ 修正「🔄 微調拉直」：旋轉時以純白相紙色填補四角，但不放大相片，防止相片內框溢出去白邊！
     window.onCropFineRotateChange = function(degVal) {
       cropFineRotDeg = Number(degVal) || 0;
       const rotSlider = document.getElementById('cropFineRotSlider');
@@ -5905,18 +6033,10 @@ let editingCheerEventId = null;
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
 
-      // 改用拍立得純白相紙色 (#FFFDF9) 填底，並自動微幅放大補償旋轉角位，100% 絕不出現黑邊！
       ctx.fillStyle = '#FFFDF9';
       ctx.fillRect(0, 0, w, h);
-
-      const rad = (cropFineRotDeg * Math.PI) / 180;
-      const absSin = Math.abs(Math.sin(rad));
-      const absCos = Math.abs(Math.cos(rad));
-      const autoCoverScale = Math.min(1.12, Math.max((w * absCos + h * absSin) / w, (h * absCos + w * absSin) / h));
-
       ctx.translate(w / 2, h / 2);
-      ctx.rotate(rad);
-      ctx.scale(autoCoverScale, autoCoverScale);
+      ctx.rotate((cropFineRotDeg * Math.PI) / 180);
       ctx.drawImage(cropBaseUnrotatedImg, -w / 2, -h / 2);
 
       const img = document.getElementById('cropTargetImg');
@@ -5924,27 +6044,31 @@ let editingCheerEventId = null;
       img.src = canvas.toDataURL('image/jpeg', 0.99);
     };
 
-    // 🛠️ 關鍵修復 2：徹底解決「✨ 清晰銳化」微調時四圍產生 1px 黑邊與彩色噪點的問題！
-    window.applySharpenFilter = function(ctx, w, h, amount) {
+    // 🛠️ 修正「✨ 清晰銳化」：只在內框相片範圍內銳化，絕不跨過內框邊界溢出白邊！
+    window.applySharpenFilter = function(ctx, w, h, amount, innerBox) {
       if (amount <= 0) return;
       const srcImg = ctx.getImageData(0, 0, w, h);
       const src = srcImg.data;
-      // 直接複製完整原圖像素（確保最外圍 x=0, w-1, y=0, h-1 保持原色與不透明，絕不變黑邊！）
       const dstImg = new ImageData(new Uint8ClampedArray(src), w, h);
       const dst = dstImg.data;
       const gain = (amount / 100) * 0.85;
 
-      for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
+      const box = innerBox || detectChekiInnerBox(src, w, h);
+      const startY = Math.max(1, box.top + 2);
+      const endY = Math.min(h - 2, box.bottom - 2);
+      const startX = Math.max(1, box.left + 2);
+      const endX = Math.min(w - 2, box.right - 2);
+
+      for (let y = startY; y <= endY; y++) {
+        for (let x = startX; x <= endX; x++) {
           const idx = (y * w + x) * 4;
           const up = ((y - 1) * w + x) * 4;
           const dn = ((y + 1) * w + x) * 4;
           const lf = (y * w + (x - 1)) * 4;
           const rt = (y * w + (x + 1)) * 4;
 
-          // 只針對「亮度通道 (Luminance)」計算銳化差值，避免產生紅綠藍彩色噪點！
           const lumCenter = 0.299 * src[idx] + 0.587 * src[idx + 1] + 0.114 * src[idx + 2];
-          if (lumCenter > 245 || lumCenter < 8) continue;
+          if (lumCenter > 242 || lumCenter < 8) continue;
 
           const lumUp = 0.299 * src[up] + 0.587 * src[up + 1] + 0.114 * src[up + 2];
           const lumDn = 0.299 * src[dn] + 0.587 * src[dn + 1] + 0.114 * src[dn + 2];
@@ -5952,7 +6076,7 @@ let editingCheerEventId = null;
           const lumRt = 0.299 * src[rt] + 0.587 * src[rt + 1] + 0.114 * src[rt + 2];
 
           const lap = lumCenter - (lumUp + lumDn + lumLf + lumRt) * 0.25;
-          if (Math.abs(lap) < 2.5) continue; // 過濾微細相紙噪點
+          if (Math.abs(lap) < 2.5) continue;
 
           const delta = lap * gain * 2.2;
           dst[idx]     = Math.max(0, Math.min(255, Math.round(src[idx] + delta)));
@@ -5964,241 +6088,6 @@ let editingCheerEventId = null;
       ctx.putImageData(dstImg, 0, 0);
     };
 
-    // 🛠️ 關鍵修復 3：升級四點裁切輸出為 2200px 超高畫質 + 邊緣抗鋸齒 + 0.99 無損級品質
-    const _origApplyFreeCropBase = window.applyFreeCrop;
-    window.applyFreeCrop = function() {
-      const targetImgEl = document.getElementById('cropTargetImg');
-      if (!targetImgEl || !targetImgEl.src) return;
-
-      const img = new Image();
-      img.onload = () => {
-        const sw = img.naturalWidth;
-        const sh = img.naturalHeight;
-        const pNW = { x: (cropCorners.nw.x / 100) * sw, y: (cropCorners.nw.y / 100) * sh };
-        const pNE = { x: (cropCorners.ne.x / 100) * sw, y: (cropCorners.ne.y / 100) * sh };
-        const pSE = { x: (cropCorners.se.x / 100) * sw, y: (cropCorners.se.y / 100) * sh };
-        const pSW = { x: (cropCorners.sw.x / 100) * sw, y: (cropCorners.sw.y / 100) * sh };
-
-        const topW = Math.hypot(pNE.x - pNW.x, pNE.y - pNW.y);
-        const botW = Math.hypot(pSE.x - pSW.x, pSE.y - pSW.y);
-        const leftH = Math.hypot(pSW.x - pNW.x, pSW.y - pNW.y);
-        const rightH = Math.hypot(pSE.x - pNE.x, pSE.y - pNE.y);
-
-        let outW = Math.max(120, Math.round((topW + botW) / 2));
-        let outH = Math.max(120, Math.round((leftH + rightH) / 2));
-
-        // 自動確保裁切後的拍立得保持 2000px ~ 2400px 超清解析度（防止裁切後像素縮水變朦！）
-        const minHighResSide = 2000;
-        const maxHighResSide = 2400;
-        const curLong = Math.max(outW, outH);
-        if (curLong < minHighResSide) {
-          const upScale = minHighResSide / curLong;
-          outW = Math.round(outW * upScale);
-          outH = Math.round(outH * upScale);
-        } else if (curLong > maxHighResSide) {
-          const downScale = maxHighResSide / curLong;
-          outW = Math.round(outW * downScale);
-          outH = Math.round(outH * downScale);
-        }
-
-        const dstCanvas = document.createElement('canvas');
-        dstCanvas.width = outW;
-        dstCanvas.height = outH;
-        const dCtx = dstCanvas.getContext('2d', { willReadFrequently: true });
-        dCtx.fillStyle = '#FFFDF9';
-        dCtx.fillRect(0, 0, outW, outH);
-
-        const isAxisAlignedRect =
-          Math.abs(cropCorners.nw.y - cropCorners.ne.y) < 0.35 &&
-          Math.abs(cropCorners.sw.y - cropCorners.se.y) < 0.35 &&
-          Math.abs(cropCorners.nw.x - cropCorners.sw.x) < 0.35 &&
-          Math.abs(cropCorners.ne.x - cropCorners.se.x) < 0.35;
-
-        if (isAxisAlignedRect) {
-          dCtx.imageSmoothingEnabled = true;
-          dCtx.imageSmoothingQuality = 'high';
-          dCtx.drawImage(
-            img,
-            pNW.x, pNW.y, Math.max(1, pNE.x - pNW.x), Math.max(1, pSW.y - pNW.y),
-            0, 0, outW, outH
-          );
-        } else {
-          const srcCanvas = document.createElement('canvas');
-          srcCanvas.width = sw;
-          srcCanvas.height = sh;
-          const sCtx = srcCanvas.getContext('2d', { willReadFrequently: true });
-          sCtx.drawImage(img, 0, 0);
-          const srcData = sCtx.getImageData(0, 0, sw, sh).data;
-
-          const dstImgData = dCtx.createImageData(outW, outH);
-          const dstData = dstImgData.data;
-
-          for (let y = 0; y < outH; y++) {
-            const v = y / (outH - 1 || 1);
-            const leftX = pNW.x + (pSW.x - pNW.x) * v;
-            const leftY = pNW.y + (pSW.y - pNW.y) * v;
-            const rightX = pNE.x + (pSE.x - pNE.x) * v;
-            const rightY = pNE.y + (pSE.y - pNE.y) * v;
-
-            for (let x = 0; x < outW; x++) {
-              const u = x / (outW - 1 || 1);
-              const fx = Math.min(sw - 1.001, Math.max(0, leftX + (rightX - leftX) * u));
-              const fy = Math.min(sh - 1.001, Math.max(0, leftY + (rightY - leftY) * u));
-
-              const x0 = Math.floor(fx), y0 = Math.floor(fy);
-              const x1 = Math.min(sw - 1, x0 + 1), y1 = Math.min(sh - 1, y0 + 1);
-              const dx = fx - x0, dy = fy - y0;
-
-              const w00 = (1 - dx) * (1 - dy), w10 = dx * (1 - dy);
-              const w01 = (1 - dx) * dy, w11 = dx * dy;
-
-              const i00 = (y0 * sw + x0) * 4, i10 = (y0 * sw + x1) * 4;
-              const i01 = (y1 * sw + x0) * 4, i11 = (y1 * sw + x1) * 4;
-
-              const dIdx = (y * outW + x) * 4;
-              dstData[dIdx]     = Math.round(srcData[i00] * w00 + srcData[i10] * w10 + srcData[i01] * w01 + srcData[i11] * w11);
-              dstData[dIdx + 1] = Math.round(srcData[i00 + 1] * w00 + srcData[i10 + 1] * w10 + srcData[i01 + 1] * w01 + srcData[i11 + 1] * w11);
-              dstData[dIdx + 2] = Math.round(srcData[i00 + 2] * w00 + srcData[i10 + 2] * w10 + srcData[i01 + 2] * w01 + srcData[i11 + 2] * w11);
-              dstData[dIdx + 3] = 255;
-            }
-          }
-          dCtx.putImageData(dstImgData, 0, 0);
-        }
-
-        _remasterMode = 0;
-        _preRemasterTrueOriginal = '';
-        rawUploadDataUrl = dstCanvas.toDataURL('image/jpeg', 0.99);
-        currentUploadDataUrl = rawUploadDataUrl;
-        initFilterHistory({ sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
-        document.getElementById('editPreviewImg').src = currentUploadDataUrl;
-
-        const sizeTag = document.getElementById('detectedSizeTag');
-        if (sizeTag) {
-          sizeTag.textContent = `💎 超清無損裁切：${classifyChekiDimension(outW, outH)}`;
-        }
-        updateRemasterButtonUI();
-        closeCropperModal();
-      };
-      img.src = targetImgEl.src;
-    };
-
-    // ⬜ 升級版無黑點拍立得白邊淨化演算法（連邊緣黑邊與灰塵雜訊點一併平滑漂白，不產生生硬內框黑線！）
-    function whitenChekiFramePixels(d, w, h, strength = 0.94) {
-      const edgeLums = [];
-      const stepX = Math.max(2, Math.floor(w / 80));
-      const stepY = Math.max(2, Math.floor(h / 80));
-      const marginX = Math.max(3, Math.floor(w * 0.03));
-      const marginY = Math.max(3, Math.floor(h * 0.03));
-
-      for (let x = marginX; x < w - marginX; x += stepX) {
-        for (const y of [marginY, h - 1 - marginY]) {
-          const i = (y * w + x) * 4;
-          const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-          if (lum > 115) edgeLums.push(lum);
-        }
-      }
-      if (edgeLums.length < 6) return;
-      edgeLums.sort((a, b) => a - b);
-      const baseFrameLum = edgeLums[Math.floor(edgeLums.length * 0.55)];
-      const minFrameLum = Math.max(105, baseFrameLum - 65);
-
-      const isPaperPixel = (idx) => {
-        const r = d[idx], g = d[idx + 1], b = d[idx + 2];
-        const sat = Math.max(r, g, b) - Math.min(r, g, b);
-        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-        return sat < 48 && lum >= minFrameLum;
-      };
-
-      const maxTopScan = Math.floor(h * 0.22);
-      const maxBotScan = Math.floor(h * 0.28);
-      const maxLeftScan = Math.floor(w * 0.24);
-      const maxRightScan = Math.floor(w * 0.24);
-
-      const topStops = [], botStops = [], leftStops = [], rightStops = [];
-      const startOffX = Math.floor(w * 0.015);
-      const startOffY = Math.floor(h * 0.015);
-
-      for (let x = Math.floor(w * 0.18); x < Math.floor(w * 0.82); x += stepX) {
-        let t = startOffY;
-        while (t < maxTopScan && isPaperPixel((t * w + x) * 4)) t++;
-        topStops.push(t);
-
-        let b = startOffY;
-        while (b < maxBotScan && isPaperPixel(((h - 1 - b) * w + x) * 4)) b++;
-        botStops.push(b);
-      }
-
-      for (let y = Math.floor(h * 0.18); y < Math.floor(h * 0.82); y += stepY) {
-        let l = startOffX;
-        while (l < maxLeftScan && isPaperPixel((y * w + l) * 4)) l++;
-        leftStops.push(l);
-
-        let r = startOffX;
-        while (r < maxRightScan && isPaperPixel((y * w + (w - 1 - r)) * 4)) r++;
-        rightStops.push(r);
-      }
-
-      const getPercentile = (arr, p) => {
-        if (!arr.length) return 0;
-        const sorted = [...arr].sort((a, b) => a - b);
-        return sorted[Math.floor(sorted.length * p)];
-      };
-
-      // 內縮 1.2% 緩衝距離，完全避開內框交界處的物理黑線陰影！
-      const safetyPad = Math.max(6, Math.round(Math.min(w, h) * 0.012));
-      const boxTop = Math.max(0, getPercentile(topStops, 0.4) - safetyPad);
-      const boxBottom = Math.min(h - 1, h - 1 - Math.max(0, getPercentile(botStops, 0.4) - safetyPad));
-      const boxLeft = Math.max(0, getPercentile(leftStops, 0.4) - safetyPad);
-      const boxRight = Math.min(w - 1, w - 1 - Math.max(0, getPercentile(rightStops, 0.4) - safetyPad));
-      const feather = Math.max(10, Math.round(Math.min(w, h) * 0.018));
-
-      // 最外圍 1.2% 邊緣強制清除裁切殘留黑邊/紅邊
-      const outerCleanBand = Math.max(4, Math.round(Math.min(w, h) * 0.01));
-
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          const inInnerX = x >= boxLeft && x <= boxRight;
-          const inInnerY = y >= boxTop && y <= boxBottom;
-          if (inInnerX && inInnerY) continue;
-
-          const idx = (y * w + x) * 4;
-          const r = d[idx], g = d[idx + 1], b = d[idx + 2];
-          const isVeryOuterEdge = (x < outerCleanBand || x >= w - outerCleanBand || y < outerCleanBand || y >= h - outerCleanBand);
-
-          if (isVeryOuterEdge) {
-            // 徹底清除最外圍可能殘留的裁切黑線或雜色邊
-            d[idx] = 254; d[idx + 1] = 253; d[idx + 2] = 250;
-            continue;
-          }
-
-          const sat = Math.max(r, g, b) - Math.min(r, g, b);
-          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-
-          // 保護深色或彩色簽名筆跡
-          if (lum < minFrameLum - 15 || sat > 48) continue;
-
-          let distToInner = 999;
-          if (inInnerX) {
-            distToInner = y < boxTop ? (boxTop - y) : (y - boxBottom);
-          } else if (inInnerY) {
-            distToInner = x < boxLeft ? (boxLeft - x) : (x - boxRight);
-          } else {
-            const dx = x < boxLeft ? (boxLeft - x) : (x - boxRight);
-            const dy = y < boxTop ? (boxTop - y) : (y - boxBottom);
-            distToInner = Math.hypot(dx, dy);
-          }
-
-          const edgeFade = distToInner < feather ? Math.pow(distToInner / feather, 1.2) : 1.0;
-          const satFade = sat > 25 ? Math.max(0, (48 - sat) / 23) : 1.0;
-          const blend = strength * edgeFade * satFade;
-
-          d[idx]     = Math.min(255, Math.round(r + (254 - r) * blend));
-          d[idx + 1] = Math.min(255, Math.round(g + (253 - g) * blend));
-          d[idx + 2] = Math.min(255, Math.round(b + (250 - b) * blend));
-        }
-      }
-    }
-
     window.applyStandaloneBorderWhitening = function() {
       if (!rawUploadDataUrl) return;
       if (!_preRemasterTrueOriginal) {
@@ -6206,7 +6095,7 @@ let editingCheerEventId = null;
       }
       const wBtn = document.getElementById('whitenBorderBtn');
       if (wBtn) {
-        wBtn.innerHTML = '⏳ 正在淨化拍立得白邊與清除黑邊...';
+        wBtn.innerHTML = '⏳ 正在精準對齊內框並漂白白邊...';
         wBtn.disabled = true;
       }
 
@@ -6220,7 +6109,7 @@ let editingCheerEventId = null;
           ctx.drawImage(img, 0, 0);
 
           const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          whitenChekiFramePixels(imgData.data, canvas.width, canvas.height, 0.96);
+          whitenChekiFramePixels(imgData.data, canvas.width, canvas.height, 0.99);
           ctx.putImageData(imgData, 0, 0);
 
           const whitenedUrl = canvas.toDataURL('image/jpeg', 0.99);
@@ -6236,17 +6125,16 @@ let editingCheerEventId = null;
           }
 
           if (wBtn) {
-            wBtn.innerHTML = '⬜ 已淨化 Cheki 白邊（已清除四圍黑邊/雜點）';
+            wBtn.innerHTML = '⬜ 已貼齊內框淨化白邊（零溢出・純白相紙）';
             wBtn.disabled = false;
           }
           const sizeTag = document.getElementById('detectedSizeTag');
-          if (sizeTag) sizeTag.textContent = '⬜ 已將拍立得外框淨化為純白相紙色';
+          if (sizeTag) sizeTag.textContent = '⬜ 已貼齊內框將外框淨化為純白相紙色';
         };
         img.src = rawUploadDataUrl;
       }, 25);
     };
 
-    // 高速可分離式模糊（用於計算純亮度通道清晰度與色彩降噪）
     function fastSeparableBlurChannel(srcChannel, w, h, radius) {
       const len = w * h;
       const tmp = new Float32Array(len);
@@ -6283,7 +6171,7 @@ let editingCheerEventId = null;
       return out;
     }
 
-    // 💎 全新「純亮度 Y-Channel 超清引擎 + 色彩降噪」：不產生任何彩色噪點、不破壞原圖自然曝光！
+    // 💎 升級版「內框專屬 Y-Channel 超清引擎」：只處理內框相片，100% 不溢出白邊！
     function applyChekiSmartRemaster() {
       if (!rawUploadDataUrl) return;
       if (!_preRemasterTrueOriginal) {
@@ -6296,15 +6184,14 @@ let editingCheerEventId = null;
       const btn = document.getElementById('smartRemasterBtn');
       if (btn) {
         btn.innerHTML = targetMode === 2
-          ? '⏳ 正在執行「🔥 強效清透去霧 + 色彩降噪」...'
-          : '⏳ 正在執行「✨ 純淨五官超清 + 色彩降噪」...';
+          ? '⏳ 正在執行「🔥 內框強效清透去霧 + 白邊鎖定」...'
+          : '⏳ 正在執行「✨ 內框純淨五官超清 + 白邊鎖定」...';
         btn.disabled = true;
       }
 
       setTimeout(() => {
         const img = new Image();
         img.onload = () => {
-          // 1. 多階雙立方平滑放大至 2200px 超高畫質基底
           let srcW = img.naturalWidth, srcH = img.naturalHeight;
           const targetLongSide = 2200;
           let w = srcW, h = srcH;
@@ -6338,8 +6225,10 @@ let editingCheerEventId = null;
           const d = imgData.data;
           const pixelCount = w * h;
 
-          // 2. 將 RGB 轉換為 YCbCr（分離「亮度 Y」與「色彩 Cb/Cr」）
-          // 好處：可單獨消除色彩通道上的紅藍噪點斑塊，並只針對亮度通道做超清五官銳化！
+          // 1. 先偵測內框相片精準邊界，超清與去霧只在內框 (box) 內部進行！
+          const box = detectChekiInnerBox(d, w, h);
+          const innerPad = 3; // 避開內框最外圍 3px 物理黑線，防止黑白交界處產生光暈溢出
+
           const Y = new Float32Array(pixelCount);
           const Cb = new Float32Array(pixelCount);
           const Cr = new Float32Array(pixelCount);
@@ -6352,86 +6241,67 @@ let editingCheerEventId = null;
             Cr[p] = r - yVal;
           }
 
-          // 3. 對色彩通道 (Cb, Cr) 進行輕微平滑降噪（消除拍立得翻拍常見的一撻撻彩色雜訊斑塊！）
           const smoothCb = fastSeparableBlurChannel(Cb, w, h, 2);
           const smoothCr = fastSeparableBlurChannel(Cr, w, h, 2);
-
-          // 4. 對亮度通道 (Y) 計算雙層細節：微細五官眼神 (Radius=2) + 立體輪廓 (Radius=5)
           const blurYFine = fastSeparableBlurChannel(Y, w, h, 2);
           const blurYMid  = fastSeparableBlurChannel(Y, w, h, 5);
 
-          // 測量內框暗位，只在模式 2 做溫和去霧，模式 1 保持 100% 原生柔和色調
-          const dehazeFloor = targetMode === 2 ? 12 : 3;
-          const sPower = targetMode === 2 ? 1.07 : 1.02;
-          const satBoost = targetMode === 2 ? 1.06 : 1.02;
-          const fineGain = targetMode === 2 ? 1.05 : 0.85;
-          const midGain  = targetMode === 2 ? 0.35 : 0.22;
+          const dehazeFloor = targetMode === 2 ? 14 : 4;
+          const sPower = targetMode === 2 ? 1.08 : 1.03;
+          const satBoost = targetMode === 2 ? 1.07 : 1.03;
+          const fineGain = targetMode === 2 ? 1.08 : 0.88;
+          const midGain  = targetMode === 2 ? 0.36 : 0.24;
 
-          for (let p = 0, i = 0; p < pixelCount; p++, i += 4) {
-            const origY = Y[p];
+          for (let y = box.top + innerPad; y <= box.bottom - innerPad; y++) {
+            for (let x = box.left + innerPad; x <= box.right - innerPad; x++) {
+              const p = y * w + x;
+              const i = p * 4;
+              const origY = Y[p];
 
-            // 白邊與極高光保護：不拉黑、不起灰邊
-            if (origY > 240) continue;
-
-            // A. 溫和清透曲線（不破壞原本膚色與暗部細節）
-            let normY = Math.max(0, Math.min(1, (origY - dehazeFloor) / (255 - dehazeFloor)));
-            if (origY < 215) {
-              normY = normY < 0.5
-                ? 0.5 * Math.pow(2 * normY, sPower)
-                : 1 - 0.5 * Math.pow(2 * (1 - normY), sPower);
-            }
-            let baseY = normY * 255;
-
-            // B. 純亮度通道無噪點五官強化（平滑皮膚噪點 <2.5 自動美肌柔化，眼神與髮絲 >=2.5 精準變清！）
-            const diffFine = origY - blurYFine[p];
-            const diffMid  = origY - blurYMid[p];
-            let sharpDelta = 0;
-
-            if (Math.abs(diffFine) < 2.2) {
-              sharpDelta -= diffFine * 0.3; // 撫平皮膚與背景微細顆粒噪點
-            } else {
-              // 防止高光邊緣白邊光暈
-              const guard = (diffFine > 0 && origY > 200) ? 0.35 : 1.0;
-              sharpDelta += diffFine * fineGain * guard;
-            }
-
-            if (Math.abs(diffMid) >= 3.0) {
-              const midGuard = (diffMid > 0 && origY > 195) ? 0.35 : 1.0;
-              sharpDelta += diffMid * midGain * midGuard;
-            }
-
-            const finalY = Math.max(0, Math.min(255, baseY + sharpDelta));
-
-            // C. 結合降噪後的純淨色彩通道還原回 RGB
-            const cleanCb = (Cb[p] * 0.35 + smoothCb[p] * 0.65) * satBoost;
-            const cleanCr = (Cr[p] * 0.35 + smoothCr[p] * 0.65) * satBoost;
-
-            const finalR = finalY + cleanCr;
-            const finalB = finalY + cleanCb;
-            const finalG = (finalY - 0.299 * finalR - 0.114 * finalB) / 0.587;
-
-            d[i]     = Math.max(0, Math.min(255, Math.round(finalR)));
-            d[i + 1] = Math.max(0, Math.min(255, Math.round(finalG)));
-            d[i + 2] = Math.max(0, Math.min(255, Math.round(finalB)));
-            d[i + 3] = 255;
-          }
-
-          // 5. 清除最外圍 4 邊可能殘留的 1~3px 雜色邊線
-          const cleanEdge = 3;
-          for (let y = 0; y < h; y++) {
-            for (let x = 0; x < w; x++) {
-              if (x < cleanEdge || x >= w - cleanEdge || y < cleanEdge || y >= h - cleanEdge) {
-                const idx = (y * w + x) * 4;
-                if (d[idx] + d[idx + 1] + d[idx + 2] > 420) {
-                  d[idx] = 254; d[idx + 1] = 253; d[idx + 2] = 250;
-                }
+              let normY = Math.max(0, Math.min(1, (origY - dehazeFloor) / (255 - dehazeFloor)));
+              if (origY < 220) {
+                normY = normY < 0.5
+                  ? 0.5 * Math.pow(2 * normY, sPower)
+                  : 1 - 0.5 * Math.pow(2 * (1 - normY), sPower);
               }
+              let baseY = normY * 255;
+
+              const diffFine = origY - blurYFine[p];
+              const diffMid  = origY - blurYMid[p];
+              let sharpDelta = 0;
+
+              if (Math.abs(diffFine) < 2.2) {
+                sharpDelta -= diffFine * 0.3;
+              } else {
+                const guard = (diffFine > 0 && origY > 200) ? 0.35 : 1.0;
+                sharpDelta += diffFine * fineGain * guard;
+              }
+
+              if (Math.abs(diffMid) >= 3.0) {
+                const midGuard = (diffMid > 0 && origY > 195) ? 0.35 : 1.0;
+                sharpDelta += diffMid * midGain * midGuard;
+              }
+
+              const finalY = Math.max(0, Math.min(255, baseY + sharpDelta));
+              const cleanCb = (Cb[p] * 0.35 + smoothCb[p] * 0.65) * satBoost;
+              const cleanCr = (Cr[p] * 0.35 + smoothCr[p] * 0.65) * satBoost;
+
+              const finalR = finalY + cleanCr;
+              const finalB = finalY + cleanCb;
+              const finalG = (finalY - 0.299 * finalR - 0.114 * finalB) / 0.587;
+
+              d[i]     = Math.max(0, Math.min(255, Math.round(finalR)));
+              d[i + 1] = Math.max(0, Math.min(255, Math.round(finalG)));
+              d[i + 2] = Math.max(0, Math.min(255, Math.round(finalB)));
+              d[i + 3] = 255;
             }
           }
+
+          // 2. 將內框以外的外圍相紙同步淨化為純白，保證內外框分明、零溢出！
+          whitenChekiFramePixels(d, w, h, 0.98);
 
           ctx.putImageData(imgData, 0, 0);
 
-          // 使用 0.99 無損級高品質儲存底圖，徹底告別壓縮起格！
           const remasteredUrl = canvas.toDataURL('image/jpeg', 0.99);
           rawUploadDataUrl = remasteredUrl;
           uncroppedOriginalDataUrl = remasteredUrl;
@@ -6447,8 +6317,8 @@ let editingCheerEventId = null;
           const sizeTag = document.getElementById('detectedSizeTag');
           if (sizeTag) {
             sizeTag.textContent = targetMode === 2
-              ? `🔥 已套用強效清透超清 (${w}×${h}px · 長按圖片可對比原圖)`
-              : `✨ 已套用純淨五官超清 (${w}×${h}px · 長按圖片可對比原圖)`;
+              ? `🔥 已套用強效清透超清 (${w}×${h}px · 白邊已鎖定保護)`
+              : `✨ 已套用純淨五官超清 (${w}×${h}px · 白邊已鎖定保護)`;
           }
           updateRemasterButtonUI();
         };
@@ -6456,7 +6326,7 @@ let editingCheerEventId = null;
       }, 25);
     }
 
-    // 畫質微調預覽（保證 0.99 原畫質輸出與零黑邊）
+    // 🛡️ 升級版畫質微調預覽：4 條滑桿只調整「內框相片」，外圍白邊 100% 鎖定純白唔變灰、唔溢出！
     window.applyImageFilterPreview = function() {
       if (!rawUploadDataUrl) return;
       if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
@@ -6481,10 +6351,14 @@ let editingCheerEventId = null;
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-          if (b !== 100 || c !== 100 || deglare > 0) {
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const d = imgData.data;
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const d = imgData.data;
+          const w = canvas.width, h = canvas.height;
 
+          // 定位內框範圍：滑桿效果只套用於內框相片，外圍白邊完全不受影響！
+          const box = detectChekiInnerBox(d, w, h);
+
+          if (b !== 100 || c !== 100 || deglare > 0) {
             const bDiff = (b - 100) / 100;
             const cDiff = (c - 100) / 100;
             const deglareStrength = deglare / 100;
@@ -6494,9 +6368,10 @@ let editingCheerEventId = null;
               let v = i / 255;
 
               if (bDiff > 0) {
-                const blackAnchor = v < 0.10 ? (v / 0.10) : 1.0;
-                v = Math.pow(v, Math.max(0.70, 1 - bDiff * 0.80));
-                v = v + bDiff * 0.22 * blackAnchor * (1 - v * 0.35);
+                // 鎖住最深黑位 (眼珠/黑髮 v<0.12)，只提亮暗部與中調膚色
+                const blackAnchor = v < 0.12 ? Math.pow(v / 0.12, 1.4) : 1.0;
+                const highlightGuard = v > 0.82 ? Math.max(0.15, (1 - v) / 0.18) : 1.0;
+                v = v + bDiff * 0.45 * blackAnchor * highlightGuard;
               } else if (bDiff < 0) {
                 v = v + bDiff * 0.55 * Math.pow(v, 0.75);
               }
@@ -6504,36 +6379,56 @@ let editingCheerEventId = null;
               if (deglareStrength > 0) {
                 const fogCut = deglareStrength * 0.06;
                 v = Math.max(0, (v - fogCut) / (1 - fogCut));
-                if (v > 0.65 && v < 0.90) {
-                  v = 0.65 + (v - 0.65) * (1 - deglareStrength * 0.35);
+                if (v > 0.62) {
+                  v = 0.62 + (v - 0.62) * (1 - deglareStrength * 0.38);
                 }
               }
 
               if (cDiff !== 0) {
-                const cPower = Math.max(0.70, Math.min(1.45, 1 + cDiff * 0.95));
-                v = v < 0.5
-                  ? 0.5 * Math.pow(2 * v, cPower)
-                  : 1 - 0.5 * Math.pow(2 * (1 - v), cPower);
+                if (cDiff > 0) {
+                  const cPower = Math.min(1.45, 1 + cDiff * 0.95);
+                  v = v < 0.5 ? 0.5 * Math.pow(2 * v, cPower) : 1 - 0.5 * Math.pow(2 * (1 - v), cPower);
+                } else {
+                  // 拉低對比度 (<100%) 時：柔和化中調陰影，但保護深黑位 (v<0.12) 不變成灰白霧氣！
+                  const softAmount = Math.abs(cDiff) * 0.42;
+                  const midPull = 0.5 + (v - 0.5) * (1 - softAmount);
+                  const darkKeep = v < 0.16 ? (v / 0.16) : 1.0;
+                  v = v * (1 - darkKeep) + midPull * darkKeep;
+                }
               }
 
               expLut[i] = Math.max(0, Math.min(255, Math.round(v * 255)));
             }
 
-            for (let i = 0; i < d.length; i += 4) {
-              const r = d[i], g = d[i + 1], bl = d[i + 2];
-              const oldLum = Math.max(1, Math.round(0.299 * r + 0.587 * g + 0.114 * bl));
-              const newLum = expLut[oldLum];
-              const ratio = newLum / oldLum;
+            // 只在內框相片 (box.left ~ box.right, box.top ~ box.bottom) 內套用滑桿色階！
+            for (let y = box.top; y <= box.bottom; y++) {
+              for (let x = box.left; x <= box.right; x++) {
+                const i = (y * w + x) * 4;
+                const r = d[i], g = d[i + 1], bl = d[i + 2];
+                const oldLum = Math.max(1, Math.round(0.299 * r + 0.587 * g + 0.114 * bl));
+                const newLum = expLut[oldLum];
+                const ratio = newLum / oldLum;
 
-              d[i]     = Math.min(255, Math.round(r * ratio));
-              d[i + 1] = Math.min(255, Math.round(g * ratio));
-              d[i + 2] = Math.min(255, Math.round(bl * ratio));
+                let nr = Math.min(255, Math.round(r * ratio));
+                let ng = Math.min(255, Math.round(g * ratio));
+                let nb = Math.min(255, Math.round(bl * ratio));
+
+                // 當拉低對比或提亮時，自動補償 6% 色彩飽和度，防止衣服與臉部變灰白
+                if (cDiff < 0 || bDiff > 0) {
+                  const satComp = 1.06;
+                  nr = Math.max(0, Math.min(255, Math.round(newLum + (nr - newLum) * satComp)));
+                  ng = Math.max(0, Math.min(255, Math.round(newLum + (ng - newLum) * satComp)));
+                  nb = Math.max(0, Math.min(255, Math.round(newLum + (nb - newLum) * satComp)));
+                }
+
+                d[i] = nr; d[i + 1] = ng; d[i + 2] = nb;
+              }
             }
             ctx.putImageData(imgData, 0, 0);
           }
 
           if (sharpen > 0) {
-            window.applySharpenFilter(ctx, canvas.width, canvas.height, sharpen);
+            window.applySharpenFilter(ctx, w, h, sharpen, box);
           }
 
           currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.99);
@@ -6543,7 +6438,7 @@ let editingCheerEventId = null;
       }, 40);
     };
 
-    // 🛠️ 關鍵修復 4：升級「📥 匯出原畫質相片」為 2400px 100% 滿血無損畫質輸出（自動清除四周殘留黑線！）
+    // 100% 滿血原畫質匯出
     window.exportInspectImage = function() {
       const card = cards.find(c => c.id === inspectingCardId);
       if (!card || !card.image) return;
@@ -6552,7 +6447,6 @@ let editingCheerEventId = null;
       img.onload = () => {
         let w = img.naturalWidth;
         let h = img.naturalHeight;
-        // 若相片小於 2200px，匯出時以高品質雙立方插值輸出至 2200px 典藏級解析度
         const targetExportLong = 2200;
         if (Math.max(w, h) < targetExportLong) {
           const sc = targetExportLong / Math.max(w, h);
@@ -6569,7 +6463,6 @@ let editingCheerEventId = null;
         ctx.fillStyle = '#FFFDF9';
         ctx.fillRect(0, 0, w, h);
 
-        // 裁走最外圍可能帶有 1~2px 黑線的邊界並平滑繪製
         const trimPx = Math.max(1, Math.round(Math.min(img.naturalWidth, img.naturalHeight) * 0.003));
         ctx.drawImage(
           img,
@@ -6585,7 +6478,7 @@ let editingCheerEventId = null;
           a.download = `${card.member || 'Cheki'}_${card.date || 'HD'}_UltraHD.jpg`;
           a.click();
           setTimeout(() => URL.revokeObjectURL(url), 1500);
-        }, 'image/jpeg', 1.0); // 1.0 = 100% 最高無損級 JPEG 品質！
+        }, 'image/jpeg', 1.0);
       };
       img.src = card.image;
     };
@@ -6626,7 +6519,7 @@ let editingCheerEventId = null;
           wBtn.id = 'whitenBorderBtn';
           wBtn.onclick = window.applyStandaloneBorderWhitening;
           wBtn.className = 'w-full py-1.5 px-3 rounded-xl bg-white text-zinc-900 font-black text-xs border-2 border-zinc-400 shadow-sm flex items-center justify-center gap-1 active:scale-95 transition';
-          wBtn.innerHTML = '⬜ 一鍵漂白 Cheki 白邊（灰框變純白・清除黑邊）';
+          wBtn.innerHTML = '⬜ 一鍵漂白 Cheki 白邊（貼齊內框・零溢出）';
           filterPanel.insertBefore(wBtn, filterPanel.firstElementChild);
         }
         if (!document.getElementById('smartRemasterBtn')) {
@@ -6642,7 +6535,7 @@ let editingCheerEventId = null;
       const resetWhitenBtnText = () => {
         const wBtn = document.getElementById('whitenBorderBtn');
         if (wBtn) {
-          wBtn.innerHTML = '⬜ 一鍵漂白 Cheki 白邊（灰框變純白・清除黑邊）';
+          wBtn.innerHTML = '⬜ 一鍵漂白 Cheki 白邊（貼齊內框・零溢出）';
           wBtn.disabled = false;
         }
       };
