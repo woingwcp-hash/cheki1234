@@ -7813,6 +7813,231 @@ let editingCheerEventId = null;
 
     setTimeout(initPerformanceAndBinderUpgrade, 280);
 </script>
+// =========================================================================
+    // 🤖 Gemini AI 生成式拍立得超清重繪連接器（支援跳轉 Gemini App 咒語複製 + API 直連 + 無損換底圖）
+    // =========================================================================
+    const CHEKI_AI_PROMPT = `請幫我將這張日本偶像拍立得（Cheki）進行超高畫質清晰化修復（Ultra-HD Photo Remaster）：
+1. 100% 嚴格保留相中兩人的五官臉型、神韻、髮型、眼鏡與口罩、手指互動姿勢（手指對手指）以及背景標誌，絕對不要改變人物長相。
+2. 消除拍立得表面的反光白霧、中間透明隔板的眩光與相紙噪點，大幅提升眼睛眼神光、髮絲、手指線條與藍色舞台服裝（星星光澤與蕾絲細節）的立體感與清晰度，還原自然清透的膚色與現場光線。
+3. 必須完整保留這張拍立得原本的純白相紙外框比例（上窄下寬的經典 Cheki 白邊），並賦予乾淨真實的拍立得相紙質感。`;
+
+    // 1. 一鍵複製神級咒語並呼叫手機系統分享（直達 Gemini App）或下載原圖
+    window.launchGeminiAppRemaster = async function() {
+      if (!currentUploadDataUrl && !rawUploadDataUrl) {
+        alert('請先揀選或拍攝一張拍立得！');
+        return;
+      }
+
+      // 自動複製專屬 Prompt 到手機剪貼簿
+      try {
+        await navigator.clipboard.writeText(CHEKI_AI_PROMPT);
+      } catch (_) {
+        const ta = document.createElement('textarea');
+        ta.value = CHEKI_AI_PROMPT;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+
+      const imgSrc = currentUploadDataUrl || rawUploadDataUrl;
+      try {
+        const res = await fetch(imgSrc);
+        const blob = await res.blob();
+        const file = new File([blob], `Cheki_For_Gemini_${Date.now()}.jpg`, { type: 'image/jpeg' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          alert('✅ 已自動複製「拍立得超清修復指令」！\n\n請在接下來彈出的選單中選擇「Gemini」，然後在對話框「貼上」指令即可生成超清拍立得！\n\n生成並儲存後，回來點右側「📥 換入 AI 圖」即可一秒替換底圖！');
+          await navigator.share({
+            text: CHEKI_AI_PROMPT,
+            files: [file]
+          });
+          return;
+        }
+      } catch (_) {}
+
+      // 若瀏覽器不支援直接 Share 檔案，則自動下載圖片並提示打開 Gemini
+      const a = document.createElement('a');
+      a.href = imgSrc;
+      a.download = `Cheki_To_Gemini_${Date.now()}.jpg`;
+      a.click();
+      alert('✅ 已自動複製「拍立得超清修復指令」並下載目前相片！\n\n請打開手機的 Gemini App，上傳剛才張相並「貼上」指令。\n生成儲存後，回來點右側「📥 換入 AI 圖」即可替換底圖！');
+    };
+
+    // 2. 從手機相簿一鍵換入 Gemini 生成好的超清相片（100% 保留當前日期、場地、相簿、標籤與筆記！）
+    window.handleImportGeminiRemasteredPhoto = function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxSide = 3200;
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (w > maxSide || h > maxSide) {
+            if (w > h) { h = Math.round(h * (maxSide / w)); w = maxSide; }
+            else { w = Math.round(w * (maxSide / h)); h = maxSide; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, w, h);
+
+          const hdDataUrl = canvas.toDataURL('image/jpeg', 0.99);
+
+          // 備份舊原圖以便隨時可按「🔄 還原原圖」退回
+          if (typeof _preRemasterTrueOriginal !== 'undefined' && !_preRemasterTrueOriginal) {
+            _preRemasterTrueOriginal = rawUploadDataUrl || currentUploadDataUrl;
+          }
+
+          rawUploadDataUrl = hdDataUrl;
+          uncroppedOriginalDataUrl = hdDataUrl;
+          currentUploadDataUrl = hdDataUrl;
+          if (typeof _remasterMode !== 'undefined') _remasterMode = 1;
+
+          // 重設下方微調滑桿為 0 / 100%，直接展示 AI 最佳原貌
+          if (typeof initFilterHistory === 'function') {
+            initFilterHistory({ sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
+          }
+          const previewEl = document.getElementById('editPreviewImg');
+          if (previewEl) previewEl.src = currentUploadDataUrl;
+          document.getElementById('previewContainer')?.classList.remove('hidden');
+
+          const sizeTag = document.getElementById('detectedSizeTag');
+          if (sizeTag) {
+            sizeTag.textContent = `🤖 已換入 Gemini AI 超清重繪底圖 (${w}×${h}px · 長按可對比舊圖)`;
+          }
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    };
+
+    // 3. 選用功能：設定個人 Gemini API Key 實現網頁內全自動 AI 重繪
+    window.configureGeminiApiKey = function() {
+      const curKey = localStorage.getItem('cheki_gemini_api_key') || '';
+      const input = prompt('🔑 請輸入你的 Google Gemini API Key（可於 aistudio.google.com 免費取得，金鑰只會保存在你的手機本機瀏覽器內）：', curKey);
+      if (input !== null) {
+        const clean = input.trim();
+        if (clean) {
+          localStorage.setItem('cheki_gemini_api_key', clean);
+          alert('✅ 已儲存 Gemini API Key！現在可以直接點「⚡ API 直連重繪」自動生成超清相片！');
+        } else {
+          localStorage.removeItem('cheki_gemini_api_key');
+          alert('已清除 API Key。');
+        }
+        renderGeminiAiToolbar();
+      }
+    };
+
+    window.runDirectGeminiApiRemaster = async function() {
+      const apiKey = localStorage.getItem('cheki_gemini_api_key');
+      if (!apiKey) {
+        window.configureGeminiApiKey();
+        return;
+      }
+      const srcUrl = currentUploadDataUrl || rawUploadDataUrl;
+      if (!srcUrl) return;
+
+      const apiBtn = document.getElementById('geminiDirectApiBtn');
+      if (apiBtn) {
+        apiBtn.innerHTML = '⏳ Gemini AI 重繪中...';
+        apiBtn.disabled = true;
+      }
+
+      try {
+        const base64Data = srcUrl.split(',')[1];
+        const mimeType = srcUrl.substring(srcUrl.indexOf(':') + 1, srcUrl.indexOf(';')) || 'image/jpeg';
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${encodeURIComponent(apiKey)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: CHEKI_AI_PROMPT },
+                { inline_data: { mime_type: mimeType, data: base64Data } }
+              ]
+            }],
+            generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
+          })
+        });
+
+        const result = await response.json();
+        const parts = result?.candidates?.[0]?.content?.parts || [];
+        const imgPart = parts.find(p => p.inlineData || p.inline_data);
+        const outData = imgPart?.inlineData?.data || imgPart?.inline_data?.data;
+        const outMime = imgPart?.inlineData?.mimeType || imgPart?.inline_data?.mime_type || 'image/jpeg';
+
+        if (!outData) {
+          throw new Error(result?.error?.message || '模型未回傳圖片，建議使用左側「🤖 傳去 Gemini App」按鈕！');
+        }
+
+        const aiDataUrl = `data:${outMime};base64,${outData}`;
+        if (typeof _preRemasterTrueOriginal !== 'undefined' && !_preRemasterTrueOriginal) {
+          _preRemasterTrueOriginal = rawUploadDataUrl || currentUploadDataUrl;
+        }
+        rawUploadDataUrl = aiDataUrl;
+        uncroppedOriginalDataUrl = aiDataUrl;
+        currentUploadDataUrl = aiDataUrl;
+        if (typeof initFilterHistory === 'function') {
+          initFilterHistory({ sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
+        }
+        document.getElementById('editPreviewImg').src = currentUploadDataUrl;
+        const sizeTag = document.getElementById('detectedSizeTag');
+        if (sizeTag) sizeTag.textContent = '🤖 Gemini API 超清重繪完成（長按圖片可對比原圖）';
+      } catch (err) {
+        alert('⚠️ API 直連重繪提示：' + (err.message || '請使用左側「🤖 傳去 Gemini App」按鈕'));
+      } finally {
+        if (apiBtn) {
+          apiBtn.innerHTML = '⚡ API 直連';
+          apiBtn.disabled = false;
+        }
+      }
+    };
+
+    function renderGeminiAiToolbar() {
+      const filterPanel = document.getElementById('sharpenSlider')?.closest('.bg-zinc-800');
+      if (!filterPanel) return;
+
+      let aiBox = document.getElementById('geminiAiBridgeBox');
+      if (!aiBox) {
+        aiBox = document.createElement('div');
+        aiBox.id = 'geminiAiBridgeBox';
+        aiBox.className = 'w-full rounded-xl bg-gradient-to-r from-indigo-950 via-blue-950 to-purple-950 p-2 border border-indigo-400/50 space-y-1.5';
+        filterPanel.insertBefore(aiBox, filterPanel.firstElementChild);
+      }
+
+      const hasKey = Boolean(localStorage.getItem('cheki_gemini_api_key'));
+      aiBox.innerHTML = `
+        <div class="flex items-center justify-between px-0.5">
+          <span class="text-[10px] font-black text-sky-300 flex items-center gap-1">✨ Gemini AI 生成式五官重繪（影片同款超清）</span>
+          <button type="button" onclick="configureGeminiApiKey()" class="text-[9px] font-bold text-indigo-300 underline">
+            ${hasKey ? '🔑 已設API' : '🔑 API設定'}
+          </button>
+        </div>
+        <div class="grid ${hasKey ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5">
+          <button type="button" onclick="launchGeminiAppRemaster()" class="py-2 px-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-black text-[11px] border border-white/50 shadow flex items-center justify-center gap-1 active:scale-95 transition">
+            🤖 1. 傳去 Gemini 重繪
+          </button>
+          <label class="py-2 px-2 rounded-lg bg-emerald-400 text-zinc-950 font-black text-[11px] border border-white/60 shadow flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition text-center">
+            📥 2. 換入 AI 高清圖
+            <input type="file" accept="image/*" class="hidden" onchange="handleImportGeminiRemasteredPhoto(event)">
+          </label>
+          ${hasKey ? `
+            <button type="button" id="geminiDirectApiBtn" onclick="runDirectGeminiApiRemaster()" class="py-2 px-2 rounded-lg bg-amber-300 text-zinc-950 font-black text-[11px] border border-white/60 shadow flex items-center justify-center gap-1 active:scale-95 transition">
+              ⚡ API 直連
+            </button>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    setTimeout(renderGeminiAiToolbar, 320);
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
 <!-- ========================================== -->
