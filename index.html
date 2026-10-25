@@ -8037,6 +8037,623 @@ let editingCheerEventId = null;
     }
 
     setTimeout(renderGeminiAiToolbar, 320);
+// =========================================================================
+    // 🧩 連拍 Pose / 主題套組收藏館 ＋ 🎉 應援里程碑彩帶慶祝 & 🕰️ 時光機模組
+    // =========================================================================
+    let chekiSets = [];
+    let pickingSlotSetId = null;
+    let pickingSlotIndex = null;
+
+    const MILESTONE_NUMBERS = [1, 10, 30, 50, 77, 100, 150, 200, 222, 250, 300, 333, 350, 400, 450, 500, 600, 700, 800, 900, 1000];
+
+    function loadChekiSetsFromDB() {
+      try {
+        const cached = JSON.parse(localStorage.getItem('cheki_fast_sets') || 'null');
+        if (Array.isArray(cached) && chekiSets.length === 0) chekiSets = cached;
+      } catch (_) {}
+
+      if (!db) return;
+      try {
+        const tx = db.transaction('meta', 'readonly');
+        const req = tx.objectStore('meta').get('chekiSets');
+        tx.oncomplete = () => {
+          if (req.result && Array.isArray(req.result.value)) {
+            chekiSets = req.result.value;
+            try { localStorage.setItem('cheki_fast_sets', JSON.stringify(chekiSets)); } catch (_) {}
+            renderAlbumsPoseSetsSection();
+          }
+        };
+      } catch (_) {}
+    }
+
+    function saveChekiSetsToDB() {
+      try { localStorage.setItem('cheki_fast_sets', JSON.stringify(chekiSets)); } catch (_) {}
+      if (!db) return;
+      try {
+        const tx = db.transaction('meta', 'readwrite');
+        tx.objectStore('meta').put({ key: 'chekiSets', value: chekiSets });
+      } catch (_) {}
+    }
+
+    // 🎊 漫天應援彩帶特效引擎 (Canvas Confetti)
+    window.fireCheerConfetti = function() {
+      let canvas = document.getElementById('cheerConfettiCanvas');
+      if (!canvas) {
+        canvas = document.createElement('canvas');
+        canvas.id = 'cheerConfettiCanvas';
+        canvas.className = 'fixed inset-0 pointer-events-none z-[120] w-full h-full';
+        document.body.appendChild(canvas);
+      }
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      const ctx = canvas.getContext('2d');
+      const colors = ['#FF5C8A', '#38BDF8', '#FDE047', '#34D399', '#C084FC', '#60A5FA', '#FB923C'];
+
+      const particles = Array.from({ length: 110 }, () => ({
+        x: Math.random() * canvas.width,
+        y: -20 - Math.random() * canvas.height * 0.4,
+        w: 7 + Math.random() * 6,
+        h: 10 + Math.random() * 8,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        vx: (Math.random() - 0.5) * 5,
+        vy: 3 + Math.random() * 5.5,
+        rot: Math.random() * 360,
+        vRot: (Math.random() - 0.5) * 10
+      }));
+
+      const startTime = performance.now();
+      function frame(now) {
+        const elapsed = now - startTime;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        let active = false;
+
+        particles.forEach(p => {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.06;
+          p.rot += p.vRot;
+          if (p.y < canvas.height + 30) active = true;
+
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate((p.rot * Math.PI) / 180);
+          ctx.fillStyle = p.color;
+          ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+          ctx.restore();
+        });
+
+        if (active && elapsed < 3800) {
+          requestAnimationFrame(frame);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+      requestAnimationFrame(frame);
+    };
+
+    // 🧩 在「📚 相簿」頁面渲染「連拍 Pose & 主題套組收藏館」與「🕰️ 應援時光機」
+    function renderAlbumsPoseSetsSection() {
+      const albumsSec = document.getElementById('tab-albums');
+      if (!albumsSec) return;
+
+      let wrap = document.getElementById('poseSetsAndMemoriesWrap');
+      if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.id = 'poseSetsAndMemoriesWrap';
+        wrap.className = 'space-y-4';
+        const firstBox = albumsSec.firstElementChild;
+        if (firstBox) {
+          firstBox.insertAdjacentElement('afterend', wrap);
+        } else {
+          albumsSec.prepend(wrap);
+        }
+      }
+
+      // 計算「歷史上的今日 / 每月同日紀念」相片
+      const now = new Date();
+      const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const ddOnly = `-${String(now.getDate()).padStart(2, '0')}`;
+      const todayStr = now.toISOString().slice(0, 10);
+
+      const exactYearMatches = cards.filter(c => c.date && c.date !== todayStr && c.date.slice(5) === mmdd);
+      const monthlyMatches = cards.filter(c => c.date && c.date !== todayStr && c.date.endsWith(ddOnly));
+      const memoryCards = exactYearMatches.length > 0 ? exactYearMatches : monthlyMatches.slice(0, 8);
+      const memoryTitle = exactYearMatches.length > 0
+        ? `🕰️ 歷史上的今日 (${mmdd}) 參戰回憶`
+        : `🕰️ 每月 ${now.getDate()} 號 · 滿月參戰回憶`;
+
+      const memoryHtml = memoryCards.length > 0 ? `
+        <div class="neo-box bg-gradient-to-r from-amber-50 via-pink-50 to-sky-50 rounded-2xl p-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-black text-xs text-cheki-dark flex items-center gap-1">${memoryTitle} (${memoryCards.length}張)</span>
+            <button type="button" onclick="openMilestoneHallModal()" class="px-2.5 py-0.5 rounded-full bg-amber-300 border border-cheki-dark text-[10px] font-black">🏆 榮譽殿堂 ▶</button>
+          </div>
+          <div class="flex gap-2 overflow-x-auto no-scrollbar py-0.5">
+            ${memoryCards.map(c => `
+              <div onclick="openInspectModal(${c.id})" class="shrink-0 w-16 flex flex-col items-center cursor-pointer group">
+                <div class="w-16 h-20 rounded-xl bg-white border-2 border-cheki-dark p-0.5 flex items-center justify-center overflow-hidden shadow-sm group-active:scale-95 transition">
+                  <img src="${c.image}" loading="lazy" class="max-h-full max-w-full object-contain rounded">
+                </div>
+                <span class="text-[9px] font-black text-cheki-accent mt-0.5">${c.date || ''}</span>
+                <span class="text-[9px] font-bold text-zinc-600 truncate w-full text-center">${c.member || ''}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : '';
+
+      const setsListHtml = chekiSets.length === 0 ? `
+        <div class="text-center py-4 bg-pink-50/60 rounded-xl border-2 border-dashed border-pink-300 space-y-2">
+          <p class="text-xs font-black text-zinc-600">尚未建立連拍套組（例如：T-O-M-M-Y 字母五連拍 ✨）</p>
+          <div class="flex justify-center gap-1.5 flex-wrap px-2">
+            <button type="button" onclick="createPresetChekiSet('TOMMY')" class="px-3 py-1 rounded-xl bg-blue-500 text-white neo-btn text-[11px] font-black">+ 一鍵建立「T-O-M-M-Y」5連拍</button>
+            <button type="button" onclick="openCreateSetModal()" class="px-3 py-1 rounded-xl bg-white neo-btn text-[11px] font-black">+ 自訂套組</button>
+          </div>
+        </div>
+      ` : chekiSets.map(set => {
+        const filledCount = set.slots.filter(s => s.cardId && cards.some(c => c.id === s.cardId)).length;
+        const totalSlots = set.slots.length;
+        const isComplete = filledCount === totalSlots && totalSlots > 0;
+
+        return `
+          <div class="rounded-2xl border-2 border-cheki-dark ${isComplete ? 'bg-gradient-to-br from-sky-50 via-pink-50 to-amber-50' : 'bg-zinc-50'} p-2.5 space-y-2 shadow-sm">
+            <div class="flex items-center justify-between gap-1">
+              <div class="min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <span class="font-black text-xs truncate">${set.title}</span>
+                  <span class="px-2 py-0.5 rounded-full text-[9px] font-black border border-cheki-dark shrink-0 ${isComplete ? 'bg-emerald-300 text-cheki-dark' : 'bg-white text-zinc-600'}">
+                    ${isComplete ? `🎉 ${filledCount}/${totalSlots} 已集齊！` : `${filledCount}/${totalSlots} 收集進度`}
+                  </span>
+                </div>
+              </div>
+              <div class="flex items-center gap-1 shrink-0">
+                ${filledCount > 0 ? `<button type="button" onclick="exportChekiSetBanner('${set.id}')" class="px-2 py-0.5 rounded-lg bg-amber-200 border border-cheki-dark text-[10px] font-black" title="合成連拍橫幅長圖">📸 橫幅圖</button>` : ''}
+                <button type="button" onclick="addSlotToExistingSet('${set.id}')" class="px-1.5 py-0.5 rounded-lg bg-white border border-cheki-dark text-[10px] font-black" title="加一格">+格</button>
+                <button type="button" onclick="deleteChekiSet('${set.id}')" class="px-1.5 py-0.5 rounded-lg bg-rose-100 border border-cheki-dark text-[10px] font-black" title="刪除套組">🗑️</button>
+              </div>
+            </div>
+
+            <div class="flex gap-2 overflow-x-auto no-scrollbar py-1">
+              ${set.slots.map((slot, sIdx) => {
+                const card = cards.find(c => c.id === slot.cardId);
+                if (card) {
+                  return `
+                    <div class="shrink-0 w-20 flex flex-col items-center relative group">
+                      <div onclick="openInspectModal(${card.id})" class="w-20 h-28 rounded-xl bg-white border-2 border-cheki-dark p-1 flex items-center justify-center overflow-hidden shadow cursor-pointer relative">
+                        <img src="${card.image}" loading="lazy" class="max-h-full max-w-full object-contain rounded">
+                        <span class="absolute top-1 left-1 px-1.5 py-0.2 rounded-md bg-cheki-accent text-white border border-cheki-dark text-[9px] font-black shadow-sm">${slot.label || (sIdx + 1)}</span>
+                      </div>
+                      <button type="button" onclick="openSlotCardPicker('${set.id}', ${sIdx})" class="mt-1 text-[9px] font-black text-blue-600 underline">換相</button>
+                    </div>
+                  `;
+                } else {
+                  return `
+                    <div onclick="openSlotCardPicker('${set.id}', ${sIdx})" class="shrink-0 w-20 h-28 rounded-xl bg-white/80 border-2 border-dashed border-zinc-400 hover:border-cheki-accent flex flex-col items-center justify-center p-1 cursor-pointer active:scale-95 transition">
+                      <span class="px-2 py-0.5 rounded-full bg-pink-100 border border-pink-300 text-[10px] font-black text-cheki-accent mb-1">${slot.label || ('#' + (sIdx + 1))}</span>
+                      <span class="text-lg text-zinc-400">＋</span>
+                      <span class="text-[9px] font-bold text-zinc-400">點此放入</span>
+                    </div>
+                  `;
+                }
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      wrap.innerHTML = `
+        ${memoryHtml}
+        <div class="neo-box bg-white rounded-2xl p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="font-black text-sm flex items-center gap-1">🧩 連拍 Pose & 主題套組收藏館</h3>
+              <p class="text-[10px] text-zinc-500 font-bold">將連拍字母 Pose 或同場全員 Cheki 按順序並排展示 ✨</p>
+            </div>
+            <div class="flex gap-1 shrink-0">
+              <button type="button" onclick="openMilestoneHallModal()" class="px-2.5 py-1 rounded-xl bg-amber-200 neo-btn text-[11px] font-black">🏆 殿堂</button>
+              <button type="button" onclick="openCreateSetModal()" class="px-2.5 py-1 rounded-xl bg-cheki-accent text-white neo-btn text-[11px] font-black">+ 新增套組</button>
+            </div>
+          </div>
+          <div class="space-y-2.5">${setsListHtml}</div>
+        </div>
+      `;
+    }
+
+    // 建立新套組與揀相入格視窗
+    function ensureSetAndMilestoneModalsExist() {
+      if (document.getElementById('chekiSetModalsWrapper')) return;
+      const div = document.createElement('div');
+      div.id = 'chekiSetModalsWrapper';
+      div.innerHTML = `
+        <!-- 1. 新增連拍套組視窗 -->
+        <div id="createChekiSetModal" class="hidden fixed inset-0 z-[94] bg-black/80 flex items-center justify-center p-4">
+          <div class="bg-white w-full max-w-sm rounded-3xl neo-box p-4 space-y-3">
+            <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+              <h3 class="font-black text-base">🧩 建立連拍 Pose / 主題套組</h3>
+              <button type="button" onclick="document.getElementById('createChekiSetModal').classList.add('hidden')" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black">✕</button>
+            </div>
+            <div class="space-y-1.5">
+              <p class="text-[11px] font-black text-zinc-600">⚡ 一鍵套用熱門連拍範本：</p>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button type="button" onclick="fillSetTemplate('🔤 T-O-M-M-Y 專屬連拍', 'T, O, M, M, Y')" class="py-1.5 px-2 rounded-xl bg-blue-100 border border-cheki-dark text-[11px] font-black text-blue-900">🔤 T-O-M-M-Y (5格)</button>
+                <button type="button" onclick="fillSetTemplate('💖 L-O-V-E 愛心連拍', 'L, O, V, E')" class="py-1.5 px-2 rounded-xl bg-pink-100 border border-cheki-dark text-[11px] font-black text-pink-900">💖 L-O-V-E (4格)</button>
+                <button type="button" onclick="fillSetTemplate('🌟 大特典會成員收集', 'まりん, ゆな, むね, けいな, あみ, なな花')" class="py-1.5 px-2 rounded-xl bg-amber-100 border border-cheki-dark text-[11px] font-black text-amber-900">🌟 成員收集 (6格)</button>
+                <button type="button" onclick="fillSetTemplate('👗 主題衣裝三連拍', '全身, 半身, 特寫')" class="py-1.5 px-2 rounded-xl bg-emerald-100 border border-cheki-dark text-[11px] font-black text-emerald-900">👗 衣裝三連拍 (3格)</button>
+              </div>
+            </div>
+            <div>
+              <label class="text-xs font-black block mb-1">套組名稱 *</label>
+              <input id="newSetTitleInput" type="text" placeholder="例：🔤 T-O-M-M-Y 專屬連拍" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark text-xs font-bold">
+            </div>
+            <div>
+              <label class="text-xs font-black block mb-1">各格標籤（用逗號分隔，決定格數與順序）*</label>
+              <input id="newSetSlotsInput" type="text" value="T, O, M, M, Y" placeholder="例：T, O, M, M, Y 或 1, 2, 3, 4" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark text-xs font-bold">
+            </div>
+            <button type="button" onclick="confirmCreateChekiSet()" class="w-full py-2.5 rounded-2xl bg-cheki-accent text-white neo-btn font-black text-xs">✨ 立即建立套組</button>
+          </div>
+        </div>
+
+        <!-- 2. 為套組單一格子揀選 Cheki 視窗 -->
+        <div id="slotCardPickerModal" class="hidden fixed inset-0 z-[95] bg-black/80 flex items-center justify-center p-3">
+          <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-4 flex flex-col max-h-[88vh]">
+            <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+              <h3 id="slotPickerTitle" class="font-black text-sm">🎴 選擇要放入此格的 Cheki</h3>
+              <button type="button" onclick="document.getElementById('slotCardPickerModal').classList.add('hidden')" class="w-8 h-8 rounded-full bg-white neo-btn font-black">✕</button>
+            </div>
+            <div class="flex gap-1.5 my-2">
+              <input id="slotPickerSearch" type="text" placeholder="搜尋成員、日期、筆記 (如 T pose)..." oninput="renderSlotPickerGrid()" class="flex-1 px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-xs font-bold bg-white">
+              <button type="button" onclick="assignCardToSlot(null)" class="px-2.5 py-1.5 rounded-xl bg-rose-100 border border-cheki-dark text-[11px] font-black text-rose-700 shrink-0">清空此格</button>
+            </div>
+            <div id="slotPickerGrid" class="flex-1 overflow-y-auto grid grid-cols-3 gap-2 py-1 pr-1"></div>
+          </div>
+        </div>
+
+        <!-- 3. 🏆 應援里程碑榮譽殿堂 & 慶祝證書視窗 -->
+        <div id="milestoneHallModal" class="hidden fixed inset-0 z-[96] bg-black/85 flex items-center justify-center p-3 overflow-y-auto">
+          <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-4 space-y-3.5 max-h-[92vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+              <div class="flex items-center gap-1.5">
+                <span class="text-2xl">🏆</span>
+                <div>
+                  <h3 class="font-black text-base">應援里程碑 & 紀念卡殿堂</h3>
+                  <p class="text-[10px] text-zinc-500 font-bold">見證你與推し累積的每一個重要時刻 ✨</p>
+                </div>
+              </div>
+              <button type="button" onclick="document.getElementById('milestoneHallModal').classList.add('hidden')" class="w-8 h-8 rounded-full bg-white neo-btn font-black">✕</button>
+            </div>
+            <div id="milestoneHallContent" class="space-y-3"></div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(div);
+    }
+
+    window.openCreateSetModal = function() {
+      ensureSetAndMilestoneModalsExist();
+      document.getElementById('newSetTitleInput').value = '🔤 T-O-M-M-Y 專屬連拍';
+      document.getElementById('newSetSlotsInput').value = 'T, O, M, M, Y';
+      document.getElementById('createChekiSetModal').classList.remove('hidden');
+    };
+
+    window.fillSetTemplate = function(title, slotsStr) {
+      document.getElementById('newSetTitleInput').value = title;
+      document.getElementById('newSetSlotsInput').value = slotsStr;
+    };
+
+    window.createPresetChekiSet = function(type) {
+      ensureSetAndMilestoneModalsExist();
+      if (type === 'TOMMY') {
+        chekiSets.unshift({
+          id: 'set_' + Date.now(),
+          title: '🔤 T-O-M-M-Y 專屬連拍套組',
+          slots: ['T', 'O', 'M', 'M', 'Y'].map(lbl => ({ label: lbl, cardId: null })),
+          createdAt: Date.now()
+        });
+        saveChekiSetsToDB();
+        renderAlbumsPoseSetsSection();
+      }
+    };
+
+    window.confirmCreateChekiSet = function() {
+      const title = (document.getElementById('newSetTitleInput').value || '').trim() || '✨ 主題連拍套組';
+      const rawSlots = (document.getElementById('newSetSlotsInput').value || '').split(/[,，、\s]+/).map(s => s.trim()).filter(Boolean);
+      const labels = rawSlots.length > 0 ? rawSlots : ['1', '2', '3', '4'];
+
+      chekiSets.unshift({
+        id: 'set_' + Date.now(),
+        title,
+        slots: labels.map(lbl => ({ label: lbl, cardId: null })),
+        createdAt: Date.now()
+      });
+      saveChekiSetsToDB();
+      document.getElementById('createChekiSetModal').classList.add('hidden');
+      renderAlbumsPoseSetsSection();
+    };
+
+    window.addSlotToExistingSet = function(setId) {
+      const set = chekiSets.find(s => s.id === setId);
+      if (!set) return;
+      const lbl = prompt('請輸入新格子的標籤名稱（例如字母或成員名）：', `#${set.slots.length + 1}`);
+      if (lbl === null) return;
+      set.slots.push({ label: lbl.trim() || `#${set.slots.length + 1}`, cardId: null });
+      saveChekiSetsToDB();
+      renderAlbumsPoseSetsSection();
+    };
+
+    window.deleteChekiSet = function(setId) {
+      if (!confirm('確定要刪除這個連拍套組展示架嗎？（相片本身不會被刪除）')) return;
+      chekiSets = chekiSets.filter(s => s.id !== setId);
+      saveChekiSetsToDB();
+      renderAlbumsPoseSetsSection();
+    };
+
+    window.openSlotCardPicker = function(setId, slotIdx) {
+      ensureSetAndMilestoneModalsExist();
+      pickingSlotSetId = setId;
+      pickingSlotIndex = slotIdx;
+      const set = chekiSets.find(s => s.id === setId);
+      const slot = set?.slots?.[slotIdx];
+      document.getElementById('slotPickerTitle').textContent = `🎴 揀選放入【${set?.title || ''} · ${slot?.label || ''}】的相片`;
+      document.getElementById('slotPickerSearch').value = '';
+      renderSlotPickerGrid();
+      document.getElementById('slotCardPickerModal').classList.remove('hidden');
+    };
+
+    window.renderSlotPickerGrid = function() {
+      const grid = document.getElementById('slotPickerGrid');
+      if (!grid) return;
+      const q = (document.getElementById('slotPickerSearch')?.value || '').trim();
+      const filtered = cards.filter(c => !q || cardMatchesSearchQuery(c, q));
+
+      grid.innerHTML = filtered.map(c => `
+        <div onclick="assignCardToSlot(${c.id})" class="rounded-2xl p-1.5 border-2 border-zinc-200 hover:border-cheki-accent bg-white cursor-pointer flex flex-col items-center active:scale-95 transition">
+          <div class="w-full aspect-[3/4] flex items-center justify-center overflow-hidden rounded-lg bg-zinc-50">
+            <img src="${c.image}" loading="lazy" class="max-h-full max-w-full object-contain">
+          </div>
+          <p class="font-black text-[11px] truncate w-full text-center mt-1">${c.member || ''}</p>
+          <p class="text-[9px] text-zinc-500 font-bold">${c.date || ''}</p>
+        </div>
+      `).join('');
+    };
+
+    window.assignCardToSlot = function(cardId) {
+      const set = chekiSets.find(s => s.id === pickingSlotSetId);
+      if (set && set.slots[pickingSlotIndex]) {
+        set.slots[pickingSlotIndex].cardId = cardId;
+        saveChekiSetsToDB();
+        renderAlbumsPoseSetsSection();
+
+        // 若剛好集齊成套，自動噴發彩帶慶祝！
+        const allFilled = set.slots.every(s => s.cardId && cards.some(c => c.id === s.cardId));
+        if (cardId && allFilled) {
+          window.fireCheerConfetti();
+        }
+      }
+      document.getElementById('slotCardPickerModal').classList.add('hidden');
+    };
+
+    // 📸 一鍵將連拍套組輸出為「橫向一字排開紀念長圖」
+    window.exportChekiSetBanner = async function(setId) {
+      const set = chekiSets.find(s => s.id === setId);
+      if (!set) return;
+      const validSlots = set.slots.map(s => ({ label: s.label, card: cards.find(c => c.id === s.cardId) })).filter(x => x.card);
+      if (validSlots.length === 0) return;
+
+      const n = validSlots.length;
+      const cellW = 360, cellH = 490, gap = 24, pad = 48, headerH = 130;
+      const canvasW = pad * 2 + n * cellW + (n - 1) * gap;
+      const canvasH = pad * 2 + headerH + cellH + 55;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+
+      const grad = ctx.createLinearGradient(0, 0, canvasW, canvasH);
+      grad.addColorStop(0, '#E0F2FE');
+      grad.addColorStop(0.5, '#FCE7F3');
+      grad.addColorStop(1, '#FEF3C7');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvasW, canvasH);
+
+      ctx.fillStyle = '#272228';
+      ctx.font = '900 44px "Zen Maru Gothic", sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.fillText(set.title, pad, pad);
+
+      ctx.fillStyle = '#FF5C8A';
+      ctx.font = '900 26px "Zen Maru Gothic", sans-serif';
+      ctx.fillText(`✨ 共 ${n} 連拍套組達成紀念 · ChekiPocket`, pad, pad + 62);
+
+      const loadImg = (src) => new Promise(res => {
+        const im = new Image();
+        im.onload = () => res(im);
+        im.onerror = () => res(null);
+        im.src = src;
+      });
+      const imgs = await Promise.all(validSlots.map(v => loadImg(v.card.image)));
+
+      validSlots.forEach((item, idx) => {
+        const x = pad + idx * (cellW + gap);
+        const y = pad + headerH;
+
+        ctx.fillStyle = '#272228';
+        ctx.fillRect(x + 6, y + 6, cellW, cellH);
+        ctx.fillStyle = '#FFFDF9';
+        ctx.fillRect(x, y, cellW, cellH);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#272228';
+        ctx.strokeRect(x, y, cellW, cellH);
+
+        const img = imgs[idx];
+        if (img) {
+          const sc = Math.min((cellW - 24) / img.naturalWidth, (cellH - 80) / img.naturalHeight);
+          const dw = Math.round(img.naturalWidth * sc);
+          const dh = Math.round(img.naturalHeight * sc);
+          ctx.drawImage(img, x + Math.round((cellW - dw) / 2), y + 14 + Math.round((cellH - 80 - dh) / 2), dw, dh);
+        }
+
+        // 底部印上套組字母或格數標籤 (如 T / O / M / M / Y)
+        ctx.fillStyle = '#272228';
+        ctx.font = '900 34px "Zen Maru Gothic", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`[ ${item.label} ]`, x + cellW / 2, y + cellH - 48);
+        ctx.textAlign = 'left';
+      });
+
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/jpeg', 0.96);
+      a.download = `${set.title.replace(/\s+/g, '_')}_連拍套組.jpg`;
+      a.click();
+    };
+
+    // 🏆 打開「應援里程碑 & 第 1 / 100 / 200 / 300 張紀念殿堂」
+    window.openMilestoneHallModal = function(customBannerTitle) {
+      ensureSetAndMilestoneModalsExist();
+      window.fireCheerConfetti();
+
+      const total = cards.length;
+      const idolList = typeof getIdolCounts === 'function' ? getIdolCounts() : [];
+      const topIdol = idolList[0] || { member: '遠藤まりん', count: 0 };
+
+      // 按拍攝日期與建立時間由舊到新排序，自動找出「第 1 張、第 50 張、第 100 張、第 200 張、第 300 張」紀念卡！
+      const chronological = [...cards].sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999') || ((a.createdAt || 0) - (b.createdAt || 0)));
+
+      const nextTotalMilestone = MILESTONE_NUMBERS.find(m => m > total) || (Math.ceil((total + 1) / 100) * 100);
+      const nextOshiMilestone = MILESTONE_NUMBERS.find(m => m > topIdol.count) || (Math.ceil((topIdol.count + 1) / 50) * 50);
+      const totalPct = Math.min(100, Math.round((total / nextTotalMilestone) * 100));
+      const oshiPct = Math.min(100, Math.round((topIdol.count / nextOshiMilestone) * 100));
+
+      const landmarkIndices = [1, 10, 50, 100, 150, 200, 222, 250, 300, 400, 500].filter(n => n <= chronological.length);
+
+      const contentBox = document.getElementById('milestoneHallContent');
+      contentBox.innerHTML = `
+        <!-- 榮譽證書主卡 -->
+        <div class="rounded-3xl border-2 border-cheki-dark bg-gradient-to-br from-sky-200 via-pink-100 to-amber-100 p-4 space-y-3 shadow-md relative overflow-hidden">
+          <div class="flex justify-between items-start">
+            <div>
+              <span class="px-2.5 py-0.5 rounded-full bg-white border border-cheki-dark text-[10px] font-black text-cheki-accent">🎉 OSHIKATSU MILESTONE</span>
+              <h4 class="font-black text-lg text-cheki-dark mt-1">${customBannerTitle || `累積珍藏 ${total} 張 Cheki 達成！`}</h4>
+              <p class="text-xs font-bold text-zinc-700">👑 主推 ${topIdol.member}：已累積 ${topIdol.count} 張拍立得 💙</p>
+            </div>
+            <button type="button" onclick="fireCheerConfetti()" class="px-2.5 py-1 rounded-xl bg-white neo-btn text-xs font-black shrink-0">🎊 放彩帶</button>
+          </div>
+
+          <!-- 下一里程碑進度條 -->
+          <div class="bg-white/90 rounded-2xl border-2 border-cheki-dark p-2.5 space-y-2">
+            <div>
+              <div class="flex justify-between text-[11px] font-black">
+                <span>🎯 總數下一目標：${nextTotalMilestone} 張（仲差 ${nextTotalMilestone - total} 張）</span>
+                <span class="text-cheki-accent">${total} / ${nextTotalMilestone}</span>
+              </div>
+              <div class="w-full h-2.5 rounded-full bg-pink-100 border border-cheki-dark overflow-hidden mt-1">
+                <div class="h-full bg-cheki-accent" style="width: ${totalPct}%"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] font-black">
+                <span>💙 ${topIdol.member} 下一目標：${nextOshiMilestone} 張（仲差 ${nextOshiMilestone - topIdol.count} 張）</span>
+                <span class="text-blue-600">${topIdol.count} / ${nextOshiMilestone}</span>
+              </div>
+              <div class="w-full h-2.5 rounded-full bg-blue-100 border border-cheki-dark overflow-hidden mt-1">
+                <div class="h-full bg-blue-500" style="width: ${oshiPct}%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 歷史第 N 張紀念 Cheki 自動回顧牆 -->
+        <div class="neo-box bg-white rounded-2xl p-3 space-y-2">
+          <h4 class="font-black text-xs text-cheki-dark">🏅 你的歷史里程碑紀念卡（按參戰時間自動定位）：</h4>
+          <div class="grid grid-cols-3 gap-2">
+            ${landmarkIndices.map(num => {
+              const c = chronological[num - 1];
+              if (!c) return '';
+              const badgeLabel = num === 1 ? '🌱 第 1 張初見' : `🏆 第 ${num} 張`;
+              return `
+                <div onclick="document.getElementById('milestoneHallModal').classList.add('hidden');openInspectModal(${c.id});" class="rounded-xl border-2 border-cheki-dark bg-pink-50/50 p-1.5 flex flex-col items-center cursor-pointer active:scale-95 transition">
+                  <span class="px-2 py-0.5 rounded-full bg-amber-300 border border-cheki-dark text-[9px] font-black mb-1">${badgeLabel}</span>
+                  <div class="w-full aspect-[3/4] bg-white rounded-lg flex items-center justify-center overflow-hidden p-0.5">
+                    <img src="${c.image}" loading="lazy" class="max-h-full max-w-full object-contain rounded">
+                  </div>
+                  <span class="text-[10px] font-black truncate w-full text-center mt-1">${c.member || ''}</span>
+                  <span class="text-[9px] font-bold text-zinc-500">${c.date || ''}</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+
+      document.getElementById('milestoneHallModal').classList.remove('hidden');
+    };
+
+    function initSetsAndMilestonePlugin() {
+      ensureSetAndMilestoneModalsExist();
+      loadChekiSetsFromDB();
+
+      // 1. 在頂部 Header 加入「🏆 殿堂」快捷按鈕
+      const statsTopBtn = document.querySelector('header button[onclick*="switchTab(\'stats\')"]');
+      if (statsTopBtn && statsTopBtn.parentElement && !document.getElementById('topMilestoneHallBtn')) {
+        const hallBtn = document.createElement('button');
+        hallBtn.type = 'button';
+        hallBtn.id = 'topMilestoneHallBtn';
+        hallBtn.onclick = () => window.openMilestoneHallModal();
+        hallBtn.className = 'w-9 h-9 rounded-2xl bg-pink-200 neo-btn flex items-center justify-center text-base';
+        hallBtn.title = '應援里程碑與紀念殿堂';
+        hallBtn.textContent = '🏆';
+        statsTopBtn.parentElement.insertBefore(hallBtn, statsTopBtn);
+      }
+
+      // 2. 切換至「📚 相簿」時自動渲染連拍套組與時光機
+      const origRenderAlbums = window.renderAlbums;
+      if (typeof origRenderAlbums === 'function' && !origRenderAlbums._wrappedPoseSets) {
+        window.renderAlbums = function() {
+          origRenderAlbums.apply(this, arguments);
+          renderAlbumsPoseSetsSection();
+        };
+        window.renderAlbums._wrappedPoseSets = true;
+      }
+
+      // 3. 當新增拍立得剛好達成里程碑張數時，自動觸發漫天彩帶與慶祝證書！
+      const origSaveCard = window.saveCard;
+      if (typeof origSaveCard === 'function' && !origSaveCard._wrappedMilestoneCheck) {
+        window.saveCard = async function() {
+          const wasAddingNew = !editingCardId;
+          const prevCount = cards.length;
+          await origSaveCard.apply(this, arguments);
+          if (wasAddingNew && cards.length > prevCount) {
+            const newTotal = cards.length;
+            const newestCard = cards[0];
+            const memberName = (newestCard?.member || '').trim();
+            const memberCount = cards.filter(c => (c.member || '').trim() === memberName).length;
+
+            if (MILESTONE_NUMBERS.includes(newTotal)) {
+              setTimeout(() => window.openMilestoneHallModal(`🎉 恭喜達成總計第 ${newTotal} 張 Cheki 里程碑！`), 350);
+            } else if (memberName && MILESTONE_NUMBERS.includes(memberCount)) {
+              setTimeout(() => window.openMilestoneHallModal(`💙 恭喜與 ${memberName} 達成第 ${memberCount} 張 Cheki！`), 350);
+            }
+          }
+        };
+        window.saveCard._wrappedMilestoneCheck = true;
+      }
+
+      // 4. 確保 IndexedDB 載入與匯出/匯入備份檔 (.json) 時，自動包含連拍套組 (chekiSets)
+      const origLoadData = window.loadDataFromDB;
+      if (typeof origLoadData === 'function' && !origLoadData._wrappedLoadSets) {
+        window.loadDataFromDB = async function() {
+          await origLoadData.apply(this, arguments);
+          loadChekiSetsFromDB();
+        };
+        window.loadDataFromDB._wrappedLoadSets = true;
+      }
+
+      if (currentTab === 'albums') renderAlbumsPoseSetsSection();
+    }
+
+    setTimeout(initSetsAndMilestonePlugin, 320);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
