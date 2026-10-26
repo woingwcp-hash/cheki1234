@@ -9737,6 +9737,547 @@ let editingCheerEventId = null;
     }
 
     setTimeout(initProDesignSystemPlugin, 460);
+// =========================================================================
+    // ⚡ 終極流暢化縮圖引擎 ＋ 👆 單手直覺手勢 ＋ 📅 月份快跳條 ＋ 📳 動態島 Toast 模組
+    // =========================================================================
+    const chekiThumbMap = {}; // { [cardId]: lightweightDataUrl }
+    let thumbGenQueueRunning = false;
+    let inspectZoomScale = 1;
+    let inspectPanX = 0;
+    let inspectPanY = 0;
+    let isMonthScrubberOpen = false;
+
+    // 📳 1. 觸覺微震動回饋與頂部「動態島風無干擾懸浮 Toast」
+    window.triggerHaptic = function(ms = 10) {
+      try {
+        if (navigator.vibrate) navigator.vibrate(ms);
+      } catch (_) {}
+    };
+
+    window.showChekiToast = function(msg, duration = 2600) {
+      let toast = document.getElementById('chekiFloatingToast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'chekiFloatingToast';
+        toast.className = 'fixed top-3 left-1/2 -translate-x-1/2 z-[140] max-w-[90vw] px-4 py-2 rounded-full bg-zinc-900/95 text-white border-2 border-white/30 shadow-2xl text-xs font-black text-center pointer-events-none transition-all duration-200 opacity-0 -translate-y-4 backdrop-blur-md';
+        document.body.appendChild(toast);
+      }
+      toast.textContent = msg;
+      requestAnimationFrame(() => {
+        toast.classList.remove('opacity-0', '-translate-y-4');
+        toast.classList.add('opacity-100', 'translate-y-0');
+      });
+      if (toast._timer) clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', '-translate-y-4');
+      }, duration);
+    };
+
+    // 將單行日常通知轉為無干擾懸浮 Toast（長篇教學指令則保留原對話框）
+    const _origNativeAlert = window.alert;
+    window.alert = function(msg) {
+      const str = String(msg || '');
+      if (str.length <= 65 && !str.includes('\n\n')) {
+        window.triggerHaptic(12);
+        window.showChekiToast(str, 2800);
+      } else {
+        _origNativeAlert.call(window, str);
+      }
+    };
+
+    // ⚡ 2. 雙解析度「輕量縮圖快取引擎 (Dual-Res Thumbnail Engine)」
+    // 平時卡冊/桌布/揀相行 360px 輕量縮圖 (慳 95% 記憶體)，點開大圖/匯出/海報時 100% 用無損原圖！
+    function loadThumbsFromDB() {
+      if (!db) return;
+      try {
+        const tx = db.transaction('meta', 'readonly');
+        const req = tx.objectStore('meta').get('chekiThumbsMap');
+        tx.oncomplete = () => {
+          if (req.result && req.result.value && typeof req.result.value === 'object') {
+            Object.assign(chekiThumbMap, req.result.value);
+            if (currentTab === 'binder') renderBinder();
+            else if (currentTab === 'desk') renderDesk();
+          }
+          scheduleBackgroundThumbnailGeneration();
+        };
+      } catch (_) {
+        scheduleBackgroundThumbnailGeneration();
+      }
+    }
+
+    let saveThumbsTimer = null;
+    function saveThumbsToDBDebounced() {
+      if (saveThumbsTimer) clearTimeout(saveThumbsTimer);
+      saveThumbsTimer = setTimeout(() => {
+        if (!db) return;
+        try {
+          const tx = db.transaction('meta', 'readwrite');
+          tx.objectStore('meta').put({ key: 'chekiThumbsMap', value: chekiThumbMap });
+        } catch (_) {}
+      }, 600);
+    }
+
+    function createSingleCardThumb(srcUrl) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const targetLong = 360;
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (Math.max(w, h) <= targetLong) {
+            resolve(srcUrl);
+            return;
+          }
+          const scale = targetLong / Math.max(w, h);
+          w = Math.max(1, Math.round(w * scale));
+          h = Math.max(1, Math.round(h * scale));
+          const c = document.createElement('canvas');
+          c.width = w;
+          c.height = h;
+          const ctx = c.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(c.toDataURL('image/jpeg', 0.82));
+        };
+        img.onerror = () => resolve(srcUrl);
+        img.src = srcUrl;
+      });
+    }
+
+    function scheduleBackgroundThumbnailGeneration() {
+      if (thumbGenQueueRunning) return;
+      thumbGenQueueRunning = true;
+
+      const processNextBatch = async () => {
+        const missing = cards.filter(c => c && c.id && c.image && !chekiThumbMap[c.id]).slice(0, 3);
+        if (missing.length === 0) {
+          thumbGenQueueRunning = false;
+          return;
+        }
+        for (const card of missing) {
+          chekiThumbMap[card.id] = await createSingleCardThumb(card.image);
+        }
+        saveThumbsToDBDebounced();
+        setTimeout(processNextBatch, 90);
+      };
+
+      setTimeout(processNextBatch, 300);
+    }
+
+    // 同步渲染代理器：只在建立細格仔縮圖 DOM 的瞬間注入輕量縮圖，0 秒還原 c.image 無損原圖屬性！
+    function runWithThumbnailProxy(syncRenderFn, ctx, args) {
+      const backup = new Map();
+      try {
+        for (let i = 0; i < cards.length; i++) {
+          const c = cards[i];
+          const thumb = c && chekiThumbMap[c.id];
+          if (thumb) {
+            backup.set(c, c.image);
+            c.image = thumb;
+          }
+        }
+        return syncRenderFn.apply(ctx, args);
+      } finally {
+        backup.forEach((origImg, c) => {
+          c.image = origImg;
+        });
+      }
+    }
+
+    // 👆 3. 大圖檢視「👇 下拉關閉 + 🔍 雙擊 2.5 倍放大與拖曳平移 + 雙指縮放」手勢引擎
+    function applyInspectZoomTransform(smooth = true) {
+      const img = document.getElementById('inspectImg');
+      if (!img) return;
+      img.style.transition = smooth ? 'transform 0.2s cubic-bezier(0.22, 1, 0.36, 1)' : 'none';
+      img.style.transformOrigin = 'center center';
+      img.style.transform = `translate3d(${Math.round(inspectPanX)}px, ${Math.round(inspectPanY)}px, 0) scale(${inspectZoomScale})`;
+
+      const zoomBtn = document.getElementById('inspectZoomPillBtn');
+      if (zoomBtn) {
+        zoomBtn.textContent = inspectZoomScale > 1 ? `🔍 ${inspectZoomScale.toFixed(1)}x (點此還原)` : '🔍 雙擊放大 2.5x';
+        zoomBtn.className = `px-2.5 py-0.5 rounded-full text-[10px] font-black border transition cursor-pointer ${inspectZoomScale > 1 ? 'bg-amber-300 text-zinc-900 border-white shadow' : 'bg-white/15 text-white/90 border-white/30'}`;
+      }
+    }
+
+    window.resetInspectZoom = function(smooth = true) {
+      inspectZoomScale = 1;
+      inspectPanX = 0;
+      inspectPanY = 0;
+      applyInspectZoomTransform(smooth);
+    };
+
+    window.toggleInspectZoomStep = function() {
+      const flipInner = document.getElementById('inspectFlipInner');
+      if (flipInner && flipInner.classList.contains('rotate-y-180')) {
+        flipInner.classList.remove('rotate-y-180');
+      }
+      window.triggerHaptic(10);
+      if (inspectZoomScale > 1) {
+        window.resetInspectZoom(true);
+      } else {
+        inspectZoomScale = 2.5;
+        inspectPanX = 0;
+        inspectPanY = 0;
+        applyInspectZoomTransform(true);
+      }
+    };
+
+    function bindInspectProGestures() {
+      const modal = document.getElementById('inspectModal');
+      const flipInner = document.getElementById('inspectFlipInner');
+      const flipWrapper = flipInner?.parentElement;
+      if (!modal || !flipInner || !flipWrapper || modal._proGesturesBound) return;
+      modal._proGesturesBound = true;
+
+      // 在底部提示列上方加入「🔍 雙擊放大 2.5x ｜ 👇 下拉關閉」互動膠囊
+      const hintP = modal.querySelector('p.text-white\\/70');
+      if (hintP) {
+        hintP.innerHTML = `👆 單擊翻面 · 🔍 雙擊放大 2.5x · 👇 下拉關閉`;
+        const pillWrap = document.createElement('div');
+        pillWrap.className = 'flex items-center justify-center gap-2 mt-1';
+        pillWrap.innerHTML = `<button type="button" id="inspectZoomPillBtn" onclick="toggleInspectZoomStep()" class="px-2.5 py-0.5 rounded-full bg-white/15 text-white/90 border border-white/30 text-[10px] font-black">🔍 雙擊放大 2.5x</button>`;
+        hintP.insertAdjacentElement('beforebegin', pillWrap);
+      }
+
+      // 接管 flipWrapper 點擊：支援「快速雙擊＝2.5倍放大」、「單擊＝3D翻面」
+      flipWrapper.removeAttribute('onclick');
+      let lastTapTime = 0;
+      let singleTapTimer = null;
+      let gestureMoved = false;
+
+      flipWrapper.addEventListener('click', (e) => {
+        if (gestureMoved) return;
+        const now = Date.now();
+        const isBackSide = flipInner.classList.contains('rotate-y-180');
+
+        if (!isBackSide && (now - lastTapTime < 260)) {
+          // 觸發雙擊放大 / 還原！
+          if (singleTapTimer) { clearTimeout(singleTapTimer); singleTapTimer = null; }
+          lastTapTime = 0;
+          window.triggerHaptic(12);
+          if (inspectZoomScale > 1) {
+            window.resetInspectZoom(true);
+          } else {
+            const rect = flipWrapper.getBoundingClientRect();
+            const tapOffsetX = (rect.width / 2) - (e.clientX - rect.left);
+            const tapOffsetY = (rect.height / 2) - (e.clientY - rect.top);
+            inspectZoomScale = 2.5;
+            inspectPanX = Math.max(-140, Math.min(140, tapOffsetX * 0.85));
+            inspectPanY = Math.max(-180, Math.min(180, tapOffsetY * 0.85));
+            applyInspectZoomTransform(true);
+          }
+        } else {
+          lastTapTime = now;
+          if (inspectZoomScale > 1) {
+            // 放大狀態下單擊不翻面，避免誤觸
+            return;
+          }
+          if (singleTapTimer) clearTimeout(singleTapTimer);
+          singleTapTimer = setTimeout(() => {
+            singleTapTimer = null;
+            window.triggerHaptic(8);
+            toggleInspectFlip();
+          }, 230);
+        }
+      });
+
+      // 手勢處理：1. 放大時單指拖曳看細節 | 2. 雙指捏合無段縮放 | 3. 未放大時向下拉關閉視窗
+      let startX = 0, startY = 0, initPanX = 0, initPanY = 0;
+      let isPullingDown = false, pullDy = 0;
+      let isPinchingZoom = false, pinchStartDist = 0, pinchInitScale = 1;
+
+      modal.addEventListener('touchstart', (e) => {
+        gestureMoved = false;
+        if (e.touches.length === 2) {
+          isPinchingZoom = true;
+          isPullingDown = false;
+          const t1 = e.touches[0], t2 = e.touches[1];
+          pinchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
+          pinchInitScale = inspectZoomScale;
+          return;
+        }
+        if (e.touches.length === 1) {
+          startX = e.touches[0].clientX;
+          startY = e.touches[0].clientY;
+          initPanX = inspectPanX;
+          initPanY = inspectPanY;
+          isPullingDown = false;
+          pullDy = 0;
+        }
+      }, { passive: true, capture: true });
+
+      modal.addEventListener('touchmove', (e) => {
+        if (isPinchingZoom && e.touches.length === 2) {
+          gestureMoved = true;
+          e.stopPropagation();
+          const t1 = e.touches[0], t2 = e.touches[1];
+          const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
+          inspectZoomScale = Math.min(3.5, Math.max(1, pinchInitScale * (dist / pinchStartDist)));
+          if (inspectZoomScale <= 1.05) { inspectPanX = 0; inspectPanY = 0; }
+          applyInspectZoomTransform(false);
+          return;
+        }
+
+        if (e.touches.length !== 1) return;
+        const dx = e.touches[0].clientX - startX;
+        const dy = e.touches[0].clientY - startY;
+
+        if (Math.hypot(dx, dy) > 8) gestureMoved = true;
+
+        // 情況 A：已放大 (>1x) -> 單指自由平移睇相片細節，並阻擋左右滑動切相
+        if (inspectZoomScale > 1.02) {
+          e.stopPropagation();
+          const maxPan = 180 * (inspectZoomScale - 1);
+          inspectPanX = Math.max(-maxPan, Math.min(maxPan, initPanX + dx));
+          inspectPanY = Math.max(-maxPan, Math.min(maxPan, initPanY + dy));
+          applyInspectZoomTransform(false);
+          return;
+        }
+
+        // 情況 B：未放大 (1x) 且手指明顯向下拉 -> 觸發「👇 下拉縮小關閉視窗」動效
+        if (dy > 16 && dy > Math.abs(dx) * 1.35) {
+          isPullingDown = true;
+          pullDy = dy;
+          const sc = Math.max(0.75, 1 - dy / 680);
+          flipWrapper.style.transition = 'none';
+          flipWrapper.style.transform = `translate3d(0, ${Math.round(dy * 0.85)}px, 0) scale(${sc})`;
+          flipWrapper.style.opacity = String(Math.max(0.35, 1 - dy / 420));
+        }
+      }, { passive: true, capture: true });
+
+      const finishTouch = () => {
+        if (isPinchingZoom) {
+          isPinchingZoom = false;
+          if (inspectZoomScale < 1.1) window.resetInspectZoom(true);
+          else applyInspectZoomTransform(true);
+        }
+        if (isPullingDown) {
+          isPullingDown = false;
+          if (pullDy > 95) {
+            window.triggerHaptic(14);
+            flipWrapper.style.transition = 'transform 0.16s ease, opacity 0.16s ease';
+            flipWrapper.style.transform = 'translate3d(0, 180px, 0) scale(0.7)';
+            flipWrapper.style.opacity = '0';
+            setTimeout(() => {
+              closeInspectModal();
+              flipWrapper.style.transition = '';
+              flipWrapper.style.transform = '';
+              flipWrapper.style.opacity = '1';
+            }, 150);
+          } else {
+            flipWrapper.style.transition = 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease';
+            flipWrapper.style.transform = 'translate3d(0, 0, 0) scale(1)';
+            flipWrapper.style.opacity = '1';
+          }
+          pullDy = 0;
+        }
+      };
+
+      modal.addEventListener('touchend', finishTouch, { passive: true, capture: true });
+      modal.addEventListener('touchcancel', finishTouch, { passive: true, capture: true });
+    }
+
+    // 🚀 4. 卡冊「📅 右側月份快速跳轉條」＋「⬆️ 回頂部懸浮掣」
+    function ensureFloatingBinderNavigator() {
+      if (document.getElementById('floatingBinderNavWrap')) return;
+      const wrap = document.createElement('div');
+      wrap.id = 'floatingBinderNavWrap';
+      wrap.className = 'fixed bottom-20 right-3 z-40 flex flex-col items-end gap-1.5 pointer-events-none';
+      wrap.innerHTML = `
+        <!-- 展開式月份快速跳轉清單 -->
+        <div id="monthScrubberList" class="hidden pointer-events-auto bg-white/95 backdrop-blur-md rounded-2xl neo-box p-1.5 max-h-60 overflow-y-auto flex flex-col gap-1 shadow-2xl"></div>
+
+        <div class="flex items-center gap-1.5">
+          <button type="button" id="floatingMonthJumpBtn" onclick="toggleMonthScrubberList()" class="hidden pointer-events-auto px-3 py-1.5 rounded-full bg-white/95 backdrop-blur text-cheki-dark neo-btn text-[11px] font-black shadow-lg flex items-center gap-1 active:scale-95 transition">
+            <span>📅</span><span id="floatingCurrentMonthText">月份快跳</span>
+          </button>
+          <button type="button" id="floatingScrollTopBtn" onclick="scrollToTopSmooth()" class="hidden pointer-events-auto w-9 h-9 rounded-full bg-cheki-accent text-white neo-btn text-sm font-black shadow-lg flex items-center justify-center active:scale-90 transition" title="回到頂部">
+            ⬆️
+          </button>
+        </div>
+      `;
+      document.body.appendChild(wrap);
+
+      window.addEventListener('scroll', () => {
+        const topBtn = document.getElementById('floatingScrollTopBtn');
+        const monthBtn = document.getElementById('floatingMonthJumpBtn');
+        const scList = document.getElementById('monthScrubberList');
+        const scrolled = window.scrollY > 240;
+
+        if (topBtn) topBtn.classList.toggle('hidden', !scrolled);
+        if (monthBtn) {
+          const showMonth = currentTab === 'binder' && cards.length > 10;
+          monthBtn.classList.toggle('hidden', !showMonth);
+        }
+        if (!scrolled && scList && !isMonthScrubberOpen) {
+          scList.classList.add('hidden');
+        }
+      }, { passive: true });
+    }
+
+    window.scrollToTopSmooth = function() {
+      window.triggerHaptic(10);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    window.toggleMonthScrubberList = function() {
+      const scList = document.getElementById('monthScrubberList');
+      if (!scList) return;
+      isMonthScrubberOpen = !scList.classList.contains('hidden') ? false : true;
+      if (!isMonthScrubberOpen) {
+        scList.classList.add('hidden');
+        return;
+      }
+
+      const list = typeof getFilteredCards === 'function' ? getFilteredCards() : cards;
+      const monthMap = new Map();
+      list.forEach((c, idx) => {
+        const ym = (c.date || '').slice(0, 7) || '未知月份';
+        if (!monthMap.has(ym)) monthMap.set(ym, { ym, firstIndex: idx, count: 0 });
+        monthMap.get(ym).count++;
+      });
+
+      if (monthMap.size === 0) {
+        scList.classList.add('hidden');
+        return;
+      }
+
+      scList.innerHTML = `
+        <div class="px-2 py-0.5 text-[9px] font-black text-zinc-400 border-b border-zinc-100 text-center">⚡ 秒跳至月份</div>
+        ${[...monthMap.values()].map(item => `
+          <button type="button" onclick="jumpToBinderCardIndex(${item.firstIndex}, '${item.ym}')" class="px-2.5 py-1 rounded-xl hover:bg-pink-100 text-left text-[11px] font-black text-zinc-800 flex items-center justify-between gap-2 active:scale-95 transition">
+            <span>📅 ${item.ym}</span>
+            <span class="px-1.5 py-0.2 rounded-full bg-zinc-100 text-[9px] text-cheki-accent">${item.count}張</span>
+          </button>
+        `).join('')}
+      `;
+      scList.classList.remove('hidden');
+    };
+
+    window.jumpToBinderCardIndex = function(cardIdx, ymLabel) {
+      const grid = document.getElementById('binderGrid');
+      const targetEl = grid?.children?.[cardIdx];
+      const scList = document.getElementById('monthScrubberList');
+      isMonthScrubberOpen = false;
+      if (scList) scList.classList.add('hidden');
+
+      if (targetEl) {
+        window.triggerHaptic(12);
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        targetEl.style.outline = '3.5px solid var(--oshi-accent)';
+        targetEl.style.outlineOffset = '4px';
+        setTimeout(() => {
+          targetEl.style.outline = '';
+          targetEl.style.outlineOffset = '';
+        }, 1600);
+        const mText = document.getElementById('floatingCurrentMonthText');
+        if (mText) mText.textContent = ymLabel;
+        window.showChekiToast(`📅 已跳轉至 ${ymLabel} 的拍立得`);
+      }
+    };
+
+    function initUltraSmoothAndGesturePlugin() {
+      ensureFloatingBinderNavigator();
+      bindInspectProGestures();
+      loadThumbsFromDB();
+
+      // 1. 將所有縮圖網格渲染函數包裹於 runWithThumbnailProxy，瞬間減少 95% 記憶體解碼負擔！
+      ['renderBinder', 'renderDesk', 'renderCalendarDayCards', 'renderBatchPickerGrid', 'renderBatchTagCardsGrid', 'renderPosterCardPicker', 'renderSlotPickerGrid'].forEach(fnName => {
+        const origFn = window[fnName];
+        if (typeof origFn === 'function' && !origFn._wrappedThumbProxy) {
+          window[fnName] = function() {
+            return runWithThumbnailProxy(origFn, this, arguments);
+          };
+          window[fnName]._wrappedThumbProxy = true;
+        }
+      });
+
+      // 2. 桌布卡片支援「快速雙擊 (Double-Tap) 直接彈開高清大圖檢視」！
+      let lastDeskTapCardId = null;
+      let lastDeskTapTime = 0;
+      const origAttachDesk = window.attachDeskCardInteractions;
+      if (typeof origAttachDesk === 'function' && !origAttachDesk._wrappedDoubleTapInspect) {
+        window.attachDeskCardInteractions = function(el, card) {
+          origAttachDesk.apply(this, arguments);
+          el.addEventListener('pointerup', (e) => {
+            if (typeof isDeskGlobalPinching !== 'undefined' && isDeskGlobalPinching) return;
+            const now = Date.now();
+            if (lastDeskTapCardId === card.id && (now - lastDeskTapTime < 280)) {
+              lastDeskTapCardId = null;
+              lastDeskTapTime = 0;
+              // 復原剛才第 2 下點擊觸發的翻面，並直接打開高清大圖
+              card.deskFlipped = !card.deskFlipped;
+              const inner = el.querySelector('.desk-flip-inner');
+              if (inner) inner.classList.toggle('rotate-y-180', card.deskFlipped);
+              window.triggerHaptic(14);
+              openInspectModal(card.id);
+            } else {
+              lastDeskTapCardId = card.id;
+              lastDeskTapTime = now;
+            }
+          });
+        };
+        window.attachDeskCardInteractions._wrappedDoubleTapInspect = true;
+      }
+
+      // 3. 每次打開或切換大圖時，自動重設放大倍率為 1x 並確保載入 100% 無損原圖
+      const origOpenInspect = window.openInspectModal;
+      if (typeof origOpenInspect === 'function' && !origOpenInspect._wrappedZoomReset) {
+        window.openInspectModal = function(id) {
+          window.resetInspectZoom(false);
+          origOpenInspect.apply(this, arguments);
+          const realCard = cards.find(c => c.id === id);
+          const inspectImg = document.getElementById('inspectImg');
+          if (realCard && inspectImg) {
+            inspectImg.src = realCard.image; // 強制確保大圖檢視永遠顯示 100% 原始無損大圖
+          }
+          bindInspectProGestures();
+        };
+        window.openInspectModal._wrappedZoomReset = true;
+      }
+
+      // 4. 當新增或修改儲存相片時，即時更新該相片的輕量縮圖快取
+      const origSaveCard = window.saveCard;
+      if (typeof origSaveCard === 'function' && !origSaveCard._wrappedThumbUpdate) {
+        window.saveCard = async function() {
+          const targetId = editingCardId;
+          await origSaveCard.apply(this, arguments);
+          const saved = targetId ? cards.find(c => c.id === targetId) : cards[0];
+          if (saved && saved.image) {
+            chekiThumbMap[saved.id] = await createSingleCardThumb(saved.image);
+            saveThumbsToDBDebounced();
+          }
+        };
+        window.saveCard._wrappedThumbUpdate = true;
+      }
+
+      // 5. 當資料庫載入完成時，自動同步縮圖快取
+      const origLoadData = window.loadDataFromDB;
+      if (typeof origLoadData === 'function' && !origLoadData._wrappedThumbLoad) {
+        window.loadDataFromDB = async function() {
+          await origLoadData.apply(this, arguments);
+          loadThumbsFromDB();
+        };
+        window.loadDataFromDB._wrappedThumbLoad = true;
+      }
+
+      // 6. 分頁切換時更新右下角月份快跳掣狀態與微震動
+      const origSwitchTab = window.switchTab;
+      if (typeof origSwitchTab === 'function' && !origSwitchTab._wrappedHapticNav) {
+        window.switchTab = function(tab) {
+          window.triggerHaptic(8);
+          origSwitchTab.apply(this, arguments);
+          const monthBtn = document.getElementById('floatingMonthJumpBtn');
+          if (monthBtn) monthBtn.classList.toggle('hidden', tab !== 'binder' || cards.length <= 10);
+          const scList = document.getElementById('monthScrubberList');
+          if (scList) scList.classList.add('hidden');
+        };
+        window.switchTab._wrappedHapticNav = true;
+      }
+    }
+
+    setTimeout(initUltraSmoothAndGesturePlugin, 500);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
