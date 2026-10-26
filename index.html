@@ -103,18 +103,13 @@
     <div class="flex items-center gap-2 min-w-0">
       <div class="w-10 h-10 rounded-full bg-cheki-accent neo-btn flex items-center justify-center text-xl shrink-0 cursor-pointer" onclick="openBackupModal()" title="備份與還原">📸</div>
       <div class="min-w-0">
-        <div class="flex items-center gap-1.5">
-          <h1 class="font-black text-base tracking-tight truncate">ChekiPocket</h1>
-          <span onclick="openBackupModal()" class="cursor-pointer text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-400 shrink-0">本機永久存</span>
-        </div>
-        <p id="headerStats" class="text-[11px] text-zinc-600 font-bold truncate">總計 0 張 · ★ 0 張最愛 · 3 個相簿</p>
+        <h1 class="font-black text-base tracking-tight truncate">ChekiPocket</h1>
+        <p id="headerStats" class="text-[11px] text-zinc-600 font-bold truncate">總計 0 張 · ★ 0 張最愛</p>
       </div>
     </div>
     <div class="flex items-center gap-1.5 shrink-0">
-      <button onclick="switchTab('stats')" class="w-9 h-9 rounded-2xl bg-blue-100 neo-btn flex items-center justify-center text-base" title="偶像Cheki統計與足跡地圖">📊</button>
       <button onclick="openBackupModal()" class="w-9 h-9 rounded-2xl bg-amber-100 neo-btn flex items-center justify-center text-base" title="備份與還原">📦</button>
       <button onclick="toggleSearchBar()" id="topSearchBtn" class="w-9 h-9 rounded-2xl bg-white neo-btn flex items-center justify-center text-base" title="搜尋">🔍</button>
-      <button onclick="openAddModal()" class="px-3 py-2 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-btn flex items-center gap-1">✨ 新增</button>
     </div>
   </header>
 
@@ -1506,21 +1501,9 @@
       canvas.addEventListener('touchcancel', endTouch, { capture: true });
     }
 
-    // 5. 維持頂部「💌 備忘」對齊
-    const memoBtn = document.getElementById('topMemoQuickBtn');
-    const statsP = document.getElementById('headerStats');
-    if (memoBtn && statsP && memoBtn.parentNode !== statsP.parentNode) {
-      const row = document.createElement('div');
-      row.className = 'flex items-center gap-1.5 mt-0.5';
-      statsP.parentNode.insertBefore(row, statsP);
-      row.appendChild(statsP);
-      row.appendChild(memoBtn);
     }
-  }
 
-  
-
-    function onDeskBgZoomChange(val) {
+  function onDeskBgZoomChange(val) {
       const modal = document.getElementById('deskBgModal');
       const isModalOpen = modal && !modal.classList.contains('hidden');
       if (isModalOpen) {
@@ -3318,16 +3301,7 @@ function scatterDeskCards() {
       updateHeaderStats();
       renderCurrentTab();
     }
-
-    function exportInspectImage() {
-      const card = cards.find(c => c.id === inspectingCardId);
-      if (!card) return;
-      const a = document.createElement('a');
-      a.href = card.image;
-      a.download = `${card.member || 'cheki'}_${card.date || ''}.jpg`;
-      a.click();
-    }
-
+    
     // --- ADD / EDIT MODAL ---
     function renderEditAlbumPills() {
       const container = document.getElementById('editAlbumPillsContainer');
@@ -3724,20 +3698,6 @@ function scatterDeskCards() {
   }
 </style>
 
-<!-- 1. 頂部超可愛纖薄倒數橫幅 (自動掛載於 Header 下方，絕不遮擋桌布) -->
-<div id="cuteCountdownBanner" onclick="openCountdownModal()" class="cursor-pointer px-3 py-1.5 bg-gradient-to-r from-sky-200 via-pink-100 to-blue-200 border-b-2 border-cheki-dark flex items-center justify-between gap-2 cute-stripes select-none">
-  <div class="flex items-center gap-1.5 min-w-0">
-    <span id="bannerCuteIcon" class="text-base cute-float inline-block">✈️</span>
-    <span id="bannerEventTitle" class="font-black text-xs text-cheki-dark truncate">載入應援倒數中...</span>
-  </div>
-  <div class="flex items-center gap-1.5 shrink-0">
-    <span id="bannerCountdownBadge" class="px-2.5 py-0.5 rounded-full bg-white border-2 border-cheki-dark text-[11px] font-black text-blue-600 shadow-sm">
-      ⏳ 倒數 -- 日
-    </span>
-    <span class="w-6 h-6 rounded-full bg-cheki-accent text-white border border-cheki-dark flex items-center justify-center text-[11px] font-black" title="打開話題與倒數手冊">💌</span>
-  </div>
-</div>
-
 <!-- 2. 應援倒數 & 特典會話題手冊主視窗 -->
 <div id="countdownModal" class="hidden fixed inset-0 z-[85] bg-black/75 flex items-center justify-center p-3 overflow-y-auto">
   <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl cute-lace-border p-4 space-y-3.5 max-h-[92vh] overflow-y-auto">
@@ -4046,37 +4006,9 @@ function switchCheerModalTab(mode) {
 
   function updateCountdownDisplays() {
     const activeEv = getActiveCheerEvent();
-    const bannerIcon = document.getElementById('bannerCuteIcon');
-    const bannerTitle = document.getElementById('bannerEventTitle');
-    const bannerBadge = document.getElementById('bannerCountdownBadge');
-
-    if (!activeEv) {
-      if (bannerTitle) bannerTitle.textContent = '點擊設定下一場應援倒數 ✨';
-      if (bannerBadge) bannerBadge.textContent = '+ 新增行程';
-      return;
-    }
+    if (!activeEv) return;
 
     const rem = calculateTimeRemaining(activeEv.date);
-
-    // 1. 更新頂部可愛膠囊橫幅
-    if (bannerIcon) bannerIcon.textContent = activeEv.icon || '✈️';
-    if (bannerTitle) {
-      bannerTitle.textContent = `${activeEv.idol ? activeEv.idol + ' · ' : ''}${activeEv.title}`;
-    }
-    if (bannerBadge) {
-      if (rem.isToday) {
-        bannerBadge.textContent = '🎉 TODAY 見面日！';
-        bannerBadge.className = 'px-2.5 py-0.5 rounded-full bg-amber-300 border-2 border-cheki-dark text-[11px] font-black text-cheki-dark animate-bounce';
-      } else if (rem.isPast) {
-        bannerBadge.textContent = `✨ 已完成 (${rem.days}日前)`;
-        bannerBadge.className = 'px-2.5 py-0.5 rounded-full bg-white border-2 border-cheki-dark text-[11px] font-black text-zinc-500';
-      } else {
-        bannerBadge.textContent = `⏳ 倒數 ${rem.days} 日`;
-        bannerBadge.className = 'px-2.5 py-0.5 rounded-full bg-white border-2 border-cheki-dark text-[11px] font-black text-blue-600 shadow-sm';
-      }
-    }
-
-    // 2. 更新 Modal 內的焦點大卡
     const heroIdol = document.getElementById('heroIdolTag');
     const heroName = document.getElementById('heroEventName');
     const heroMeta = document.getElementById('heroEventMeta');
@@ -4095,7 +4027,7 @@ function switchCheerModalTab(mode) {
     renderTalkTopicsList();
   }
 
-let editingCheerEventId = null;
+  let editingCheerEventId = null;
 
   function renderCountdownEventsList() {
     const box = document.getElementById('countdownEventsList');
@@ -4625,15 +4557,7 @@ let editingCheerEventId = null;
       alert(`✅ 已成功將「${curOpt.label}」同步更新至 ${batchTagSelectedCardIds.size} 張 Cheki！`);
     }
 
-    function cycleBinderTagFilter() {
-      const allOpts = getAllChekiTagOptions();
-      const order = ['ALL', ...allOpts.map(o => o.id)];
-      const nextIdx = (order.indexOf(selectedTagFilter) + 1) % order.length;
-      selectedTagFilter = order[nextIdx];
-      renderBinder();
-    }
-
-   // 額外快取機制：確保一開網頁 0 秒即顯示所有偶像名稱、相簿與自訂標籤
+    // 額外快取機制：確保一開網頁 0 秒即顯示所有偶像名稱、相簿與自訂標籤
     function syncFastCacheToLocalStorage() {
       try {
         if (Array.isArray(albums) && albums.length > 0) {
@@ -4800,43 +4724,6 @@ let editingCheerEventId = null;
           const allOpts = getAllChekiTagOptions();
           const tagText = card.chekiTags.map(id => allOpts.find(o => o.id === id)?.label || '').join(' ').toLowerCase();
           return tagText.includes(q);
-        };
-      }
-
-      // 5. 在卡冊頁「★ 最愛」旁邊加入「🏷️ 類型」切換掣及「⚡ 批次標記」細掣
-      const origRenderBinder = window.renderBinder;
-      if (typeof origRenderBinder === 'function') {
-        window.renderBinder = function() {
-          origRenderBinder.apply(this, arguments);
-          const favBtn = document.getElementById('favFilterBtn');
-          if (favBtn && favBtn.parentElement) {
-            let tagBtn = document.getElementById('minimalTagFilterBtn');
-            if (!tagBtn) {
-              tagBtn = document.createElement('button');
-              tagBtn.id = 'minimalTagFilterBtn';
-              tagBtn.type = 'button';
-              tagBtn.onclick = cycleBinderTagFilter;
-              favBtn.parentElement.insertBefore(tagBtn, favBtn);
-            }
-            let batchBtn = document.getElementById('minimalBatchTagBtn');
-            if (!batchBtn) {
-              batchBtn = document.createElement('button');
-              batchBtn.id = 'minimalBatchTagBtn';
-              batchBtn.type = 'button';
-              batchBtn.onclick = () => openBatchTagOldChekisModal();
-              batchBtn.title = '批次為舊 Cheki 加標籤';
-              batchBtn.className = 'px-2 py-1.5 rounded-full text-xs font-black neo-btn bg-pink-100 text-cheki-accent shrink-0';
-              batchBtn.textContent = '⚡標記';
-              favBtn.parentElement.insertBefore(batchBtn, favBtn);
-            }
-            const allOpts = getAllChekiTagOptions();
-            const curOpt = allOpts.find(o => o.id === selectedTagFilter);
-            const count = selectedTagFilter === 'ALL'
-              ? cards.length
-              : cards.filter(c => Array.isArray(c.chekiTags) && c.chekiTags.includes(selectedTagFilter)).length;
-            tagBtn.className = `px-2.5 py-1.5 rounded-full text-xs font-black neo-btn shrink-0 ${selectedTagFilter !== 'ALL' ? 'bg-blue-500 text-white' : 'bg-white text-zinc-700'}`;
-            tagBtn.textContent = curOpt ? `${curOpt.label} (${count})` : `🏷️ 類型`;
-          }
         };
       }
 
@@ -7386,9 +7273,6 @@ let editingCheerEventId = null;
       const grid = document.getElementById('binderGrid');
       if (!sec || !memberPills || !grid) return;
 
-      const oldTagBtn = document.getElementById('minimalTagFilterBtn');
-      if (oldTagBtn) oldTagBtn.style.display = 'none';
-
       let tagBar = document.getElementById('binderDirectTagPills');
       if (!tagBar) {
         tagBar = document.createElement('div');
@@ -7399,7 +7283,6 @@ let editingCheerEventId = null;
 
       const allOpts = typeof getAllChekiTagOptions === 'function' ? getAllChekiTagOptions() : [];
       const curTag = typeof selectedTagFilter !== 'undefined' ? selectedTagFilter : 'ALL';
-
       const q = (document.getElementById('searchInput')?.value || '').trim();
       const basePool = cards.filter(c => {
         if (!cardBelongsToAlbum(c, selectedAlbumFilter)) return false;
@@ -7409,13 +7292,11 @@ let editingCheerEventId = null;
         return true;
       });
 
-      const allTagBtnHtml = `
+      tagBar.innerHTML = `
         <button type="button" onclick="selectBinderTagDirect('ALL')" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark shrink-0 transition ${curTag === 'ALL' ? 'bg-pink-500 text-white' : 'bg-pink-50 text-zinc-700'}">
           🏷️ 全部類型 (${basePool.length})
         </button>
-      `;
-
-      const tagPillsHtml = allOpts.map(opt => {
+      ` + allOpts.map(opt => {
         const cnt = basePool.filter(c => Array.isArray(c.chekiTags) && c.chekiTags.includes(opt.id)).length;
         const active = curTag === opt.id;
         return `
@@ -7424,43 +7305,6 @@ let editingCheerEventId = null;
           </button>
         `;
       }).join('');
-
-      tagBar.innerHTML = allTagBtnHtml + tagPillsHtml;
-
-      let ctrlBar = document.getElementById('binderSortAndColBar');
-      if (!ctrlBar) {
-        ctrlBar = document.createElement('div');
-        ctrlBar.id = 'binderSortAndColBar';
-        ctrlBar.className = 'flex items-center justify-between gap-1.5 pt-0.5 pb-1';
-        tagBar.insertAdjacentElement('afterend', ctrlBar);
-      }
-
-      const sortLabels = {
-        date_desc: '📅 拍攝日期: 新➔舊',
-        date_asc: '📅 拍攝日期: 舊➔新',
-        created_desc: '📥 入庫次序: 最新先'
-      };
-
-      const filteredCount = typeof getFilteredCards === 'function' ? getFilteredCards().length : cards.length;
-
-      ctrlBar.innerHTML = `
-        <div class="flex items-center gap-1.5 min-w-0">
-          <button type="button" onclick="cycleBinderSortMode()" class="px-2.5 py-1 rounded-xl bg-white neo-btn text-[11px] font-black text-cheki-dark flex items-center gap-1 shrink-0 active:scale-95" title="點擊切換排序方式">
-            <span>↕️</span>
-            <span>${sortLabels[binderSortMode] || sortLabels.date_desc}</span>
-          </button>
-          <button type="button" onclick="openRandomChekiInspect()" class="px-2 py-1 rounded-xl bg-amber-100 neo-btn text-[11px] font-black text-amber-900 shrink-0 active:scale-95" title="隨機抽一張 Cheki 回顧">
-            🎲 隨機抽(${filteredCount})
-          </button>
-        </div>
-        <div class="flex items-center bg-zinc-200/80 p-0.5 rounded-xl border-2 border-cheki-dark shrink-0">
-          ${[2, 3, 4].map(col => `
-            <button type="button" onclick="setBinderColCount(${col})" class="px-2 py-0.5 rounded-lg text-[10px] font-black transition ${binderColCount === col ? 'bg-cheki-accent text-white shadow-sm' : 'text-zinc-600'}">
-              ${col}欄
-            </button>
-          `).join('')}
-        </div>
-      `;
     }
 
     function initPerformanceAndBinderUpgrade() {
