@@ -7052,14 +7052,16 @@ let editingCheerEventId = null;
 
     setTimeout(initEnhancedStatsPlugin, 200);
 // =========================================================================
-    // 📸 一鍵生成「參戰戰利品海報圖 (Cheki Grid Poster)」外掛模組
+    // 📸 一鍵生成「參戰戰利品海報圖 (防溢出修正 + 免手寫日期/偶像點選器升級版)」
     // =========================================================================
     let posterSelectedCardIds = [];
     let posterTheme = 'blue'; // 'blue' | 'pink' | 'brown' | 'white' | 'dark'
-    let posterCols = 'auto';  // 'auto' | 2 | 3 | 4 | 5 | 6
+    let posterCols = 'auto';  // 'auto' | 2 | 3 | 4 | 5 | 6 | 8 | 10
     let posterTiltMode = false;
     let posterShowCaption = false;
     let posterCurrentDataUrl = '';
+    let posterSelectedDateFilter = 'ALL';
+    let posterSelectedMemberFilter = 'ALL';
     let lastCalendarDayCards = [];
     let lastCalendarDayTitle = '';
 
@@ -7072,11 +7074,16 @@ let editingCheerEventId = null;
     };
 
     function ensureChekiPosterModalExists() {
-      if (document.getElementById('chekiPosterModal')) return;
+      const existing = document.getElementById('chekiPosterModal');
+      if (existing) {
+        if (existing.dataset.ver === 'v2') return;
+        existing.remove();
+      }
       const div = document.createElement('div');
       div.innerHTML = `
-        <div id="chekiPosterModal" class="hidden fixed inset-0 z-[92] bg-black/85 flex items-center justify-center p-2.5 overflow-y-auto">
-          <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-3.5 space-y-3 max-h-[94vh] overflow-y-auto flex flex-col">
+        <div id="chekiPosterModal" data-ver="v2" class="hidden fixed inset-0 z-[92] bg-black/85 flex items-center justify-center p-2.5 overflow-y-auto">
+          <!-- 移除會壓扁預覽框的 flex-col，改用獨立區塊流暢捲動 -->
+          <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-3.5 space-y-3 max-h-[92vh] overflow-y-auto block">
             <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
               <div class="flex items-center gap-1.5">
                 <span class="text-xl">📸</span>
@@ -7085,14 +7092,16 @@ let editingCheerEventId = null;
                   <p class="text-[10px] text-zinc-500 font-bold">一鍵排版高清 Cheki 海報，方便分享至 X / IG ✨</p>
                 </div>
               </div>
-              <button type="button" onclick="closeChekiPosterModal()" class="w-8 h-8 rounded-full bg-white neo-btn font-black text-sm">✕</button>
+              <button type="button" onclick="closeChekiPosterModal()" class="w-8 h-8 rounded-full bg-white neo-btn font-black text-sm shrink-0">✕</button>
             </div>
 
-            <!-- 海報即時預覽區 -->
-            <div class="bg-zinc-900 rounded-2xl p-2 flex flex-col items-center justify-center relative min-h-[210px] border-2 border-cheki-dark">
-              <div id="posterLoadingHint" class="hidden text-xs font-black text-amber-300 py-12 animate-pulse">⏳ 正在合成高清戰利品海報中...</div>
-              <img id="posterPreviewImg" src="" class="max-h-[42vh] w-auto object-contain rounded-xl shadow-xl" alt="海報預覽">
-              <span class="mt-1.5 text-[10px] font-bold text-zinc-400">💡 可直接撳下方按鈕下載高清原圖，或長按預覽圖儲存</span>
+            <!-- 海報即時預覽區（嚴格鎖定 overflow-hidden 與內部獨立高度，100% 絕不溢出遮擋！） -->
+            <div class="bg-zinc-900 rounded-2xl p-2.5 border-2 border-cheki-dark overflow-hidden block">
+              <div id="posterLoadingHint" class="hidden text-xs font-black text-amber-300 py-8 text-center animate-pulse">⏳ 正在合成高清戰利品海報中...</div>
+              <div class="w-full h-[34vh] max-h-[280px] overflow-y-auto overflow-x-hidden flex items-center justify-center bg-zinc-950/70 rounded-xl p-1.5 border border-zinc-800">
+                <img id="posterPreviewImg" src="" class="max-h-full max-w-full w-auto h-auto object-contain rounded-lg shadow-xl block mx-auto" alt="海報預覽">
+              </div>
+              <p class="mt-1.5 text-[10px] font-bold text-zinc-400 text-center">💡 可直接撳下方按鈕下載高清原圖，或長按預覽圖儲存</p>
             </div>
 
             <!-- 下載與分享主按鈕 -->
@@ -7105,7 +7114,7 @@ let editingCheerEventId = null;
               </button>
             </div>
 
-            <!-- 標題與排版設定 -->
+            <!-- 標題、免手寫日期選擇器與排版設定 -->
             <div class="neo-box bg-white rounded-2xl p-3 space-y-2.5">
               <div class="grid grid-cols-2 gap-2">
                 <div>
@@ -7113,8 +7122,14 @@ let editingCheerEventId = null;
                   <input id="posterTitleInput" type="text" placeholder="例：福岡遠征 戰利品" oninput="schedulePosterRender()" class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark text-xs font-bold bg-pink-50/30">
                 </div>
                 <div>
-                  <label class="text-[10px] font-black text-zinc-600 block mb-0.5">📍 日期 / 場地 / 備註</label>
-                  <input id="posterSubInput" type="text" placeholder="例：2026-10-17 · UNITED LAB" oninput="schedulePosterRender()" class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark text-xs font-bold bg-blue-50/30">
+                  <div class="flex items-center justify-between mb-0.5">
+                    <label class="text-[10px] font-black text-zinc-600">📍 日期 / 場地</label>
+                    <label class="px-1.5 py-0.2 rounded bg-blue-100 border border-cheki-dark text-[9px] font-black text-blue-800 cursor-pointer active:scale-95">
+                      📅 揀日曆
+                      <input type="date" onchange="onPosterHeaderDatePicked(this.value)" class="sr-only">
+                    </label>
+                  </div>
+                  <input id="posterSubInput" type="text" placeholder="點下方日期可自動帶入" oninput="schedulePosterRender()" class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark text-xs font-bold bg-blue-50/30">
                 </div>
               </div>
 
@@ -7125,20 +7140,20 @@ let editingCheerEventId = null;
               </div>
 
               <!-- 欄數與排列風格 -->
-              <div class="flex items-center justify-between gap-2 pt-1 border-t border-zinc-100 flex-wrap">
-                <div class="flex items-center gap-1">
-                  <span class="text-[10px] font-black text-zinc-600">📏 每行張數:</span>
-                  <div id="posterColPills" class="flex gap-1"></div>
+              <div class="space-y-1.5 pt-1 border-t border-zinc-100">
+                <div class="flex items-center justify-between gap-1 flex-wrap">
+                  <span class="text-[10px] font-black text-zinc-600 shrink-0">📏 每行張數:</span>
+                  <div id="posterColPills" class="flex gap-1 overflow-x-auto no-scrollbar"></div>
                 </div>
-                <div class="flex items-center gap-1">
-                  <button type="button" id="posterTiltBtn" onclick="togglePosterTilt()" class="px-2 py-1 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-white">🎲 微傾手擺</button>
-                  <button type="button" id="posterCapBtn" onclick="togglePosterCaption()" class="px-2 py-1 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-white">🏷️ 顯示文字</button>
+                <div class="flex items-center justify-end gap-1.5">
+                  <button type="button" id="posterTiltBtn" onclick="togglePosterTilt()" class="px-2.5 py-1 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-white">🎲 微傾手擺</button>
+                  <button type="button" id="posterCapBtn" onclick="togglePosterCaption()" class="px-2.5 py-1 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-white">🏷️ 顯示文字</button>
                 </div>
               </div>
             </div>
 
-            <!-- 勾選要放入海報的 Cheki -->
-            <div class="neo-box bg-white rounded-2xl p-3 space-y-2">
+            <!-- 🎴 免手寫：一鍵揀選參戰日期 & 偶像入鏡區 -->
+            <div class="neo-box bg-white rounded-2xl p-3 space-y-2.5">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-black">🎴 揀選入鏡 Cheki (<span id="posterSelectedCount" class="text-cheki-accent">0</span> 張)</span>
                 <div class="flex gap-1">
@@ -7146,15 +7161,155 @@ let editingCheerEventId = null;
                   <button type="button" onclick="posterSelectAllFiltered(false)" class="px-2 py-0.5 rounded-lg bg-zinc-100 border border-cheki-dark text-[10px] font-black">清空</button>
                 </div>
               </div>
-              <div class="flex gap-1.5">
-                <input id="posterFilterInput" type="text" placeholder="搜尋日期 (如 2026-10-17)、成員、場地..." oninput="renderPosterCardPicker()" class="flex-1 px-2.5 py-1 rounded-xl border-2 border-cheki-dark text-xs font-bold bg-zinc-50">
+
+              <!-- 1. 免手寫：參戰日期下拉選單 + 原生日曆按鈕 -->
+              <div class="space-y-1.5">
+                <div class="flex items-center gap-1.5">
+                  <select id="posterDateDropdown" onchange="selectPosterEventDate(this.value, true)" class="flex-1 px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark text-xs font-black bg-amber-50 text-cheki-dark focus:outline-none">
+                    <option value="ALL">📅 按此揀選參戰日期（免手寫自動篩選）...</option>
+                  </select>
+                  <label class="px-2.5 py-1.5 rounded-xl bg-pink-100 neo-btn text-xs font-black cursor-pointer shrink-0 flex items-center gap-1" title="打開月曆揀日子">
+                    🗓️ 日曆
+                    <input type="date" id="posterNativeDatePicker" onchange="selectPosterEventDate(this.value, true)" class="sr-only">
+                  </label>
+                </div>
+
+                <!-- 橫向常用參戰日期膠囊列（一篤即揀嗰日全部 Cheki！） -->
+                <div id="posterQuickDatePills" class="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5"></div>
+
+                <!-- 橫向偶像名稱快選列 -->
+                <div id="posterQuickMemberPills" class="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5"></div>
               </div>
-              <div id="posterCardPickerGrid" class="grid grid-cols-4 gap-1.5 max-h-40 overflow-y-auto p-1 bg-pink-50/40 rounded-xl border border-pink-200"></div>
+
+              <div id="posterCardPickerGrid" class="grid grid-cols-4 gap-1.5 max-h-44 overflow-y-auto p-1 bg-pink-50/40 rounded-xl border border-pink-200"></div>
             </div>
           </div>
         </div>
       `;
       document.body.appendChild(div);
+    }
+
+    // 整理所有有影過 Cheki 的參戰日期清單（由新到舊排列，附帶場地與張數）
+    function getAvailableEventDatesSummary() {
+      const map = {};
+      cards.forEach(c => {
+        const d = (c.date || '').trim();
+        if (!d) return;
+        if (!map[d]) map[d] = { date: d, count: 0, loc: '' };
+        map[d].count++;
+        if (!map[d].loc && c.locationName) map[d].loc = c.locationName;
+      });
+      return Object.values(map).sort((a, b) => b.date.localeCompare(a.date));
+    }
+
+    // 當從日曆揀選修改頂部副標題日期時自動帶入
+    window.onPosterHeaderDatePicked = function(dateStr) {
+      if (!dateStr) return;
+      const dayCards = cards.filter(c => c.date === dateStr);
+      const loc = dayCards.find(c => c.locationName)?.locationName || '';
+      document.getElementById('posterSubInput').value = `📅 ${dateStr}${loc ? ' · 📍 ' + loc : ''}`;
+      schedulePosterRender();
+    };
+
+    // 當點選某個參戰日期時：自動篩選該日相片，並詢問/自動勾選該日全部 Cheki + 更新海報標題日期！
+    window.selectPosterEventDate = function(dateVal, autoReplaceSelection = true) {
+      posterSelectedDateFilter = dateVal || 'ALL';
+      const dropdown = document.getElementById('posterDateDropdown');
+      if (dropdown && [...dropdown.options].some(o => o.value === posterSelectedDateFilter)) {
+        dropdown.value = posterSelectedDateFilter;
+      }
+
+      if (posterSelectedDateFilter !== 'ALL' && autoReplaceSelection) {
+        const matched = getPosterFilteredPool();
+        if (matched.length > 0) {
+          posterSelectedCardIds = matched.map(c => c.id);
+          const loc = matched.find(c => c.locationName)?.locationName || '';
+          const members = [...new Set(matched.map(c => (c.member || '').trim()).filter(Boolean))];
+          document.getElementById('posterSubInput').value = `📅 ${posterSelectedDateFilter}${loc ? ' · 📍 ' + loc : ''}`;
+          if (members.length === 1) {
+            document.getElementById('posterTitleInput').value = `👑 ${members[0]} · 參戰戰利品`;
+          } else {
+            document.getElementById('posterTitleInput').value = `✨ ${posterSelectedDateFilter} 參戰戰利品`;
+          }
+        }
+      }
+
+      renderPosterDateAndMemberSelectors();
+      renderPosterCardPicker();
+      schedulePosterRender();
+    };
+
+    window.selectPosterMemberFilter = function(memberVal) {
+      posterSelectedMemberFilter = (posterSelectedMemberFilter === memberVal && memberVal !== 'ALL') ? 'ALL' : memberVal;
+      const matched = getPosterFilteredPool();
+      if (matched.length > 0) {
+        posterSelectedCardIds = matched.map(c => c.id);
+        if (posterSelectedMemberFilter !== 'ALL') {
+          document.getElementById('posterTitleInput').value = `👑 ${posterSelectedMemberFilter} · 應援戰利品`;
+        }
+      }
+      renderPosterDateAndMemberSelectors();
+      renderPosterCardPicker();
+      schedulePosterRender();
+    };
+
+    function getPosterFilteredPool() {
+      return cards.filter(c => {
+        if (posterSelectedDateFilter !== 'ALL' && (c.date || '').trim() !== posterSelectedDateFilter) return false;
+        if (posterSelectedMemberFilter !== 'ALL' && (c.member || '未命名').trim() !== posterSelectedMemberFilter) return false;
+        return true;
+      });
+    }
+
+    function renderPosterDateAndMemberSelectors() {
+      const dateList = getAvailableEventDatesSummary();
+
+      // 1. 填充下拉選單
+      const dropdown = document.getElementById('posterDateDropdown');
+      if (dropdown) {
+        dropdown.innerHTML = `<option value="ALL">📅 全部參戰日期（共 ${cards.length} 張）</option>` +
+          dateList.map(item => `
+            <option value="${item.date}" ${posterSelectedDateFilter === item.date ? 'selected' : ''}>
+              📅 ${item.date}${item.loc ? ' · ' + item.loc.slice(0, 10) : ''} (${item.count}張)
+            </option>
+          `).join('');
+      }
+
+      // 2. 填充橫向日期膠囊列
+      const datePills = document.getElementById('posterQuickDatePills');
+      if (datePills) {
+        datePills.innerHTML = `
+          <button type="button" onclick="selectPosterEventDate('ALL', false)" class="px-2.5 py-1 rounded-full text-[10px] font-black border border-cheki-dark shrink-0 ${posterSelectedDateFilter === 'ALL' ? 'bg-cheki-accent text-white' : 'bg-zinc-100 text-zinc-600'}">
+            🗓️ 全部日期
+          </button>
+        ` + dateList.slice(0, 15).map(item => {
+          const active = posterSelectedDateFilter === item.date;
+          return `
+            <button type="button" onclick="selectPosterEventDate('${item.date}', true)" class="px-2.5 py-1 rounded-full text-[10px] font-black border border-cheki-dark shrink-0 transition active:scale-95 ${active ? 'bg-cheki-accent text-white shadow-sm' : 'bg-white text-zinc-700'}">
+              📅 ${item.date.slice(5)} (${item.count}張)
+            </button>
+          `;
+        }).join('');
+      }
+
+      // 3. 填充橫向偶像膠囊列
+      const memberPills = document.getElementById('posterQuickMemberPills');
+      if (memberPills && typeof getIdolCounts === 'function') {
+        const idols = getIdolCounts();
+        memberPills.innerHTML = `
+          <button type="button" onclick="selectPosterMemberFilter('ALL')" class="px-2.5 py-0.5 rounded-full text-[10px] font-black border border-cheki-dark shrink-0 ${posterSelectedMemberFilter === 'ALL' ? 'bg-blue-500 text-white' : 'bg-blue-50 text-zinc-600'}">
+            👥 全部成員
+          </button>
+        ` + idols.map(i => {
+          const safeName = i.member.replace(/'/g, "\\'");
+          const active = posterSelectedMemberFilter === i.member;
+          return `
+            <button type="button" onclick="selectPosterMemberFilter('${safeName}')" class="px-2.5 py-0.5 rounded-full text-[10px] font-black border border-cheki-dark shrink-0 ${active ? 'bg-blue-500 text-white' : 'bg-white text-zinc-700'}">
+              ${i.member} (${i.count})
+            </button>
+          `;
+        }).join('');
+      }
     }
 
     window.openChekiPosterModal = function(initialCards, customDefaultTitle) {
@@ -7170,10 +7325,12 @@ let editingCheerEventId = null;
 
       posterSelectedCardIds = sourceList.map(c => c.id);
 
-      // 智慧推算預設標題與副標題
       const uniqueMembers = [...new Set(sourceList.map(c => (c.member || '').trim()).filter(Boolean))];
       const uniqueDates = [...new Set(sourceList.map(c => (c.date || '').trim()).filter(Boolean))];
       const uniqueLocs = [...new Set(sourceList.map(c => (c.locationName || '').trim()).filter(Boolean))];
+
+      posterSelectedDateFilter = uniqueDates.length === 1 ? uniqueDates[0] : 'ALL';
+      posterSelectedMemberFilter = uniqueMembers.length === 1 ? uniqueMembers[0] : 'ALL';
 
       let autoTitle = customDefaultTitle || '';
       if (!autoTitle) {
@@ -7189,9 +7346,9 @@ let editingCheerEventId = null;
 
       document.getElementById('posterTitleInput').value = autoTitle;
       document.getElementById('posterSubInput').value = subParts.join(' · ') || `📅 ${new Date().toISOString().slice(0, 10)}`;
-      document.getElementById('posterFilterInput').value = uniqueDates.length === 1 ? uniqueDates[0] : '';
 
       renderPosterControlsUI();
+      renderPosterDateAndMemberSelectors();
       renderPosterCardPicker();
       document.getElementById('chekiPosterModal').classList.remove('hidden');
       generateChekiPosterCanvas();
@@ -7213,18 +7370,18 @@ let editingCheerEventId = null;
 
       const colBox = document.getElementById('posterColPills');
       if (colBox) {
-        colBox.innerHTML = ['auto', 2, 3, 4, 5, 6].map(c => `
-          <button type="button" onclick="setPosterCols('${c}')" class="px-2 py-0.5 rounded-lg border border-cheki-dark text-[10px] font-black ${String(posterCols) === String(c) ? 'bg-blue-500 text-white' : 'bg-zinc-100 text-zinc-700'}">
+        colBox.innerHTML = ['auto', 2, 3, 4, 5, 6, 8, 10].map(c => `
+          <button type="button" onclick="setPosterCols('${c}')" class="px-2 py-0.5 rounded-lg border border-cheki-dark text-[10px] font-black shrink-0 ${String(posterCols) === String(c) ? 'bg-blue-500 text-white' : 'bg-zinc-100 text-zinc-700'}">
             ${c === 'auto' ? '自動' : c + '欄'}
           </button>
         `).join('');
       }
 
       const tiltBtn = document.getElementById('posterTiltBtn');
-      if (tiltBtn) tiltBtn.className = `px-2 py-1 rounded-lg border-2 border-cheki-dark text-[10px] font-black ${posterTiltMode ? 'bg-amber-300 text-cheki-dark' : 'bg-white text-zinc-600'}`;
+      if (tiltBtn) tiltBtn.className = `px-2.5 py-1 rounded-lg border-2 border-cheki-dark text-[10px] font-black ${posterTiltMode ? 'bg-amber-300 text-cheki-dark' : 'bg-white text-zinc-600'}`;
 
       const capBtn = document.getElementById('posterCapBtn');
-      if (capBtn) capBtn.className = `px-2 py-1 rounded-lg border-2 border-cheki-dark text-[10px] font-black ${posterShowCaption ? 'bg-amber-300 text-cheki-dark' : 'bg-white text-zinc-600'}`;
+      if (capBtn) capBtn.className = `px-2.5 py-1 rounded-lg border-2 border-cheki-dark text-[10px] font-black ${posterShowCaption ? 'bg-amber-300 text-cheki-dark' : 'bg-white text-zinc-600'}`;
     }
 
     window.setPosterTheme = function(t) { posterTheme = t; renderPosterControlsUI(); schedulePosterRender(); };
@@ -7238,11 +7395,10 @@ let editingCheerEventId = null;
       if (!grid) return;
       if (countEl) countEl.textContent = posterSelectedCardIds.length;
 
-      const q = (document.getElementById('posterFilterInput')?.value || '').trim();
-      const filtered = cards.filter(c => !q || cardMatchesSearchQuery(c, q));
+      const filtered = getPosterFilteredPool();
 
       if (filtered.length === 0) {
-        grid.innerHTML = `<div class="col-span-4 text-center py-4 text-[11px] font-bold text-zinc-400">找不到符合的 Cheki</div>`;
+        grid.innerHTML = `<div class="col-span-4 text-center py-4 text-[11px] font-bold text-zinc-400">此日期/成員下尚無 Cheki</div>`;
         return;
       }
 
@@ -7252,7 +7408,7 @@ let editingCheerEventId = null;
         return `
           <div onclick="togglePosterCardId(${c.id})" class="relative rounded-xl p-1 border-2 cursor-pointer transition flex flex-col items-center ${isSel ? 'border-cheki-accent bg-white shadow-sm' : 'border-transparent bg-white/50 opacity-60'}">
             <div class="w-full aspect-[3/4] flex items-center justify-center overflow-hidden rounded bg-zinc-50">
-              <img src="${c.image}" class="max-h-full max-w-full object-contain pointer-events-none">
+              <img src="${c.image}" loading="lazy" class="max-h-full max-w-full object-contain pointer-events-none">
             </div>
             <span class="text-[9px] font-black truncate w-full text-center mt-0.5">${c.member || ''}</span>
             <span class="absolute top-1.5 right-1.5 w-5 h-5 rounded-full border border-cheki-dark flex items-center justify-center text-[10px] font-black ${isSel ? 'bg-cheki-accent text-white' : 'bg-white/90 text-transparent'}">
@@ -7275,11 +7431,8 @@ let editingCheerEventId = null;
       if (!selectAll) {
         posterSelectedCardIds = [];
       } else {
-        const q = (document.getElementById('posterFilterInput')?.value || '').trim();
-        const filtered = cards.filter(c => !q || cardMatchesSearchQuery(c, q));
-        filtered.forEach(c => {
-          if (!posterSelectedCardIds.includes(c.id)) posterSelectedCardIds.push(c.id);
-        });
+        const filtered = getPosterFilteredPool();
+        posterSelectedCardIds = filtered.map(c => c.id);
       }
       renderPosterCardPicker();
       schedulePosterRender();
@@ -7327,42 +7480,49 @@ let editingCheerEventId = null;
 
       const theme = POSTER_THEMES[posterTheme] || POSTER_THEMES.blue;
       const n = selectedCards.length;
+
+      // 智慧自動欄數：即使揀 80+ 張相亦會自動排成 8~10 欄方正大海報，唔再變細長條！
       const cols = posterCols === 'auto'
-        ? (n === 1 ? 1 : n <= 2 ? 2 : n <= 6 ? 3 : n <= 16 ? 4 : 5)
+        ? (n === 1 ? 1 : n <= 2 ? 2 : n <= 6 ? 3 : n <= 16 ? 4 : n <= 30 ? 5 : n <= 48 ? 6 : n <= 72 ? 8 : 10)
         : Number(posterCols);
       const rows = Math.ceil(n / cols);
 
       const canvasW = 1800;
-      const outerPad = 64;
-      const headerH = 220;
-      const footerH = 90;
-      const gap = cols >= 5 ? 24 : 32;
+      const outerPad = 56;
+      const headerH = 210;
+      const footerH = 85;
+      const gap = cols >= 8 ? 16 : (cols >= 5 ? 22 : 30);
 
       const gridW = canvasW - outerPad * 2;
       const cellW = Math.floor((gridW - gap * (cols - 1)) / cols);
-      const captionH = posterShowCaption ? 52 : 0;
+      const captionH = posterShowCaption ? Math.max(32, Math.round(cellW * 0.16)) : 0;
       const cellImgH = Math.round(cellW * 1.38);
       const cellTotalH = cellImgH + captionH;
 
       const gridH = rows * cellTotalH + (rows - 1) * gap;
-      const canvasH = outerPad * 2 + headerH + gridH + footerH;
+      const rawCanvasH = outerPad * 2 + headerH + gridH + footerH;
+
+      // 防止極多列時超出手機 Canvas 記憶體高度上限 (3800px)
+      const maxAllowedH = 3800;
+      const globalScale = rawCanvasH > maxAllowedH ? (maxAllowedH / rawCanvasH) : 1;
 
       const canvas = document.createElement('canvas');
-      canvas.width = canvasW;
-      canvas.height = canvasH;
+      canvas.width = Math.round(canvasW * globalScale);
+      canvas.height = Math.round(rawCanvasH * globalScale);
       const ctx = canvas.getContext('2d');
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
+      if (globalScale !== 1) ctx.scale(globalScale, globalScale);
 
-      // 1. 繪製背景漸層與可愛圓點暗紋
-      const grad = ctx.createLinearGradient(0, 0, canvasW, canvasH);
+      // 1. 繪製背景漸層與圓點暗紋
+      const grad = ctx.createLinearGradient(0, 0, canvasW, rawCanvasH);
       grad.addColorStop(0, theme.bg1);
       grad.addColorStop(1, theme.bg2);
       ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, canvasW, canvasH);
+      ctx.fillRect(0, 0, canvasW, rawCanvasH);
 
       ctx.fillStyle = theme.isDarkCanvas ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.45)';
-      for (let py = 30; py < canvasH; py += 48) {
+      for (let py = 30; py < rawCanvasH; py += 48) {
         for (let px = 30; px < canvasW; px += 48) {
           ctx.beginPath();
           ctx.arc(px, py, 4, 0, Math.PI * 2);
@@ -7370,8 +7530,8 @@ let editingCheerEventId = null;
         }
       }
 
-      // 2. 繪製頂部 Neo-Brutalism 標題橫幅卡
-      const hdrX = outerPad, hdrY = outerPad, hdrW = gridW, hdrCardH = 172;
+      // 2. 繪製頂部標題橫幅卡
+      const hdrX = outerPad, hdrY = outerPad, hdrW = gridW, hdrCardH = 168;
       ctx.fillStyle = '#272228';
       drawRoundedRectPath(ctx, hdrX + 8, hdrY + 8, hdrW, hdrCardH, 32);
       ctx.fill();
@@ -7387,28 +7547,27 @@ let editingCheerEventId = null;
       const subText = (document.getElementById('posterSubInput')?.value || '').trim();
 
       ctx.fillStyle = theme.text;
-      ctx.font = '900 54px "Zen Maru Gothic", "Inter", sans-serif';
+      ctx.font = '900 52px "Zen Maru Gothic", "Inter", sans-serif';
       ctx.textBaseline = 'top';
-      ctx.fillText(titleText.slice(0, 26), hdrX + 42, hdrY + 34);
+      ctx.fillText(titleText.slice(0, 26), hdrX + 40, hdrY + 32);
 
       ctx.fillStyle = theme.isDarkCanvas ? '#A1A1AA' : '#52525B';
-      ctx.font = '700 32px "Zen Maru Gothic", "Inter", sans-serif';
-      ctx.fillText(subText.slice(0, 42), hdrX + 44, hdrY + 108);
+      ctx.font = '700 30px "Zen Maru Gothic", "Inter", sans-serif';
+      ctx.fillText(subText.slice(0, 44), hdrX + 42, hdrY + 104);
 
-      // 右側總張數膠囊徽章
       const badgeText = `📸 共 ${n} 張 Cheki`;
-      ctx.font = '900 36px "Zen Maru Gothic", "Inter", sans-serif';
-      const bw = ctx.measureText(badgeText).width + 64;
-      const bh = 74;
-      const bx = hdrX + hdrW - bw - 38;
+      ctx.font = '900 34px "Zen Maru Gothic", "Inter", sans-serif';
+      const bw = ctx.measureText(badgeText).width + 60;
+      const bh = 72;
+      const bx = hdrX + hdrW - bw - 36;
       const by = hdrY + Math.round((hdrCardH - bh) / 2);
 
       ctx.fillStyle = '#272228';
-      drawRoundedRectPath(ctx, bx + 5, by + 5, bw, bh, 37);
+      drawRoundedRectPath(ctx, bx + 5, by + 5, bw, bh, 36);
       ctx.fill();
 
       ctx.fillStyle = theme.accent;
-      drawRoundedRectPath(ctx, bx, by, bw, bh, 37);
+      drawRoundedRectPath(ctx, bx, by, bw, bh, 36);
       ctx.fill();
       ctx.lineWidth = 4;
       ctx.strokeStyle = '#272228';
@@ -7420,7 +7579,7 @@ let editingCheerEventId = null;
       ctx.fillText(badgeText, bx + bw / 2, by + bh / 2 + 2);
       ctx.textAlign = 'left';
 
-      // 3. 載入所有選中相片並繪製網格
+      // 3. 繪製網格內所有選中相片
       const loadedImgs = await Promise.all(selectedCards.map(c => loadImgPromise(c.image)));
       const gridStartY = outerPad + headerH;
 
@@ -7429,7 +7588,6 @@ let editingCheerEventId = null;
         const r = Math.floor(i / cols);
         const c = i % cols;
 
-        // 若最後一行不滿，自動置中對齊！
         const itemsInThisRow = (r === rows - 1 && n % cols !== 0) ? (n % cols) : cols;
         const rowTotalW = itemsInThisRow * cellW + (itemsInThisRow - 1) * gap;
         const rowOffsetX = outerPad + Math.round((gridW - rowTotalW) / 2);
@@ -7447,21 +7605,20 @@ let editingCheerEventId = null;
           ctx.translate(-cx, -cy);
         }
 
-        // 卡片立體陰影與白框底板
+        const cornerR = Math.max(12, Math.round(cellW * 0.06));
         ctx.fillStyle = 'rgba(39, 34, 40, 0.28)';
-        drawRoundedRectPath(ctx, x + 7, y + 9, cellW, cellTotalH, 22);
+        drawRoundedRectPath(ctx, x + 6, y + 8, cellW, cellTotalH, cornerR);
         ctx.fill();
 
         ctx.fillStyle = '#FFFDF9';
-        drawRoundedRectPath(ctx, x, y, cellW, cellTotalH, 22);
+        drawRoundedRectPath(ctx, x, y, cellW, cellTotalH, cornerR);
         ctx.fill();
-        ctx.lineWidth = 4;
+        ctx.lineWidth = Math.max(2.5, Math.round(cellW * 0.012));
         ctx.strokeStyle = '#272228';
         ctx.stroke();
 
-        // 繪製 Cheki 影像（保持原比例不變形）
         if (img) {
-          const pad = 14;
+          const pad = Math.max(6, Math.round(cellW * 0.035));
           const availW = cellW - pad * 2;
           const availH = cellImgH - pad * 2;
           const scale = Math.min(availW / img.naturalWidth, availH / img.naturalHeight);
@@ -7471,34 +7628,33 @@ let editingCheerEventId = null;
           const dy = y + Math.round((cellImgH - dh) / 2);
 
           ctx.save();
-          drawRoundedRectPath(ctx, dx, dy, dw, dh, 12);
+          drawRoundedRectPath(ctx, dx, dy, dw, dh, Math.max(6, Math.round(cornerR * 0.55)));
           ctx.clip();
           ctx.drawImage(img, dx, dy, dw, dh);
           ctx.restore();
         }
 
-        // 若開啟顯示文字，在卡片底部印上成員與日期
         if (posterShowCaption) {
           ctx.fillStyle = '#272228';
-          ctx.font = '900 24px "Zen Maru Gothic", "Inter", sans-serif';
+          const fontSize = Math.max(14, Math.round(cellW * 0.065));
+          ctx.font = `900 ${fontSize}px "Zen Maru Gothic", "Inter", sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           const cap = `${card.member || ''}${card.date ? ' · ' + card.date.slice(5) : ''}`;
-          ctx.fillText(cap.slice(0, 18), x + cellW / 2, y + cellImgH + captionH / 2 - 4);
+          ctx.fillText(cap.slice(0, 18), x + cellW / 2, y + cellImgH + captionH / 2 - 2);
           ctx.textAlign = 'left';
         }
 
         ctx.restore();
       });
 
-      // 4. 繪製底部專屬應援浮水印
       ctx.fillStyle = theme.isDarkCanvas ? 'rgba(255,255,255,0.65)' : 'rgba(39,34,40,0.55)';
       ctx.font = '900 26px "Zen Maru Gothic", "Inter", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('📸 ChekiPocket · My Oshikatsu Collection ✨', canvasW / 2, canvasH - footerH / 2);
+      ctx.fillText('📸 ChekiPocket · My Oshikatsu Collection ✨', canvasW / 2, rawCanvasH - footerH / 2);
 
-      posterCurrentDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      posterCurrentDataUrl = canvas.toDataURL('image/jpeg', 0.96);
       previewImg.src = posterCurrentDataUrl;
       if (loadingHint) loadingHint.classList.add('hidden');
     }
@@ -7529,9 +7685,7 @@ let editingCheerEventId = null;
       window.downloadChekiPoster();
     };
 
-    // 自動在「🎴 卡冊」與「📅 日曆」注入一鍵生成戰利品海報按鈕
     function initChekiPosterPlugin() {
-      // 1. 掛載於卡冊頁「★ 最愛」旁邊
       const origRenderBinder = window.renderBinder;
       if (typeof origRenderBinder === 'function' && !origRenderBinder._wrappedPoster) {
         window.renderBinder = function() {
@@ -7551,7 +7705,6 @@ let editingCheerEventId = null;
         window.renderBinder._wrappedPoster = true;
       }
 
-      // 2. 掛載於日曆頁下方清單標題列（點選任何日期即可一鍵生成當日戰利品海報！）
       const origRenderCalDay = window.renderCalendarDayCards;
       if (typeof origRenderCalDay === 'function' && !origRenderCalDay._wrappedPoster) {
         window.renderCalendarDayCards = function(title, list) {
