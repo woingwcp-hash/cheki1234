@@ -8845,36 +8845,101 @@ function switchCheerModalTab(mode) {
       const modal = document.getElementById('inspectModal');
       if (!modal) return;
 
-      const topBar = modal.firstElementChild;
-      if (topBar) topBar.classList.add('inspect-glass-bar');
+      // 1. 縮小外框多餘邊距，騰出垂直空間俾拍立得
+      modal.classList.remove('p-4');
+      modal.classList.add('p-2.5', 'sm:p-4');
 
-      // A. 在大圖頂部加入「✨ 閃膜」切換掣
-      const btnGroup = topBar?.querySelector('div.flex.items-center.gap-1\\.5');
-      if (btnGroup && !document.getElementById('inspectHoloToggleBtn')) {
-        const holoBtn = document.createElement('button');
-        holoBtn.type = 'button';
-        holoBtn.id = 'inspectHoloToggleBtn';
-        holoBtn.onclick = window.cycleSleeveHoloMode;
-        btnGroup.insertBefore(holoBtn, btnGroup.firstElementChild);
+      // 2. 精簡頂部工具列：所有按鈕鎖定 h-8 單行不換行，徹底解決「📁調動」被夾扁問題
+      const topBar = modal.firstElementChild;
+      if (topBar) {
+        topBar.className = 'inspect-glass-bar flex items-center justify-between gap-1 px-2.5 py-1.5 rounded-2xl shrink-0 z-30';
       }
 
+      const closeBtn = topBar?.querySelector('button[onclick="closeInspectModal()"]');
+      if (closeBtn) {
+        closeBtn.className = 'w-8 h-8 rounded-xl bg-zinc-100 hover:bg-zinc-200 neo-btn flex items-center justify-center font-black text-xs shrink-0';
+        closeBtn.textContent = '✕';
+        closeBtn.title = '關閉';
+      }
+
+      const titleEl = document.getElementById('inspectMemberTitle');
+      if (titleEl) {
+        titleEl.className = 'font-black text-xs sm:text-sm truncate flex-1 min-w-0 text-left px-1 text-zinc-900';
+      }
+
+      const btnGroup = topBar?.querySelector('div.flex.items-center');
+      if (btnGroup) {
+        btnGroup.className = 'flex items-center gap-1 shrink-0';
+        if (!document.getElementById('inspectHoloToggleBtn')) {
+          const holoBtn = document.createElement('button');
+          holoBtn.type = 'button';
+          holoBtn.id = 'inspectHoloToggleBtn';
+          holoBtn.onclick = window.cycleSleeveHoloMode;
+          btnGroup.insertBefore(holoBtn, btnGroup.firstElementChild);
+        }
+      }
+
+      const moveBtn = topBar?.querySelector('button[onclick="openQuickMoveAlbumsModal()"]');
+      if (moveBtn) {
+        moveBtn.className = 'w-8 h-8 rounded-xl bg-blue-100 neo-btn flex items-center justify-center text-xs font-black shrink-0';
+        moveBtn.textContent = '📁';
+      }
+
+      ['openEditFromInspect()', 'toggleInspectFav()', 'deleteInspectCard()'].forEach(fnStr => {
+        const b = topBar?.querySelector(`button[onclick="${fnStr}"]`);
+        if (b) {
+          b.classList.remove('w-9', 'h-9');
+          b.classList.add('w-8', 'h-8', 'shrink-0', 'text-xs');
+        }
+      });
+
       const holoBtn = document.getElementById('inspectHoloToggleBtn');
-      const holoLabels = ['🚫 無膜', '✨ 光澤膜', '🌈 閃卡膜'];
+      const holoLabels = ['🚫無膜', '✨光澤', '🌈閃膜'];
       if (holoBtn) {
-        holoBtn.className = `px-2 h-9 rounded-xl neo-btn flex items-center justify-center text-[11px] font-black shrink-0 ${currentSleeveHoloMode === 2 ? 'bg-gradient-to-r from-pink-200 via-sky-200 to-amber-200 text-zinc-900' : (currentSleeveHoloMode === 1 ? 'bg-sky-100 text-blue-900' : 'bg-zinc-100 text-zinc-500')}`;
-        holoBtn.textContent = holoLabels[currentSleeveHoloMode] || '✨ 光澤膜';
+        holoBtn.className = `px-2 h-8 rounded-xl neo-btn flex items-center justify-center text-[10px] font-black shrink-0 whitespace-nowrap ${currentSleeveHoloMode === 2 ? 'bg-gradient-to-r from-pink-200 via-sky-200 to-amber-200 text-zinc-900' : (currentSleeveHoloMode === 1 ? 'bg-sky-100 text-blue-900' : 'bg-zinc-100 text-zinc-500')}`;
+        holoBtn.textContent = holoLabels[currentSleeveHoloMode] || '✨光澤';
         holoBtn.title = '切換拍立得保護卡膜反光特效';
       }
 
-      // B. 為正面相片套用清透光澤膜 / 鐳射閃卡膜特效
-      const frontFace = document.getElementById('inspectImg')?.parentElement;
+      // 3. 關鍵修復：釋放中間相片區高度，防止底部標籤將 Cheki 向上推導致頂部白邊被切走！
+      const flipInner = document.getElementById('inspectFlipInner');
+      const flipWrapper = flipInner?.parentElement;
+      const middleArea = flipWrapper?.parentElement;
+
+      if (middleArea) {
+        middleArea.classList.remove('my-3', 'justify-center');
+        middleArea.classList.add('my-1', 'justify-between', 'min-h-0');
+      }
+      if (flipWrapper) {
+        flipWrapper.classList.remove('max-h-[62vh]');
+        flipWrapper.classList.add('flex-1', 'min-h-0', 'py-1');
+      }
+
+      const inspectImg = document.getElementById('inspectImg');
+      if (inspectImg) {
+        inspectImg.classList.remove('max-h-[60vh]', 'max-w-[85vw]');
+        inspectImg.classList.add('max-h-[48vh]', 'max-w-[82vw]');
+        inspectImg.style.maxHeight = '48dvh';
+      }
+
+      const badgesBox = document.getElementById('inspectAlbumsBadges');
+      if (badgesBox) {
+        badgesBox.className = 'flex flex-wrap justify-center gap-1 mt-1 max-h-12 overflow-y-auto no-scrollbar shrink-0 px-2';
+      }
+
+      const exportBtn = modal.querySelector('button[onclick="exportInspectImage()"]');
+      if (exportBtn) {
+        exportBtn.className = 'w-full py-2.5 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-box shrink-0 z-30';
+      }
+
+      // 4. 套用正面光澤膜 / 閃卡膜與背面仿真紀念卡樣式
+      const frontFace = inspectImg?.parentElement;
       if (frontFace) {
         frontFace.classList.remove('cheki-sleeve-gloss', 'cheki-sleeve-holo');
         if (currentSleeveHoloMode === 1) frontFace.classList.add('cheki-sleeve-gloss');
         else if (currentSleeveHoloMode === 2) frontFace.classList.add('cheki-sleeve-holo');
       }
 
-      // C. 將背面卡 (#inspectBackCard) 升級為「仿真 Instax 紀念卡背面（郵戳印章 + 手寫筆記紙紋 + 簽名銘牌）」
       const backCard = document.getElementById('inspectBackCard');
       if (backCard) {
         backCard.classList.add('instax-back-ruled');
