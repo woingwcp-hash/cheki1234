@@ -2753,92 +2753,13 @@
       cardsLayer.style.height = `${Math.max(ch, maxBottomY + 60)}px`;
     }
 
-    function attachDeskCardInteractions(el, card) {
-      let isDragging = false;
-      let startX = 0, startY = 0;
-      let initialLeft = 0, initialTop = 0;
-      let movedDistance = 0;
-
-      let isPinching = false;
-      let startDist = 0;
-      let startAngle = 0;
-      let initScale = 1;
-      let initRot = 0;
-
-      el.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
-        autoCollapseSearchOnDeskTouch();
-        bringCardToFront(card, el);
-
-        isDragging = true;
-        movedDistance = 0;
-        startX = e.clientX;
-        startY = e.clientY;
-        initialLeft = card.deskX;
-        initialTop = card.deskY;
-        el.setPointerCapture(e.pointerId);
-      });
-
-      el.addEventListener('pointermove', (e) => {
-        if (!isDragging || isPinching) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        movedDistance = Math.hypot(dx, dy);
-
-        if (movedDistance > 3) {
-          card.deskX = initialLeft + dx;
-          card.deskY = initialTop + dy;
-          el.style.left = `${card.deskX}px`;
-          el.style.top = `${card.deskY}px`;
-        }
-      });
-
-      el.addEventListener('pointerup', (e) => {
-        if (!isDragging) return;
-        isDragging = false;
-        try { el.releasePointerCapture(e.pointerId); } catch (_) {}
-
-        if (movedDistance < 6 && !isPinching) {
-          card.deskFlipped = !card.deskFlipped;
-          const inner = el.querySelector('.desk-flip-inner');
-          if (inner) inner.classList.toggle('rotate-y-180', card.deskFlipped);
-        }
-        saveCardToDB(card);
-      });
-
-      el.addEventListener('touchstart', (e) => {
-        if (e.touches.length === 2) {
-          isPinching = true;
-          isDragging = false;
-          const t1 = e.touches[0], t2 = e.touches[1];
-          startDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-          startAngle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX) * (180 / Math.PI);
-          initScale = card.deskScale || 1;
-          initRot = card.deskRot || 0;
-        }
-      }, { passive: true });
-
-      el.addEventListener('touchmove', (e) => {
-        if (isPinching && e.touches.length === 2) {
-          const t1 = e.touches[0], t2 = e.touches[1];
-          const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-          const angle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX) * (180 / Math.PI);
-          card.deskScale = Math.min(2.5, Math.max(0.12, initScale * (dist / startDist)));
-          card.deskRot = initRot + (angle - startAngle);
-          el.style.transform = `rotate(${card.deskRot}deg) scale(${card.deskScale})`;
-          const selBadge = document.getElementById('deskSelectedScaleBadge');
-          if (selBadge) selBadge.textContent = `${Math.round(card.deskScale * 100)}%`;
-        }
-      }, { passive: true });
-
-      el.addEventListener('touchend', (e) => {
+    el.addEventListener('touchend', (e) => {
         if (e.touches.length < 2 && isPinching) {
           setTimeout(() => { isPinching = false; }, 100);
           saveCardToDB(card);
         }
       });
-    }
-
+    } // 👈 選取到呢個括號為止！
     function bringCardToFront(card, el) {
       selectedDeskCardId = card.id;
       const maxZ = cards.reduce((m, c) => Math.max(m, c.deskZ || 1), 1);
@@ -3475,199 +3396,7 @@ function scatterDeskCards() {
       window.addEventListener('pointercancel', endDrag);
     })();
 
-    function applyFreeCrop() {
-      const targetImgEl = document.getElementById('cropTargetImg');
-      if (!targetImgEl || !targetImgEl.src) return;
-
-      const img = new Image();
-      img.onload = () => {
-        const sw = img.naturalWidth;
-        const sh = img.naturalHeight;
-        const pNW = { x: (cropCorners.nw.x / 100) * sw, y: (cropCorners.nw.y / 100) * sh };
-        const pNE = { x: (cropCorners.ne.x / 100) * sw, y: (cropCorners.ne.y / 100) * sh };
-        const pSE = { x: (cropCorners.se.x / 100) * sw, y: (cropCorners.se.y / 100) * sh };
-        const pSW = { x: (cropCorners.sw.x / 100) * sw, y: (cropCorners.sw.y / 100) * sh };
-
-        const topW = Math.hypot(pNE.x - pNW.x, pNE.y - pNW.y);
-        const botW = Math.hypot(pSE.x - pSW.x, pSE.y - pSW.y);
-        const leftH = Math.hypot(pSW.x - pNW.x, pSW.y - pNW.y);
-        const rightH = Math.hypot(pSE.x - pNE.x, pSE.y - pNE.y);
-
-        let outW = Math.max(80, Math.round((topW + botW) / 2));
-        let outH = Math.max(80, Math.round((leftH + rightH) / 2));
-        const maxOutSide = 2200;
-        if (outW > maxOutSide || outH > maxOutSide) {
-          if (outW > outH) { outH = Math.round(outH * (maxOutSide / outW)); outW = maxOutSide; }
-          else { outW = Math.round(outW * (maxOutSide / outH)); outH = maxOutSide; }
-        }
-
-        const dstCanvas = document.createElement('canvas');
-        dstCanvas.width = outW;
-        dstCanvas.height = outH;
-        const dCtx = dstCanvas.getContext('2d', { willReadFrequently: true });
-
-        const isAxisAlignedRect =
-          Math.abs(cropCorners.nw.y - cropCorners.ne.y) < 0.3 &&
-          Math.abs(cropCorners.sw.y - cropCorners.se.y) < 0.3 &&
-          Math.abs(cropCorners.nw.x - cropCorners.sw.x) < 0.3 &&
-          Math.abs(cropCorners.ne.x - cropCorners.se.x) < 0.3;
-
-        if (isAxisAlignedRect) {
-          dCtx.imageSmoothingEnabled = true;
-          dCtx.imageSmoothingQuality = 'high';
-          dCtx.drawImage(
-            img,
-            pNW.x, pNW.y, Math.max(1, pNE.x - pNW.x), Math.max(1, pSW.y - pNW.y),
-            0, 0, outW, outH
-          );
-        } else {
-          const srcCanvas = document.createElement('canvas');
-          srcCanvas.width = sw;
-          srcCanvas.height = sh;
-          const sCtx = srcCanvas.getContext('2d', { willReadFrequently: true });
-          sCtx.drawImage(img, 0, 0);
-          const srcData = sCtx.getImageData(0, 0, sw, sh).data;
-
-          const dstImgData = dCtx.createImageData(outW, outH);
-          const dstData = dstImgData.data;
-
-          for (let y = 0; y < outH; y++) {
-            const v = y / (outH - 1 || 1);
-            const leftX = pNW.x + (pSW.x - pNW.x) * v;
-            const leftY = pNW.y + (pSW.y - pNW.y) * v;
-            const rightX = pNE.x + (pSE.x - pNE.x) * v;
-            const rightY = pNE.y + (pSE.y - pNE.y) * v;
-
-            for (let x = 0; x < outW; x++) {
-              const u = x / (outW - 1 || 1);
-              const fx = Math.min(sw - 1.001, Math.max(0, leftX + (rightX - leftX) * u));
-              const fy = Math.min(sh - 1.001, Math.max(0, leftY + (rightY - leftY) * u));
-
-              const x0 = Math.floor(fx);
-              const y0 = Math.floor(fy);
-              const x1 = Math.min(sw - 1, x0 + 1);
-              const y1 = Math.min(sh - 1, y0 + 1);
-              const dx = fx - x0;
-              const dy = fy - y0;
-
-              const w00 = (1 - dx) * (1 - dy);
-              const w10 = dx * (1 - dy);
-              const w01 = (1 - dx) * dy;
-              const w11 = dx * dy;
-
-              const i00 = (y0 * sw + x0) * 4;
-              const i10 = (y0 * sw + x1) * 4;
-              const i01 = (y1 * sw + x0) * 4;
-              const i11 = (y1 * sw + x1) * 4;
-
-              const dIdx = (y * outW + x) * 4;
-              dstData[dIdx]     = srcData[i00] * w00 + srcData[i10] * w10 + srcData[i01] * w01 + srcData[i11] * w11;
-              dstData[dIdx + 1] = srcData[i00 + 1] * w00 + srcData[i10 + 1] * w10 + srcData[i01 + 1] * w01 + srcData[i11 + 1] * w11;
-              dstData[dIdx + 2] = srcData[i00 + 2] * w00 + srcData[i10 + 2] * w10 + srcData[i01 + 2] * w01 + srcData[i11 + 2] * w11;
-              dstData[dIdx + 3] = 255;
-            }
-          }
-          dCtx.putImageData(dstImgData, 0, 0);
-        }
-
-        rawUploadDataUrl = dstCanvas.toDataURL('image/jpeg', 0.96);
-        currentUploadDataUrl = rawUploadDataUrl;
-        initFilterHistory({ sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
-        document.getElementById('editPreviewImg').src = currentUploadDataUrl;
-
-        const sizeTag = document.getElementById('detectedSizeTag');
-        if (sizeTag) {
-          sizeTag.textContent = `💎 超清輸出：${classifyChekiDimension(outW, outH)}`;
-        }
-        closeCropperModal();
-      };
-      img.src = targetImgEl.src;
-    }
-
-    function applySharpenFilter(ctx, w, h, amount) {
-      if (amount <= 0) return;
-      const srcImg = ctx.getImageData(0, 0, w, h);
-      const src = srcImg.data;
-      const dstImg = ctx.createImageData(w, h);
-      const dst = dstImg.data;
-      const a = (amount / 100) * 0.65;
-
-      for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
-          const idx = (y * w + x) * 4;
-          const up = ((y - 1) * w + x) * 4;
-          const dn = ((y + 1) * w + x) * 4;
-          const lf = (y * w + (x - 1)) * 4;
-          const rt = (y * w + (x + 1)) * 4;
-
-          for (let c = 0; c < 3; c++) {
-            const center = src[idx + c];
-            const lap = center * 4 - src[up + c] - src[dn + c] - src[lf + c] - src[rt + c];
-            dst[idx + c] = Math.max(0, Math.min(255, Math.round(center + lap * a)));
-          }
-          dst[idx + 3] = 255;
-        }
-      }
-      ctx.putImageData(dstImg, 0, 0);
-    }
-
     let filterDebounceTimer = null;
-    function applyImageFilterPreview() {
-      if (!rawUploadDataUrl) return;
-      if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
-
-      filterDebounceTimer = setTimeout(() => {
-        const cfg = getCurrentFilterConfig();
-        const { sharpen, deglare, brightness: b, contrast: c } = cfg;
-
-        if (sharpen === 0 && deglare === 0 && b === 100 && c === 100) {
-          currentUploadDataUrl = rawUploadDataUrl;
-          document.getElementById('editPreviewImg').src = currentUploadDataUrl;
-          return;
-        }
-
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.filter = `brightness(${b}%) contrast(${c}%)`;
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          ctx.filter = 'none';
-
-          if (deglare > 0) {
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const d = imgData.data;
-            const strength = deglare / 100;
-            for (let i = 0; i < d.length; i += 4) {
-              const r = d[i], g = d[i + 1], bl = d[i + 2];
-              const lum = 0.299 * r + 0.587 * g + 0.114 * bl;
-              if (lum > 175) {
-                const excess = lum - 175;
-                const pull = excess * 0.52 * strength;
-                const factor = (lum - pull) / (lum || 1);
-                d[i] = Math.max(0, Math.min(255, Math.round(r * factor)));
-                d[i + 1] = Math.max(0, Math.min(255, Math.round(g * factor)));
-                d[i + 2] = Math.max(0, Math.min(255, Math.round(bl * factor)));
-              }
-            }
-            ctx.putImageData(imgData, 0, 0);
-          }
-
-          if (sharpen > 0) {
-            applySharpenFilter(ctx, canvas.width, canvas.height, sharpen);
-          }
-
-          currentUploadDataUrl = canvas.toDataURL('image/jpeg', 0.95);
-          document.getElementById('editPreviewImg').src = currentUploadDataUrl;
-        };
-        img.src = rawUploadDataUrl;
-      }, 45);
-    }
-
     // --- INSPECT MODAL ---
     function openInspectModal(id) {
       const card = cards.find(c => c.id === id);
@@ -8161,89 +7890,6 @@ let editingCheerEventId = null;
       e.target.value = '';
     };
 
-    // 3. 選用功能：設定個人 Gemini API Key 實現網頁內全自動 AI 重繪
-    window.configureGeminiApiKey = function() {
-      const curKey = localStorage.getItem('cheki_gemini_api_key') || '';
-      const input = prompt('🔑 請輸入你的 Google Gemini API Key（可於 aistudio.google.com 免費取得，金鑰只會保存在你的手機本機瀏覽器內）：', curKey);
-      if (input !== null) {
-        const clean = input.trim();
-        if (clean) {
-          localStorage.setItem('cheki_gemini_api_key', clean);
-          alert('✅ 已儲存 Gemini API Key！現在可以直接點「⚡ API 直連重繪」自動生成超清相片！');
-        } else {
-          localStorage.removeItem('cheki_gemini_api_key');
-          alert('已清除 API Key。');
-        }
-        renderGeminiAiToolbar();
-      }
-    };
-
-    window.runDirectGeminiApiRemaster = async function() {
-      const apiKey = localStorage.getItem('cheki_gemini_api_key');
-      if (!apiKey) {
-        window.configureGeminiApiKey();
-        return;
-      }
-      const srcUrl = currentUploadDataUrl || rawUploadDataUrl;
-      if (!srcUrl) return;
-
-      const apiBtn = document.getElementById('geminiDirectApiBtn');
-      if (apiBtn) {
-        apiBtn.innerHTML = '⏳ Gemini AI 重繪中...';
-        apiBtn.disabled = true;
-      }
-
-      try {
-        const base64Data = srcUrl.split(',')[1];
-        const mimeType = srcUrl.substring(srcUrl.indexOf(':') + 1, srcUrl.indexOf(';')) || 'image/jpeg';
-
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${encodeURIComponent(apiKey)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: CHEKI_AI_PROMPT },
-                { inline_data: { mime_type: mimeType, data: base64Data } }
-              ]
-            }],
-            generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
-          })
-        });
-
-        const result = await response.json();
-        const parts = result?.candidates?.[0]?.content?.parts || [];
-        const imgPart = parts.find(p => p.inlineData || p.inline_data);
-        const outData = imgPart?.inlineData?.data || imgPart?.inline_data?.data;
-        const outMime = imgPart?.inlineData?.mimeType || imgPart?.inline_data?.mime_type || 'image/jpeg';
-
-        if (!outData) {
-          throw new Error(result?.error?.message || '模型未回傳圖片，建議使用左側「🤖 傳去 Gemini App」按鈕！');
-        }
-
-        const aiDataUrl = `data:${outMime};base64,${outData}`;
-        if (typeof _preRemasterTrueOriginal !== 'undefined' && !_preRemasterTrueOriginal) {
-          _preRemasterTrueOriginal = rawUploadDataUrl || currentUploadDataUrl;
-        }
-        rawUploadDataUrl = aiDataUrl;
-        uncroppedOriginalDataUrl = aiDataUrl;
-        currentUploadDataUrl = aiDataUrl;
-        if (typeof initFilterHistory === 'function') {
-          initFilterHistory({ sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
-        }
-        document.getElementById('editPreviewImg').src = currentUploadDataUrl;
-        const sizeTag = document.getElementById('detectedSizeTag');
-        if (sizeTag) sizeTag.textContent = '🤖 Gemini API 超清重繪完成（長按圖片可對比原圖）';
-      } catch (err) {
-        alert('⚠️ API 直連重繪提示：' + (err.message || '請使用左側「🤖 傳去 Gemini App」按鈕'));
-      } finally {
-        if (apiBtn) {
-          apiBtn.innerHTML = '⚡ API 直連';
-          apiBtn.disabled = false;
-        }
-      }
-    };
-
     function renderGeminiAiToolbar() {
       const filterPanel = document.getElementById('sharpenSlider')?.closest('.bg-zinc-800');
       if (!filterPanel) return;
@@ -8256,15 +7902,11 @@ let editingCheerEventId = null;
         filterPanel.insertBefore(aiBox, filterPanel.firstElementChild);
       }
 
-      const hasKey = Boolean(localStorage.getItem('cheki_gemini_api_key'));
       aiBox.innerHTML = `
         <div class="flex items-center justify-between px-0.5">
           <span class="text-[10px] font-black text-sky-300 flex items-center gap-1">✨ Gemini AI 生成式五官重繪（影片同款超清）</span>
-          <button type="button" onclick="configureGeminiApiKey()" class="text-[9px] font-bold text-indigo-300 underline">
-            ${hasKey ? '🔑 已設API' : '🔑 API設定'}
-          </button>
         </div>
-        <div class="grid ${hasKey ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5">
+        <div class="grid grid-cols-2 gap-1.5">
           <button type="button" onclick="launchGeminiAppRemaster()" class="py-2 px-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-black text-[11px] border border-white/50 shadow flex items-center justify-center gap-1 active:scale-95 transition">
             🤖 1. 傳去 Gemini 重繪
           </button>
@@ -8272,11 +7914,6 @@ let editingCheerEventId = null;
             📥 2. 換入 AI 高清圖
             <input type="file" accept="image/*" class="hidden" onchange="handleImportGeminiRemasteredPhoto(event)">
           </label>
-          ${hasKey ? `
-            <button type="button" id="geminiDirectApiBtn" onclick="runDirectGeminiApiRemaster()" class="py-2 px-2 rounded-lg bg-amber-300 text-zinc-950 font-black text-[11px] border border-white/60 shadow flex items-center justify-center gap-1 active:scale-95 transition">
-              ⚡ API 直連
-            </button>
-          ` : ''}
         </div>
       `;
     }
