@@ -158,17 +158,8 @@
   <!-- Main Content Containers -->
   <main class="flex-1 p-3">
 
-    <!-- TAB 1: ALBUMS (相簿 + 自由加入/調動相片 + 偶像統計速覽 + 備份) -->
+   <!-- TAB 1: ALBUMS -->
     <section id="tab-albums" class="hidden space-y-4">
-      <!-- 偶像 Cheki 數量快速統計卡 -->
-      <div class="neo-box bg-white rounded-2xl p-3.5 space-y-2.5">
-        <div class="flex justify-between items-center">
-          <h3 class="font-black text-sm flex items-center gap-1.5">👑 偶像 Cheki 數量統計</h3>
-          <button onclick="switchTab('stats')" class="px-2.5 py-1 rounded-full bg-pink-100 border border-cheki-dark text-[11px] font-black text-cheki-accent">完整統計與地圖 ▶</button>
-        </div>
-        <div id="albumsQuickIdolStats" class="space-y-2"></div>
-      </div>
-
       <div class="flex justify-between items-center pt-1">
         <div>
           <h2 class="font-black text-lg">📚 我的相簿分類</h2>
@@ -177,30 +168,8 @@
         <button onclick="createNewAlbum()" class="px-3 py-1.5 rounded-xl bg-amber-200 neo-btn text-xs font-black shrink-0">+ 新增相簿</button>
       </div>
       <div id="albumsGrid" class="grid grid-cols-2 gap-3"></div>
-
-      <!-- 專屬備份與還原區塊 -->
-      <div class="neo-box bg-white rounded-2xl p-3.5 space-y-2.5 mt-4">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="text-xl">📦</span>
-            <div>
-              <h3 class="font-black text-sm">資料備份與還原</h3>
-              <p class="text-[11px] text-zinc-500 font-bold">匯出 JSON 備份檔，換手機或轉平台隨時還原</p>
-            </div>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2 pt-1">
-          <button onclick="exportAllData()" class="py-2.5 px-3 rounded-xl bg-emerald-300 neo-btn font-black text-xs flex items-center justify-center gap-1">
-            ⬇️ 匯出備份檔
-          </button>
-          <label class="py-2.5 px-3 rounded-xl bg-amber-200 neo-btn font-black text-xs flex items-center justify-center gap-1 cursor-pointer text-center">
-            ⬆️ 匯入還原
-            <input type="file" accept=".json,application/json" class="hidden" onchange="importAllData(event)">
-          </label>
-        </div>
-      </div>
     </section>
-
+    
     <!-- TAB 2: BINDER (卡冊 - 支援在當前相簿直接勾選加入現有 Cheki) -->
     <section id="tab-binder" class="hidden space-y-2.5">
       <!-- 第一列：相簿篩選 + 最愛固定右側 -->
@@ -1549,46 +1518,7 @@
     }
   }
 
-  window.attachDeskCardInteractions = function(el, card) {
-    let isDragging = false, startX = 0, startY = 0, initialLeft = 0, initialTop = 0, movedDistance = 0;
-    el.addEventListener('pointerdown', (e) => {
-      if (isDeskGlobalPinching) return;
-      e.stopPropagation();
-      autoCollapseSearchOnDeskTouch();
-      bringCardToFront(card, el);
-      isDragging = true;
-      movedDistance = 0;
-      startX = e.clientX;
-      startY = e.clientY;
-      initialLeft = card.deskX;
-      initialTop = card.deskY;
-      try { el.setPointerCapture(e.pointerId); } catch (_) {}
-    });
-    el.addEventListener('pointermove', (e) => {
-      if (!isDragging || isDeskGlobalPinching) return;
-      const zoomRatio = (deskBgConfig.zoom || 100) / 100;
-      const dx = (e.clientX - startX) / zoomRatio;
-      const dy = (e.clientY - startY) / zoomRatio;
-      movedDistance = Math.hypot(e.clientX - startX, e.clientY - startY);
-      if (movedDistance > 4) {
-        card.deskX = Math.round(initialLeft + dx);
-        card.deskY = Math.round(initialTop + dy);
-        el.style.left = `${card.deskX}px`;
-        el.style.top = `${card.deskY}px`;
-      }
-    });
-    el.addEventListener('pointerup', (e) => {
-      if (!isDragging) return;
-      isDragging = false;
-      try { el.releasePointerCapture(e.pointerId); } catch (_) {}
-      if (movedDistance < 6 && !isDeskGlobalPinching) {
-        card.deskFlipped = !card.deskFlipped;
-        const inner = el.querySelector('.desk-flip-inner');
-        if (inner) inner.classList.toggle('rotate-y-180', card.deskFlipped);
-      }
-      saveCardToDB(card);
-    });
-  };
+  
 
     function onDeskBgZoomChange(val) {
       const modal = document.getElementById('deskBgModal');
@@ -2101,26 +2031,6 @@
 
     // --- TAB 1: ALBUMS + 隨意加入/管理相片 ---
     function renderAlbums() {
-      const quickStatsBox = document.getElementById('albumsQuickIdolStats');
-      const idolCounts = getIdolCounts();
-      if (idolCounts.length === 0) {
-        quickStatsBox.innerHTML = `<p class="text-xs text-zinc-400 font-bold py-1">尚無拍立得紀錄，新增後將自動統計各成員張數！</p>`;
-      } else {
-        quickStatsBox.innerHTML = idolCounts.slice(0, 5).map((item, idx) => {
-          const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '💙';
-          return `
-            <div onclick="filterByMemberInBinder('${item.member.replace(/'/g, "\\'")}')" class="cursor-pointer space-y-1 p-1.5 rounded-xl hover:bg-pink-50 transition">
-              <div class="flex justify-between items-center text-xs font-black">
-                <span>${medal} ${item.member}</span>
-                <span class="text-cheki-accent">${item.count} 張 Cheki (${item.percent}%)</span>
-              </div>
-              <div class="w-full h-2 rounded-full bg-pink-100 overflow-hidden border border-pink-200">
-                <div class="h-full bg-cheki-accent rounded-full" style="width: ${item.percent}%"></div>
-              </div>
-            </div>
-          `;
-        }).join('');
-      }
 
       const grid = document.getElementById('albumsGrid');
       grid.innerHTML = '';
@@ -3056,36 +2966,7 @@ function scatterDeskCards() {
       startCameraStream();
     }
 
-    function blendDualShotAntiGlare(c1, c2) {
-      const w = c1.width, h = c1.height;
-      const out = document.createElement('canvas');
-      out.width = w;
-      out.height = h;
-      const ctx = out.getContext('2d');
-      const d1 = c1.getContext('2d').getImageData(0, 0, w, h).data;
-      const d2 = c2.getContext('2d').getImageData(0, 0, w, h).data;
-      const outImg = ctx.createImageData(w, h);
-      const dst = outImg.data;
-
-      for (let i = 0; i < d1.length; i += 4) {
-        const l1 = 0.299 * d1[i] + 0.587 * d1[i + 1] + 0.114 * d1[i + 2];
-        const l2 = 0.299 * d2[i] + 0.587 * d2[i + 1] + 0.114 * d2[i + 2];
-        if (Math.abs(l1 - l2) > 22 && Math.max(l1, l2) > 205) {
-          if (l1 < l2) {
-            dst[i] = d1[i]; dst[i + 1] = d1[i + 1]; dst[i + 2] = d1[i + 2]; dst[i + 3] = 255;
-          } else {
-            dst[i] = d2[i]; dst[i + 1] = d2[i + 1]; dst[i + 2] = d2[i + 2]; dst[i + 3] = 255;
-          }
-        } else {
-          dst[i] = Math.round((d1[i] + d2[i]) * 0.5);
-          dst[i + 1] = Math.round((d1[i + 1] + d2[i + 1]) * 0.5);
-          dst[i + 2] = Math.round((d1[i + 2] + d2[i + 2]) * 0.5);
-          dst[i + 3] = 255;
-        }
-      }
-      ctx.putImageData(outImg, 0, 0);
-      return out;
-    }
+    
 
     function captureLivePhoto() {
       const video = document.getElementById('cameraVideo');
@@ -3151,37 +3032,7 @@ function scatterDeskCards() {
       modal.classList.remove('hidden');
     }
 
-    function onCropFineRotateChange(degVal) {
-      cropFineRotDeg = Number(degVal) || 0;
-      const rotSlider = document.getElementById('cropFineRotSlider');
-      const rotLabel = document.getElementById('fineRotLabel');
-      if (rotSlider) rotSlider.value = cropFineRotDeg;
-      if (rotLabel) rotLabel.textContent = `${cropFineRotDeg > 0 ? '+' : ''}${cropFineRotDeg}°`;
-
-      if (!cropBaseUnrotatedImg) return;
-      if (cropFineRotDeg === 0) {
-        document.getElementById('cropTargetImg').src = cropBaseUnrotatedImg.src;
-        return;
-      }
-
-      const w = cropBaseUnrotatedImg.naturalWidth;
-      const h = cropBaseUnrotatedImg.naturalHeight;
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.fillStyle = '#18181b';
-      ctx.fillRect(0, 0, w, h);
-      ctx.translate(w / 2, h / 2);
-      ctx.rotate((cropFineRotDeg * Math.PI) / 180);
-      ctx.drawImage(cropBaseUnrotatedImg, -w / 2, -h / 2);
-      const img = document.getElementById('cropTargetImg');
-      img.onload = null;
-      img.src = canvas.toDataURL('image/jpeg', 0.96);
-    }
-
+    
     function setCropPresetRatio(wRatio, hRatio) {
       const img = document.getElementById('cropTargetImg');
       if (!img || !img.naturalWidth) return;
@@ -3617,39 +3468,7 @@ function scatterDeskCards() {
       e.target.value = '';
     }
 
-    function compressAndSetImage(dataUrl, autoOpenCropper = false) {
-      const img = new Image();
-      img.onload = () => {
-        const maxSide = 3200;
-        let w = img.width, h = img.height;
-        if (w > maxSide || h > maxSide) {
-          if (w > h) { h = Math.round(h * (maxSide / w)); w = maxSide; }
-          else { w = Math.round(w * (maxSide / h)); h = maxSide; }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, w, h);
-
-        const fullHighRes = canvas.toDataURL('image/jpeg', 0.96);
-        uncroppedOriginalDataUrl = fullHighRes;
-        rawUploadDataUrl = fullHighRes;
-        currentUploadDataUrl = fullHighRes;
-
-        initFilterHistory({ sharpen: 0, deglare: 0, brightness: 100, contrast: 100 });
-        document.getElementById('editPreviewImg').src = currentUploadDataUrl;
-        document.getElementById('previewContainer').classList.remove('hidden');
-
-        const sizeTag = document.getElementById('detectedSizeTag');
-        if (sizeTag) sizeTag.textContent = `💎 原圖解析度：${w}×${h}px`;
-
-        if (autoOpenCropper) openCropperModal();
-      };
-      img.src = dataUrl;
-    }
+    
 
     function rotateUploadImage(deg) {
       if (!rawUploadDataUrl) return;
@@ -4139,13 +3958,9 @@ function switchCheerModalTab(mode) {
   }
 
   function mountCountdownBannerPosition() {
-    // 1. 隱藏原本頂部的倒數橫幅
     const banner = document.getElementById('cuteCountdownBanner');
-    if (banner) {
-      banner.style.display = 'none';
-    }
+    if (banner) banner.remove();
 
-    // 2. 在視窗內注入「⏳ 應援倒數 ｜ 💌 話題備忘錄」分頁切換按鈕，將兩個功能徹底分開
     const modalBox = document.querySelector('#countdownModal > div');
     const heroCard = document.getElementById('heroCountdownCard');
     if (modalBox && heroCard && !document.getElementById('cheerModeTabs')) {
@@ -4172,80 +3987,7 @@ function switchCheerModalTab(mode) {
       `;
       modalBox.insertBefore(tabsBar, heroCard);
     }
-
-    // 3. 在頂部標題列「本機永久存」旁邊加入「💌 備忘」快捷按鈕（一鍵直達備忘錄）
-    const saveBadge = document.querySelector('header span[onclick*="openBackupModal"]');
-    if (saveBadge && !document.getElementById('topMemoQuickBtn')) {
-      const memoBtn = document.createElement('button');
-      memoBtn.type = 'button';
-      memoBtn.id = 'topMemoQuickBtn';
-      memoBtn.onclick = () => openCheerModalWithMode('memo');
-      memoBtn.className = 'cursor-pointer text-[10px] font-black px-2 py-0.5 rounded-full bg-pink-100 text-cheki-accent border border-cheki-dark shrink-0 active:scale-95';
-      memoBtn.textContent = '💌 備忘';
-      saveBadge.parentNode.appendChild(memoBtn);
-    }
-
-    // 4. 在底部導覽列加入「⏳ 倒數」按鈕（一鍵直達倒數計時器），並維持「+」號左右 3:3 置中
-    const nav = document.querySelector('nav');
-    if (nav) {
-      if (!document.getElementById('nav-countdown')) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.id = 'nav-countdown';
-        btn.onclick = () => openCheerModalWithMode('countdown');
-        btn.className = 'relative flex flex-col items-center gap-0.5 text-blue-600 font-black text-[11px] flex-1 active:scale-90 transition';
-        btn.innerHTML = `
-          <span class="text-lg leading-none">⏳</span>
-          <span>倒數</span>
-          <span id="navCountdownMiniBadge" class="absolute -top-1.5 right-0.5 px-1 py-[1px] rounded-full bg-cheki-accent text-white border border-cheki-dark text-[8px] font-black leading-tight shadow-sm">--</span>
-        `;
-        nav.appendChild(btn);
-      } else {
-        document.getElementById('nav-countdown').onclick = () => openCheerModalWithMode('countdown');
-      }
-
-      const plusBtn = nav.querySelector('button[onclick*="openAddModal"]');
-      const calBtn = document.getElementById('nav-calendar');
-      if (plusBtn && calBtn && calBtn.nextSibling !== plusBtn) {
-        nav.insertBefore(plusBtn, calBtn.nextSibling);
-      }
-
-      nav.classList.remove('px-3');
-      nav.classList.add('px-1', 'gap-0.5');
-      nav.querySelectorAll('button[id^="nav-"]').forEach(b => {
-        b.classList.remove('w-14', 'w-12');
-        b.classList.add('flex-1', 'min-w-0');
-      });
-      if (plusBtn) {
-        plusBtn.classList.add('mx-1');
-      }
-    }
-
-    // 5. 自動同步倒數日數至底部小標籤
-    const syncMiniBadge = () => {
-      const mini = document.getElementById('navCountdownMiniBadge');
-      if (!mini) return;
-      const act = (typeof getActiveCheerEvent === 'function') ? getActiveCheerEvent() : null;
-      if (!act) {
-        mini.textContent = '+';
-        return;
-      }
-      const rem = calculateTimeRemaining(act.date);
-      mini.textContent = rem.isToday ? '今日' : (rem.isPast ? '完成' : `${rem.days}日`);
-    };
-
-    const origUpdate = window.updateCountdownDisplays;
-    if (typeof origUpdate === 'function' && !origUpdate._wrappedForNav) {
-      window.updateCountdownDisplays = function() {
-        origUpdate.apply(this, arguments);
-        syncMiniBadge();
-      };
-      window.updateCountdownDisplays._wrappedForNav = true;
-    }
-    setTimeout(() => {
-      syncMiniBadge();
-      switchCheerModalTab('countdown');
-    }, 400);
+    setTimeout(() => switchCheerModalTab('countdown'), 200);
   }
   function loadCheerDataFromDB() {
     if (!db) return;
