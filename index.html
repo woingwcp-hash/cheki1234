@@ -9307,6 +9307,436 @@ let editingCheerEventId = null;
     }
 
     setTimeout(initCleanSimplifiedUI, 420);
+// =========================================================================
+    // 💎 Pro 精品級視覺設計與原生動效升級模組
+    // (1. 全域應援色主題+深色模式 | 2. 仿真卡冊袋 | 3. 磨砂大圖+閃膜+仿真背面 | 4. 原生轉場動畫)
+    // =========================================================================
+    const OSHI_THEMES = {
+      pink:   { name: '🌸 甜美櫻粉', accent: '#FF5C8A', bg: '#FFF7F9', header: 'rgba(255,247,249,0.92)', pill: '#FCE7F3', border: '#272228', dark: false },
+      blue:   { name: '💙 まりん天藍', accent: '#2563EB', bg: '#F0F7FF', header: 'rgba(240,247,255,0.92)', pill: '#DBEAFE', border: '#1E293B', dark: false },
+      mint:   { name: '💚 薄荷翠綠', accent: '#0D9488', bg: '#F0FDFA', header: 'rgba(240,253,250,0.92)', pill: '#CCFBF1', border: '#1E293B', dark: false },
+      purple: { name: '💜 夢幻薰紫', accent: '#7C3AED', bg: '#FAF5FF', header: 'rgba(250,245,255,0.92)', pill: '#F3E8FF', border: '#272228', dark: false },
+      yellow: { name: '💛 閃耀檸檬', accent: '#D97706', bg: '#FEFCE8', header: 'rgba(254,252,232,0.92)', pill: '#FEF3C7', border: '#272228', dark: false },
+      dark:   { name: '🖤 演唱會深色', accent: '#38BDF8', bg: '#0F172A', header: 'rgba(15,23,42,0.94)', pill: '#1E293B', border: '#475569', dark: true }
+    };
+
+    let currentOshiTheme = localStorage.getItem('cheki_oshi_theme') || 'blue';
+    let currentSleeveHoloMode = Number(localStorage.getItem('cheki_holo_mode') || 1); // 0: 無 | 1: ✨清透光澤膜 | 2: 🌈鐳射閃卡膜
+
+    // 1. 注入精品級 CSS 樣式（主題變數、仿真卡冊袋、3D閃膜、磨砂玻璃與原生轉場動畫）
+    function injectProDesignSystemStyles() {
+      const oldStyle = document.getElementById('chekiProDesignStyle');
+      if (oldStyle) oldStyle.remove();
+
+      const style = document.createElement('style');
+      style.id = 'chekiProDesignStyle';
+      style.textContent = `
+        :root {
+          --oshi-accent: #2563EB;
+          --oshi-bg: #F0F7FF;
+          --oshi-header: rgba(240,247,255,0.92);
+          --oshi-pill: #DBEAFE;
+          --oshi-border: #272228;
+        }
+
+        body {
+          background-color: var(--oshi-bg) !important;
+          transition: background-color 0.25s ease, color 0.2s ease;
+        }
+        header {
+          background-color: var(--oshi-header) !important;
+          backdrop-filter: blur(12px) !important;
+          -webkit-backdrop-filter: blur(12px) !important;
+        }
+        .bg-cheki-accent { background-color: var(--oshi-accent) !important; }
+        .text-cheki-accent { color: var(--oshi-accent) !important; }
+        .border-cheki-accent { border-color: var(--oshi-accent) !important; }
+
+        /* 🖤 演唱會深色模式 (Dark Mode) 自動適配 */
+        body[data-dark="true"] {
+          color: #F8FAFC !important;
+        }
+        body[data-dark="true"] header,
+        body[data-dark="true"] nav {
+          background-color: rgba(15, 23, 42, 0.95) !important;
+          border-color: #334155 !important;
+          color: #F8FAFC !important;
+        }
+        body[data-dark="true"] #tab-albums .neo-box,
+        body[data-dark="true"] #tab-binder .neo-box,
+        body[data-dark="true"] #tab-calendar .neo-box,
+        body[data-dark="true"] #tab-stats .neo-box,
+        body[data-dark="true"] #tab-desk > .neo-box:not(#deskCanvas) {
+          background-color: #1E293B !important;
+          border-color: #475569 !important;
+          color: #F8FAFC !important;
+          box-shadow: 3px 3px 0px #020617 !important;
+        }
+        body[data-dark="true"] .cheki-pocket-slot {
+          background: linear-gradient(145deg, #1E293B, #0F172A) !important;
+          border-color: #475569 !important;
+          box-shadow: 2.5px 2.5px 0px #020617 !important;
+        }
+        body[data-dark="true"] .cheki-pocket-slot p:first-child {
+          color: #F8FAFC !important;
+        }
+        body[data-dark="true"] .cheki-pocket-inner {
+          background-color: rgba(255,255,255,0.04) !important;
+          border-color: rgba(255,255,255,0.12) !important;
+        }
+
+        /* 📱 原生 App 級分頁轉場與彈窗動畫 */
+        @keyframes tabFadeSlideUp {
+          from { opacity: 0; transform: translateY(8px) scale(0.99); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .tab-enter-active {
+          animation: tabFadeSlideUp 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        @keyframes modalSpringPop {
+          0%   { opacity: 0; transform: translateY(18px) scale(0.95); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        #editCardModal:not(.hidden) > div,
+        #countdownModal:not(.hidden) > div,
+        #backupModal:not(.hidden) > div,
+        #chekiPosterModal:not(.hidden) > div,
+        #milestoneHallModal:not(.hidden) > div,
+        #createChekiSetModal:not(.hidden) > div {
+          animation: modalSpringPop 0.24s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        /* 🧭 底部導覽列選中膠囊高光特效 */
+        nav button[id^="nav-"] {
+          position: relative;
+          padding: 4px 2px;
+          border-radius: 14px;
+          transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        nav button[id^="nav-"].text-cheki-accent {
+          background-color: var(--oshi-pill);
+          transform: translateY(-2px);
+        }
+        body[data-dark="true"] nav button[id^="nav-"].text-cheki-accent {
+          background-color: rgba(56, 189, 248, 0.18);
+        }
+
+        /* 🎴 卡冊仿真「透明卡冊袋 (Cheki Pocket Sleeve) + 索引貼紙」設計 */
+        .cheki-pocket-slot {
+          background: #FFFFFF;
+          border: 2px solid #272228;
+          box-shadow: 2.5px 2.5px 0px #272228;
+          border-radius: 18px;
+          padding: 7px 7px 8px 7px;
+          transition: transform 0.15s ease, box-shadow 0.15s ease;
+          position: relative;
+          overflow: hidden;
+        }
+        .cheki-pocket-slot:active {
+          transform: translate(1.5px, 1.5px);
+          box-shadow: 1px 1px 0px #272228;
+        }
+        /* 卡冊袋頂部開口虛線壓紋 */
+        .cheki-pocket-slot::before {
+          content: "";
+          position: absolute;
+          top: 3px;
+          left: 12%;
+          right: 12%;
+          height: 2px;
+          border-top: 1.5px dashed rgba(150, 150, 160, 0.35);
+          pointer-events: none;
+          z-index: 3;
+        }
+        .cheki-pocket-inner {
+          background: linear-gradient(135deg, #F8FAFC 0%, #FFFDF9 100%);
+          border: 1px solid rgba(39, 34, 40, 0.1);
+          border-radius: 12px;
+          position: relative;
+          overflow: hidden;
+        }
+        /* 透明卡膜 45 度柔和反光斜紋 */
+        .cheki-pocket-inner::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(125deg, rgba(255,255,255,0) 32%, rgba(255,255,255,0.42) 47%, rgba(255,255,255,0) 62%);
+          pointer-events: none;
+        }
+
+        /* 🔍 大圖檢視 (Inspect Modal)：磨砂玻璃 + 3D 閃膜流光 + 仿真拍立得背面 */
+        #inspectModal {
+          background: radial-gradient(circle at center, rgba(24, 24, 32, 0.90) 0%, rgba(9, 9, 13, 0.97) 100%) !important;
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+        }
+        .inspect-glass-bar {
+          background: rgba(255, 255, 255, 0.92) !important;
+          backdrop-filter: blur(12px) !important;
+          -webkit-backdrop-filter: blur(12px) !important;
+          border: 2px solid #272228 !important;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.35) !important;
+        }
+
+        /* ✨ 3D 閃卡保護膜特效 (清透光澤 / 🌈 鐳射閃卡) */
+        @keyframes holoShimmerMove {
+          0%   { background-position: -180% 0; }
+          50%  { background-position: 180% 0; }
+          100% { background-position: -180% 0; }
+        }
+        .cheki-sleeve-gloss,
+        .cheki-sleeve-holo {
+          position: relative;
+          overflow: hidden;
+          border-radius: 0.5rem;
+        }
+        .cheki-sleeve-gloss::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(115deg, transparent 25%, rgba(255,255,255,0.35) 45%, rgba(255,255,255,0.08) 52%, transparent 72%);
+          background-size: 250% 100%;
+          animation: holoShimmerMove 6.5s ease-in-out infinite;
+          pointer-events: none;
+          border-radius: inherit;
+        }
+        .cheki-sleeve-holo::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            120deg,
+            transparent 20%,
+            rgba(255, 92, 138, 0.25) 36%,
+            rgba(56, 189, 248, 0.28) 46%,
+            rgba(253, 224, 71, 0.25) 54%,
+            rgba(192, 132, 252, 0.25) 64%,
+            transparent 80%
+          );
+          background-size: 260% 100%;
+          animation: holoShimmerMove 4.8s linear infinite;
+          mix-blend-mode: screen;
+          pointer-events: none;
+          border-radius: inherit;
+        }
+
+        /* 💌 仿真拍立得背面紀念卡橫紋與郵戳感 */
+        .instax-back-ruled {
+          background-image: repeating-linear-gradient(
+            transparent,
+            transparent 27px,
+            rgba(255, 255, 255, 0.24) 27px,
+            rgba(255, 255, 255, 0.24) 28.5px
+          );
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // 2. 套用選中的主推應援色主題
+    window.applyOshiTheme = function(themeKey) {
+      if (!OSHI_THEMES[themeKey]) themeKey = 'blue';
+      currentOshiTheme = themeKey;
+      try { localStorage.setItem('cheki_oshi_theme', themeKey); } catch (_) {}
+
+      const t = OSHI_THEMES[themeKey];
+      const root = document.documentElement;
+      root.style.setProperty('--oshi-accent', t.accent);
+      root.style.setProperty('--oshi-bg', t.bg);
+      root.style.setProperty('--oshi-header', t.header);
+      root.style.setProperty('--oshi-pill', t.pill);
+      root.style.setProperty('--oshi-border', t.border);
+      document.body.dataset.dark = t.dark ? 'true' : 'false';
+
+      const themeMeta = document.querySelector('meta[name="theme-color"]');
+      if (themeMeta) themeMeta.setAttribute('content', t.bg);
+
+      renderOshiThemePopoverUI();
+    };
+
+    window.toggleOshiThemePopover = function() {
+      let pop = document.getElementById('oshiThemePopover');
+      if (!pop) {
+        pop = document.createElement('div');
+        pop.id = 'oshiThemePopover';
+        pop.className = 'hidden fixed top-14 right-3 z-[105] w-64 bg-white rounded-3xl neo-box p-3 space-y-2 shadow-2xl';
+        document.body.appendChild(pop);
+      }
+      pop.classList.toggle('hidden');
+      renderOshiThemePopoverUI();
+    };
+
+    function renderOshiThemePopoverUI() {
+      const pop = document.getElementById('oshiThemePopover');
+      if (!pop) return;
+      pop.innerHTML = `
+        <div class="flex items-center justify-between border-b border-zinc-200 pb-1.5 px-1">
+          <span class="text-xs font-black text-zinc-800">🎨 切換全 App 應援主題色</span>
+          <button type="button" onclick="document.getElementById('oshiThemePopover').classList.add('hidden')" class="text-xs font-black text-zinc-400">✕</button>
+        </div>
+        <div class="grid grid-cols-2 gap-1.5">
+          ${Object.entries(OSHI_THEMES).map(([k, v]) => {
+            const active = currentOshiTheme === k;
+            return `
+              <button type="button" onclick="applyOshiTheme('${k}');document.getElementById('oshiThemePopover').classList.add('hidden');" class="py-2 px-2.5 rounded-xl border-2 text-[11px] font-black flex items-center gap-1.5 transition active:scale-95 ${active ? 'border-zinc-900 bg-zinc-900 text-white shadow' : 'border-zinc-200 bg-zinc-50 text-zinc-700'}">
+                <span class="w-3.5 h-3.5 rounded-full border border-black/30 shrink-0" style="background-color:${v.accent}"></span>
+                <span class="truncate">${v.name.replace(/^[^\s]+\s/, '')}</span>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    // 3. 升級卡冊項目為「仿真透明卡冊袋 + 圓角索引貼紙」
+    function upgradeBinderPocketCardsVisual() {
+      const grid = document.getElementById('binderGrid');
+      if (!grid) return;
+
+      [...grid.children].forEach(cardEl => {
+        if (!cardEl.querySelector('img')) return;
+        cardEl.classList.add('cheki-pocket-slot');
+
+        const imgBox = cardEl.firstElementChild;
+        if (imgBox) {
+          imgBox.classList.add('cheki-pocket-inner');
+        }
+
+        const textWrap = cardEl.children[1];
+        if (textWrap && !textWrap.classList.contains('pocket-label-upgraded')) {
+          textWrap.classList.add('pocket-label-upgraded', 'w-full', 'pt-1.5', 'mt-1', 'border-t', 'border-zinc-100', 'flex', 'flex-col', 'items-center');
+          const memberP = textWrap.children[0];
+          if (memberP) {
+            memberP.className = 'font-black text-xs text-zinc-900 truncate max-w-full px-1';
+          }
+          const locP = textWrap.children[2];
+          if (locP) {
+            locP.className = 'text-[9px] font-black px-2 py-0.5 mt-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 truncate max-w-full';
+          }
+        }
+      });
+    }
+
+    // 4. 升級大圖檢視 (Inspect Modal)：3D 閃卡保護膜切換 + 仿真拍立得背面紀念卡
+    window.cycleSleeveHoloMode = function() {
+      currentSleeveHoloMode = (currentSleeveHoloMode + 1) % 3;
+      try { localStorage.setItem('cheki_holo_mode', String(currentSleeveHoloMode)); } catch (_) {}
+      applyInspectModalProDesign();
+    };
+
+    function applyInspectModalProDesign() {
+      const modal = document.getElementById('inspectModal');
+      if (!modal) return;
+
+      const topBar = modal.firstElementChild;
+      if (topBar) topBar.classList.add('inspect-glass-bar');
+
+      // A. 在大圖頂部加入「✨ 閃膜」切換掣
+      const btnGroup = topBar?.querySelector('div.flex.items-center.gap-1\\.5');
+      if (btnGroup && !document.getElementById('inspectHoloToggleBtn')) {
+        const holoBtn = document.createElement('button');
+        holoBtn.type = 'button';
+        holoBtn.id = 'inspectHoloToggleBtn';
+        holoBtn.onclick = window.cycleSleeveHoloMode;
+        btnGroup.insertBefore(holoBtn, btnGroup.firstElementChild);
+      }
+
+      const holoBtn = document.getElementById('inspectHoloToggleBtn');
+      const holoLabels = ['🚫 無膜', '✨ 光澤膜', '🌈 閃卡膜'];
+      if (holoBtn) {
+        holoBtn.className = `px-2 h-9 rounded-xl neo-btn flex items-center justify-center text-[11px] font-black shrink-0 ${currentSleeveHoloMode === 2 ? 'bg-gradient-to-r from-pink-200 via-sky-200 to-amber-200 text-zinc-900' : (currentSleeveHoloMode === 1 ? 'bg-sky-100 text-blue-900' : 'bg-zinc-100 text-zinc-500')}`;
+        holoBtn.textContent = holoLabels[currentSleeveHoloMode] || '✨ 光澤膜';
+        holoBtn.title = '切換拍立得保護卡膜反光特效';
+      }
+
+      // B. 為正面相片套用清透光澤膜 / 鐳射閃卡膜特效
+      const frontFace = document.getElementById('inspectImg')?.parentElement;
+      if (frontFace) {
+        frontFace.classList.remove('cheki-sleeve-gloss', 'cheki-sleeve-holo');
+        if (currentSleeveHoloMode === 1) frontFace.classList.add('cheki-sleeve-gloss');
+        else if (currentSleeveHoloMode === 2) frontFace.classList.add('cheki-sleeve-holo');
+      }
+
+      // C. 將背面卡 (#inspectBackCard) 升級為「仿真 Instax 紀念卡背面（郵戳印章 + 手寫筆記紙紋 + 簽名銘牌）」
+      const backCard = document.getElementById('inspectBackCard');
+      if (backCard) {
+        backCard.classList.add('instax-back-ruled');
+        const dateEl = document.getElementById('inspectBackDate');
+        const locEl = document.getElementById('inspectBackLocation');
+        const memberEl = document.getElementById('inspectBackMember');
+
+        if (dateEl && !dateEl.classList.contains('postmark-styled')) {
+          dateEl.classList.add('postmark-styled', 'px-2.5', 'py-0.5', 'rounded-full', 'bg-black/15', 'border', 'border-current', 'text-[10px]', 'font-black', 'tracking-wide');
+        }
+        if (locEl && !locEl.classList.contains('postmark-styled')) {
+          locEl.classList.add('postmark-styled', 'px-2.5', 'py-0.5', 'rounded-full', 'bg-black/15', 'border', 'border-current', 'text-[10px]', 'font-black');
+        }
+        if (memberEl && !memberEl.classList.contains('plaque-styled')) {
+          memberEl.classList.add('plaque-styled', 'pt-2', 'border-t', 'border-current/30', 'flex', 'items-center', 'justify-between', 'w-full');
+          const curMember = memberEl.textContent;
+          memberEl.innerHTML = `<span class="text-[9px] tracking-widest opacity-70">INSTAX CHEKI MEMORY</span><span class="text-sm font-black">✒️ ${curMember}</span>`;
+        }
+      }
+    }
+
+    function initProDesignSystemPlugin() {
+      injectProDesignSystemStyles();
+      window.applyOshiTheme(currentOshiTheme);
+
+      // 1. 在頂部 Header 加入「🎨 主題色」快速切換按鈕
+      const topSearchBtn = document.getElementById('topSearchBtn');
+      if (topSearchBtn && topSearchBtn.parentElement && !document.getElementById('topOshiThemeBtn')) {
+        const themeBtn = document.createElement('button');
+        themeBtn.type = 'button';
+        themeBtn.id = 'topOshiThemeBtn';
+        themeBtn.onclick = window.toggleOshiThemePopover;
+        themeBtn.className = 'w-9 h-9 rounded-2xl bg-white neo-btn flex items-center justify-center text-base shrink-0';
+        themeBtn.title = '切換應援主題色 / 深色模式';
+        themeBtn.textContent = '🎨';
+        topSearchBtn.parentElement.insertBefore(themeBtn, topSearchBtn);
+      }
+
+      // 2. 攔截 switchTab 加入原生 App 絲滑淡入與上浮轉場動畫
+      const origSwitchTab = window.switchTab;
+      if (typeof origSwitchTab === 'function' && !origSwitchTab._wrappedSmoothAnim) {
+        window.switchTab = function(tab) {
+          origSwitchTab.apply(this, arguments);
+          const targetSec = document.getElementById(`tab-${tab}`);
+          if (targetSec) {
+            targetSec.classList.remove('tab-enter-active');
+            void targetSec.offsetWidth; // 觸發重繪以播放動畫
+            targetSec.classList.add('tab-enter-active');
+          }
+        };
+        window.switchTab._wrappedSmoothAnim = true;
+      }
+
+      // 3. 攔截 renderBinder 自動套用仿真卡冊袋外觀
+      const origRenderBinder = window.renderBinder;
+      if (typeof origRenderBinder === 'function' && !origRenderBinder._wrappedPocketDesign) {
+        window.renderBinder = function() {
+          origRenderBinder.apply(this, arguments);
+          upgradeBinderPocketCardsVisual();
+        };
+        window.renderBinder._wrappedPocketDesign = true;
+      }
+
+      // 4. 攔截 openInspectModal 自動套用磨砂玻璃、3D閃膜與仿真拍立得背面
+      const origOpenInspect = window.openInspectModal;
+      if (typeof origOpenInspect === 'function' && !origOpenInspect._wrappedProInspect) {
+        window.openInspectModal = function(id) {
+          origOpenInspect.apply(this, arguments);
+          applyInspectModalProDesign();
+        };
+        window.openInspectModal._wrappedProInspect = true;
+      }
+
+      upgradeBinderPocketCardsVisual();
+      applyInspectModalProDesign();
+    }
+
+    setTimeout(initProDesignSystemPlugin, 460);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
