@@ -2663,13 +2663,6 @@
       cardsLayer.style.height = `${Math.max(ch, maxBottomY + 60)}px`;
     }
 
-    el.addEventListener('touchend', (e) => {
-        if (e.touches.length < 2 && isPinching) {
-          setTimeout(() => { isPinching = false; }, 100);
-          saveCardToDB(card);
-        }
-      });
-    } // 👈 選取到呢個括號為止！
     function bringCardToFront(card, el) {
       selectedDeskCardId = card.id;
       const maxZ = cards.reduce((m, c) => Math.max(m, c.deskZ || 1), 1);
