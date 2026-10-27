@@ -5437,103 +5437,155 @@ function switchCheerModalTab(mode) {
     };
 
     // 🎯 精準直線投影偵測拍立得「內框相片長方形邊界」（防頂部/底部手寫簽名誤判升級版）
+    // 🎯 精準直線梯度偵測拍立得「內框相片四邊分界線」（支援淺色白牆背景 + 防手寫字干擾）
     function detectChekiInnerBox(d, w, h) {
-      const edgeLums = [];
-      const step = Math.max(2, Math.floor(Math.min(w, h) / 100));
-      const mX = Math.max(3, Math.floor(w * 0.02));
-      const mY = Math.max(3, Math.floor(h * 0.02));
-
-      // 採樣外圍白邊亮度（自動排除深色簽名墨水點）
-      for (let x = mX; x < w - mX; x += step) {
-        for (const y of [mY, h - 1 - mY]) {
-          const i = (y * w + x) * 4;
-          const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-          if (lum > 145) edgeLums.push(lum);
-        }
-      }
-      for (let y = mY; y < h - mY; y += step) {
-        for (const x of [mX, w - 1 - mX]) {
-          const i = (y * w + x) * 4;
-          const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-          if (lum > 145) edgeLums.push(lum);
-        }
-      }
-
-      if (edgeLums.length < 6) {
-        return { left: Math.round(w * 0.075), right: Math.round(w * 0.925), top: Math.round(h * 0.075), bottom: Math.round(h * 0.79), paperLum: 230 };
-      }
-      edgeLums.sort((a, b) => a - b);
-      const paperLum = edgeLums[Math.floor(edgeLums.length * 0.65)];
-      const thresholdLum = Math.max(135, paperLum - 28);
-
-      const isNonPaper = (x, y) => {
+      const getLum = (x, y) => {
         const i = (y * w + x) * 4;
-        const r = d[i], g = d[i + 1], b = d[i + 2];
-        const sat = Math.max(r, g, b) - Math.min(r, g, b);
-        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-        return lum < thresholdLum || sat > 36;
+        return 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      };
+      const getSat = (x, y) => {
+        const i = (y * w + x) * 4;
+        return Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]);
       };
 
-      // 1. 先在相片中段 (24% ~ 62% 高度，避開頂部與底部手寫字) 精準找出左右內框邊界 boxLeft / boxRight
-      const midY0 = Math.floor(h * 0.24), midY1 = Math.floor(h * 0.62);
+      const step = Math.max(2, Math.floor(Math.min(w, h) / 120));
 
-      let boxLeft = Math.round(w * 0.072);
-      for (let x = Math.floor(w * 0.025); x < Math.floor(w * 0.22); x++) {
-        let hits = 0, total = 0;
-        for (let y = midY0; y <= midY1; y += step) { total++; if (isNonPaper(x, y)) hits++; }
-        if (hits / total >= 0.55) { boxLeft = x; break; }
+      // 1. 從左右兩側白邊中段 (避開頂部/底部手寫字) 採樣最純淨的相紙亮度 paperLum
+      const sidePaperLums = [];
+      const mX = Math.max(3, Math.floor(w * 0.03));
+      for (let y = Math.floor(h * 0.15); y < Math.floor(h * 0.72); y += step) {
+        for (const x of [mX, w - 1 - mX]) {
+          const lum = getLum(x, y);
+          if (lum > 155 && getSat(x, y) < 35) sidePaperLums.push(lum);
+        }
+      }
+      sidePaperLums.sort((a, b) => a - b);
+      const paperLum = sidePaperLums.length > 4
+        ? sidePaperLums[Math.floor(sidePaperLums.length * 0.65)]
+        : 230;
+
+      // 只要比相紙暗 9 度以上（連淺灰白牆都能識別！）或有色彩，即屬相片內框像素
+      const photoLumLimit = paperLum - 9;
+      const isPhotoPixel = (x, y) => getLum(x, y) < photoLumLimit || getSat(x, y) > 26;
+
+      // 2. 尋找左右垂直分界線 boxLeft & boxRight（利用直線邊緣對比 + 內部像素比例）
+      const scanY0 = Math.floor(h * 0.20), scanY1 = Math.floor(h * 0.68);
+
+      let boxLeft = Math.round(w * 0.078), maxLeftScore = -1;
+      for (let x = Math.floor(w * 0.04); x < Math.floor(w * 0.19); x++) {
+        let edgeSum = 0, photoHits = 0, cnt = 0;
+        for (let y = scanY0; y <= scanY1; y += step) {
+          cnt++;
+          const outL = getLum(Math.max(0, x - 3), y);
+          const inL = getLum(Math.min(w - 1, x + 3), y);
+          if (outL > inL) edgeSum += (outL - inL);
+          if (isPhotoPixel(x + 2, y) && isPhotoPixel(x + 6, y)) photoHits++;
+        }
+        const ratio = photoHits / (cnt || 1);
+        const score = (edgeSum / (cnt || 1)) * (ratio >= 0.45 ? 2.2 : 0.4);
+        if (ratio >= 0.65 && (edgeSum / (cnt || 1)) > 5) {
+          boxLeft = x;
+          break;
+        }
+        if (score > maxLeftScore) { maxLeftScore = score; boxLeft = x; }
       }
 
-      let boxRight = Math.round(w * 0.928);
-      for (let x = w - 1 - Math.floor(w * 0.025); x > Math.floor(w * 0.78); x--) {
-        let hits = 0, total = 0;
-        for (let y = midY0; y <= midY1; y += step) { total++; if (isNonPaper(x, y)) hits++; }
-        if (hits / total >= 0.55) { boxRight = x; break; }
+      let boxRight = Math.round(w * 0.922), maxRightScore = -1;
+      for (let x = w - 1 - Math.floor(w * 0.04); x > Math.floor(w * 0.81); x--) {
+        let edgeSum = 0, photoHits = 0, cnt = 0;
+        for (let y = scanY0; y <= scanY1; y += step) {
+          cnt++;
+          const outL = getLum(Math.min(w - 1, x + 3), y);
+          const inL = getLum(Math.max(0, x - 3), y);
+          if (outL > inL) edgeSum += (outL - inL);
+          if (isPhotoPixel(x - 2, y) && isPhotoPixel(x - 6, y)) photoHits++;
+        }
+        const ratio = photoHits / (cnt || 1);
+        const score = (edgeSum / (cnt || 1)) * (ratio >= 0.45 ? 2.2 : 0.4);
+        if (ratio >= 0.65 && (edgeSum / (cnt || 1)) > 5) {
+          boxRight = x;
+          break;
+        }
+        if (score > maxRightScore) { maxRightScore = score; boxRight = x; }
       }
 
       const boxW = Math.max(50, boxRight - boxLeft);
-      const leftFlankEnd = Math.round(boxLeft + boxW * 0.25);
-      const rightFlankStart = Math.round(boxRight - boxW * 0.25);
+      // 取頂部左右兩側翼位 (避開中間「香港のトミー」手寫字)，檢測何處真正進入相片框！
+      const leftWing0 = boxLeft + Math.round(boxW * 0.04), leftWing1 = boxLeft + Math.round(boxW * 0.26);
+      const rightWing0 = boxRight - Math.round(boxW * 0.26), rightWing1 = boxRight - Math.round(boxW * 0.04);
 
-      // 檢查某一行是否屬於「真正的實心相片區」（要求整體及左右兩側皆為相片內容，徹底過濾置中手寫字如「香港のトミー」）
-      const isSolidPhotoRow = (y) => {
-        let totalHits = 0, totalCnt = 0;
-        let leftHits = 0, leftCnt = 0;
-        let rightHits = 0, rightCnt = 0;
-        for (let x = boxLeft + 2; x <= boxRight - 2; x += step) {
-          const np = isNonPaper(x, y);
-          totalCnt++; if (np) totalHits++;
-          if (x <= leftFlankEnd) { leftCnt++; if (np) leftHits++; }
-          if (x >= rightFlankStart) { rightCnt++; if (np) rightHits++; }
-        }
-        const totalRatio = totalHits / (totalCnt || 1);
-        const leftRatio = leftHits / (leftCnt || 1);
-        const rightRatio = rightHits / (rightCnt || 1);
-        return totalRatio >= 0.68 && leftRatio >= 0.52 && rightRatio >= 0.52;
+      const getWingPhotoRatio = (y) => {
+        let hits = 0, total = 0;
+        for (let x = leftWing0; x <= leftWing1; x += step) { total++; if (isPhotoPixel(x, y)) hits++; }
+        for (let x = rightWing0; x <= rightWing1; x += step) { total++; if (isPhotoPixel(x, y)) hits++; }
+        return hits / (total || 1);
       };
 
-      // 2. 偵測頂部邊界 boxTop：必須連續 4 個掃描列都符合實心相片區，絕不會被頂部手寫字誤觸！
-      let boxTop = Math.round(h * 0.075);
-      for (let y = Math.floor(h * 0.03); y < Math.floor(h * 0.24); y++) {
-        if (isSolidPhotoRow(y) && isSolidPhotoRow(y + step) && isSolidPhotoRow(y + step * 2) && isSolidPhotoRow(y + step * 3)) {
+      // 3. 尋找頂部水平分界線 boxTop：左右翼位同時進入相片 + 貫穿全寬的水平邊緣線
+      let boxTop = Math.round(h * 0.105), bestTopScore = -1;
+      for (let y = Math.floor(h * 0.045); y < Math.floor(h * 0.22); y++) {
+        const wingRatioNow = getWingPhotoRatio(y + 2);
+        const wingRatioNext = getWingPhotoRatio(y + 6);
+        let gradSum = 0, gradHits = 0, gCnt = 0;
+
+        for (let x = boxLeft + 4; x <= boxRight - 4; x += step) {
+          gCnt++;
+          const aboveL = getLum(x, Math.max(0, y - 3));
+          const belowL = getLum(x, Math.min(h - 1, y + 3));
+          // 排除上方係黑色手寫字筆畫的情況 (aboveL > 155 代表上方係白紙)
+          if (aboveL > 155 && aboveL - belowL > 4.5) {
+            gradSum += (aboveL - belowL);
+            gradHits++;
+          }
+        }
+
+        const lineContinuity = gradHits / (gCnt || 1);
+        const score = (gradSum / (gCnt || 1)) * lineContinuity * (wingRatioNow >= 0.55 && wingRatioNext >= 0.55 ? 3.0 : 0.3);
+
+        // 一旦左右翼位連續進入相片區，且出現貫穿超過 50% 寬度的水平直線邊緣，即鎖定為相片頂邊！
+        if (wingRatioNow >= 0.62 && wingRatioNext >= 0.62 && lineContinuity >= 0.48) {
           boxTop = y;
           break;
         }
+        if (score > bestTopScore) {
+          bestTopScore = score;
+          boxTop = y;
+        }
       }
 
-      // 3. 偵測底部邊界 boxBottom：由下往上尋找連續 4 列實心相片區，完美避開底部簽名「kein」！
-      let boxBottom = Math.round(h * 0.79);
-      for (let y = h - 1 - Math.floor(h * 0.05); y > Math.floor(h * 0.60); y--) {
-        if (isSolidPhotoRow(y) && isSolidPhotoRow(y - step) && isSolidPhotoRow(y - step * 2) && isSolidPhotoRow(y - step * 3)) {
+      // 4. 尋找底部水平分界線 boxBottom：由下往上避開「kein」簽名，鎖定相片底邊直線
+      let boxBottom = Math.round(h * 0.788), bestBotScore = -1;
+      for (let y = Math.floor(h * 0.88); y > Math.floor(h * 0.62); y--) {
+        const wingRatioAbove = getWingPhotoRatio(y - 3);
+        const wingRatioAbove2 = getWingPhotoRatio(y - 7);
+        let gradSum = 0, gradHits = 0, gCnt = 0;
+
+        for (let x = boxLeft + 4; x <= boxRight - 4; x += step) {
+          gCnt++;
+          const belowL = getLum(x, Math.min(h - 1, y + 3));
+          const aboveL = getLum(x, Math.max(0, y - 3));
+          if (belowL > 155 && belowL - aboveL > 4.5) {
+            gradSum += (belowL - aboveL);
+            gradHits++;
+          }
+        }
+
+        const lineContinuity = gradHits / (gCnt || 1);
+        const score = (gradSum / (gCnt || 1)) * lineContinuity * (wingRatioAbove >= 0.55 && wingRatioAbove2 >= 0.55 ? 3.0 : 0.3);
+
+        if (wingRatioAbove >= 0.62 && wingRatioAbove2 >= 0.62 && lineContinuity >= 0.48) {
           boxBottom = y;
           break;
+        }
+        if (score > bestBotScore) {
+          bestBotScore = score;
+          boxBottom = y;
         }
       }
 
       return { left: boxLeft, right: boxRight, top: boxTop, bottom: boxBottom, paperLum };
     }
 
-    // ⬜ 自適應留字去底灰漂白引擎（徹底消除簽名外圍灰框與圈內灰底，100% 保留黑筆/彩筆筆跡）
     function whitenChekiFramePixels(d, w, h, strength = 0.99) {
       const box = detectChekiInnerBox(d, w, h);
       const pLum = box.paperLum;
