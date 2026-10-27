@@ -5438,6 +5438,7 @@ function switchCheerModalTab(mode) {
 
     // 🎯 精準直線投影偵測拍立得「內框相片長方形邊界」（防頂部/底部手寫簽名誤判升級版）
     // 🎯 精準直線梯度偵測拍立得「內框相片四邊分界線」（支援淺色白牆背景 + 防手寫字干擾）
+    // 🎯 終極版：1票制直線邊緣投票 + 持續內部驗證（100% 免疫頂部手寫黑字與淺色白牆背景）
     function detectChekiInnerBox(d, w, h) {
       const getLum = (x, y) => {
         const i = (y * w + x) * 4;
@@ -5448,137 +5449,185 @@ function switchCheerModalTab(mode) {
         return Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]);
       };
 
-      const step = Math.max(2, Math.floor(Math.min(w, h) / 120));
+      const step = Math.max(2, Math.floor(Math.min(w, h) / 140));
+      const isLand = w > h * 1.05;
 
-      // 1. 從左右兩側白邊中段 (避開頂部/底部手寫字) 採樣最純淨的相紙亮度 paperLum
-      const sidePaperLums = [];
-      const mX = Math.max(3, Math.floor(w * 0.03));
-      for (let y = Math.floor(h * 0.15); y < Math.floor(h * 0.72); y += step) {
-        for (const x of [mX, w - 1 - mX]) {
-          const lum = getLum(x, y);
-          if (lum > 155 && getSat(x, y) < 35) sidePaperLums.push(lum);
+      // 拍立得實體相框幾何搜尋範圍（嚴格鎖定於白邊交界帶，絕不深入相片中間誤觸頭髮！）
+      const leftMin = Math.floor(w * (isLand ? 0.065 : 0.052));
+      const leftMax = Math.floor(w * (isLand ? 0.135 : 0.112));
+      const rightMin = Math.floor(w * (isLand ? 0.760 : 0.888));
+      const rightMax = Math.floor(w * (isLand ? 0.935 : 0.948));
+
+      const topMin = Math.floor(h * (isLand ? 0.050 : 0.072));
+      const topMax = Math.floor(h * (isLand ? 0.125 : 0.142));
+      const botMin = Math.floor(h * (isLand ? 0.855 : 0.755));
+      const botMax = Math.floor(h * (isLand ? 0.945 : 0.832));
+
+      // 採樣外框白紙基準亮度
+      const sideLums = [];
+      const sampleXLeft = Math.max(2, Math.floor(w * 0.028));
+      const sampleXRight = Math.min(w - 3, Math.floor(w * 0.972));
+      for (let y = Math.floor(h * 0.18); y < Math.floor(h * 0.72); y += step) {
+        for (const sx of [sampleXLeft, sampleXRight]) {
+          const l = getLum(sx, y);
+          if (l > 150 && getSat(sx, y) < 35) sideLums.push(l);
         }
       }
-      sidePaperLums.sort((a, b) => a - b);
-      const paperLum = sidePaperLums.length > 4
-        ? sidePaperLums[Math.floor(sidePaperLums.length * 0.65)]
-        : 230;
+      sideLums.sort((a, b) => a - b);
+      const paperLum = sideLums.length > 4 ? sideLums[Math.floor(sideLums.length * 0.65)] : 228;
 
-      // 只要比相紙暗 9 度以上（連淺灰白牆都能識別！）或有色彩，即屬相片內框像素
-      const photoLumLimit = paperLum - 9;
-      const isPhotoPixel = (x, y) => getLum(x, y) < photoLumLimit || getSat(x, y) > 26;
+      const deepDistX = Math.max(8, Math.round(w * 0.032));
+      const deepDistY = Math.max(10, Math.round(h * 0.028));
 
-      // 2. 尋找左右垂直分界線 boxLeft & boxRight（利用直線邊緣對比 + 內部像素比例）
-      const scanY0 = Math.floor(h * 0.20), scanY1 = Math.floor(h * 0.68);
+      // 1. 尋找左邊界 boxLeft（每列最多 1 票，避免局部黑髮搶分）
+      const scanY0 = Math.floor(h * 0.16), scanY1 = Math.floor(h * 0.72);
+      let boxLeft = Math.round(w * 0.078), bestLeftVotes = -1;
 
-      let boxLeft = Math.round(w * 0.078), maxLeftScore = -1;
-      for (let x = Math.floor(w * 0.04); x < Math.floor(w * 0.19); x++) {
-        let edgeSum = 0, photoHits = 0, cnt = 0;
+      for (let x = leftMin; x <= leftMax; x++) {
+        let votes = 0, total = 0;
         for (let y = scanY0; y <= scanY1; y += step) {
-          cnt++;
-          const outL = getLum(Math.max(0, x - 3), y);
-          const inL = getLum(Math.min(w - 1, x + 3), y);
-          if (outL > inL) edgeSum += (outL - inL);
-          if (isPhotoPixel(x + 2, y) && isPhotoPixel(x + 6, y)) photoHits++;
+          total++;
+          const outL = (getLum(Math.max(0, x - 2), y) + getLum(Math.max(0, x - 4), y)) * 0.5;
+          if (outL < 150) continue; // 外側必須係白邊相紙
+
+          const inL = Math.min(getLum(x + 1, y), getLum(x + 3, y));
+          const deepL = getLum(Math.min(w - 1, x + deepDistX), y);
+          const inSat = getSat(x + 3, y);
+          const drop = outL - inL;
+          const deepDrop = outL - deepL;
+
+          if ((drop >= 3.2 || inSat >= 22) && (deepDrop >= 2.2 || getSat(Math.min(w - 1, x + deepDistX), y) >= 20)) {
+            votes += Math.min(1.0, Math.max(drop, inSat * 0.4) / 10);
+          }
         }
-        const ratio = photoHits / (cnt || 1);
-        const score = (edgeSum / (cnt || 1)) * (ratio >= 0.45 ? 2.2 : 0.4);
-        if (ratio >= 0.65 && (edgeSum / (cnt || 1)) > 5) {
+        const ratio = votes / (total || 1);
+        // 加入拍立得標準左邊界 (7.8%) 輕微幾何權重，當白牆極淺色時依然鎖定標準框線
+        const prior = 1 - Math.abs(x / w - 0.078) * 2.5;
+        const score = ratio * prior;
+        if (score > bestLeftVotes) {
+          bestLeftVotes = score;
           boxLeft = x;
-          break;
         }
-        if (score > maxLeftScore) { maxLeftScore = score; boxLeft = x; }
       }
 
-      let boxRight = Math.round(w * 0.922), maxRightScore = -1;
-      for (let x = w - 1 - Math.floor(w * 0.04); x > Math.floor(w * 0.81); x--) {
-        let edgeSum = 0, photoHits = 0, cnt = 0;
+      // 2. 尋找右邊界 boxRight
+      let boxRight = Math.round(w * 0.922), bestRightVotes = -1;
+      for (let x = rightMax; x >= rightMin; x--) {
+        let votes = 0, total = 0;
         for (let y = scanY0; y <= scanY1; y += step) {
-          cnt++;
-          const outL = getLum(Math.min(w - 1, x + 3), y);
-          const inL = getLum(Math.max(0, x - 3), y);
-          if (outL > inL) edgeSum += (outL - inL);
-          if (isPhotoPixel(x - 2, y) && isPhotoPixel(x - 6, y)) photoHits++;
+          total++;
+          const outL = (getLum(Math.min(w - 1, x + 2), y) + getLum(Math.min(w - 1, x + 4), y)) * 0.5;
+          if (outL < 150) continue;
+
+          const inL = Math.min(getLum(x - 1, y), getLum(x - 3, y));
+          const deepL = getLum(Math.max(0, x - deepDistX), y);
+          const inSat = getSat(x - 3, y);
+          const drop = outL - inL;
+          const deepDrop = outL - deepL;
+
+          if ((drop >= 3.2 || inSat >= 22) && (deepDrop >= 2.2 || getSat(Math.max(0, x - deepDistX), y) >= 20)) {
+            votes += Math.min(1.0, Math.max(drop, inSat * 0.4) / 10);
+          }
         }
-        const ratio = photoHits / (cnt || 1);
-        const score = (edgeSum / (cnt || 1)) * (ratio >= 0.45 ? 2.2 : 0.4);
-        if (ratio >= 0.65 && (edgeSum / (cnt || 1)) > 5) {
+        const ratio = votes / (total || 1);
+        const prior = 1 - Math.abs(x / w - 0.922) * 2.5;
+        const score = ratio * prior;
+        if (score > bestRightVotes) {
+          bestRightVotes = score;
           boxRight = x;
-          break;
-        }
-        if (score > maxRightScore) { maxRightScore = score; boxRight = x; }
-      }
-
-      const boxW = Math.max(50, boxRight - boxLeft);
-      // 取頂部左右兩側翼位 (避開中間「香港のトミー」手寫字)，檢測何處真正進入相片框！
-      const leftWing0 = boxLeft + Math.round(boxW * 0.04), leftWing1 = boxLeft + Math.round(boxW * 0.26);
-      const rightWing0 = boxRight - Math.round(boxW * 0.26), rightWing1 = boxRight - Math.round(boxW * 0.04);
-
-      const getWingPhotoRatio = (y) => {
-        let hits = 0, total = 0;
-        for (let x = leftWing0; x <= leftWing1; x += step) { total++; if (isPhotoPixel(x, y)) hits++; }
-        for (let x = rightWing0; x <= rightWing1; x += step) { total++; if (isPhotoPixel(x, y)) hits++; }
-        return hits / (total || 1);
-      };
-
-      // 3. 尋找頂部水平分界線 boxTop：左右翼位同時進入相片 + 貫穿全寬的水平邊緣線
-      let boxTop = Math.round(h * 0.105), bestTopScore = -1;
-      for (let y = Math.floor(h * 0.045); y < Math.floor(h * 0.22); y++) {
-        const wingRatioNow = getWingPhotoRatio(y + 2);
-        const wingRatioNext = getWingPhotoRatio(y + 6);
-        let gradSum = 0, gradHits = 0, gCnt = 0;
-
-        for (let x = boxLeft + 4; x <= boxRight - 4; x += step) {
-          gCnt++;
-          const aboveL = getLum(x, Math.max(0, y - 3));
-          const belowL = getLum(x, Math.min(h - 1, y + 3));
-          // 排除上方係黑色手寫字筆畫的情況 (aboveL > 155 代表上方係白紙)
-          if (aboveL > 155 && aboveL - belowL > 4.5) {
-            gradSum += (aboveL - belowL);
-            gradHits++;
-          }
-        }
-
-        const lineContinuity = gradHits / (gCnt || 1);
-        const score = (gradSum / (gCnt || 1)) * lineContinuity * (wingRatioNow >= 0.55 && wingRatioNext >= 0.55 ? 3.0 : 0.3);
-
-        // 一旦左右翼位連續進入相片區，且出現貫穿超過 50% 寬度的水平直線邊緣，即鎖定為相片頂邊！
-        if (wingRatioNow >= 0.62 && wingRatioNext >= 0.62 && lineContinuity >= 0.48) {
-          boxTop = y;
-          break;
-        }
-        if (score > bestTopScore) {
-          bestTopScore = score;
-          boxTop = y;
         }
       }
 
-      // 4. 尋找底部水平分界線 boxBottom：由下往上避開「kein」簽名，鎖定相片底邊直線
-      let boxBottom = Math.round(h * 0.788), bestBotScore = -1;
-      for (let y = Math.floor(h * 0.88); y > Math.floor(h * 0.62); y--) {
-        const wingRatioAbove = getWingPhotoRatio(y - 3);
-        const wingRatioAbove2 = getWingPhotoRatio(y - 7);
-        let gradSum = 0, gradHits = 0, gCnt = 0;
+      // 3. 尋找頂部邊界 boxTop（強制要求下方持續為相片內部，100% 過濾「香港のトミー」手寫筆畫！）
+      let boxTop = Math.round(h * 0.104), bestTopVotes = -1;
+      const scanX0 = boxLeft + Math.max(4, Math.round((boxRight - boxLeft) * 0.04));
+      const scanX1 = boxRight - Math.max(4, Math.round((boxRight - boxLeft) * 0.04));
 
-        for (let x = boxLeft + 4; x <= boxRight - 4; x += step) {
-          gCnt++;
-          const belowL = getLum(x, Math.min(h - 1, y + 3));
-          const aboveL = getLum(x, Math.max(0, y - 3));
-          if (belowL > 155 && belowL - aboveL > 4.5) {
-            gradSum += (belowL - aboveL);
-            gradHits++;
+      for (let y = topMin; y <= topMax; y++) {
+        let votes = 0, total = 0;
+        let wingVotes = 0, wingTotal = 0;
+        const wingSpan = Math.round((scanX1 - scanX0) * 0.25);
+
+        for (let x = scanX0; x <= scanX1; x += step) {
+          total++;
+          const isWing = (x <= scanX0 + wingSpan) || (x >= scanX1 - wingSpan);
+          if (isWing) wingTotal++;
+
+          const aboveL = (getLum(x, Math.max(0, y - 2)) + getLum(x, Math.max(0, y - 4))) * 0.5;
+          if (aboveL < 155) continue; // 上方若係黑色筆跡，直接跳過！
+
+          const belowL = Math.min(getLum(x, y + 1), getLum(x, y + 3));
+          const belowSat = getSat(x, y + 3);
+          const drop = aboveL - belowL;
+
+          // 關鍵防手寫字檢查：檢查往下 15px 與 30px 處是否又變回白紙 (若變回白紙代表只係穿過「香港のトミー」字體！)
+          const deep1L = getLum(x, Math.min(h - 1, y + Math.round(deepDistY * 0.65)));
+          const deep2L = getLum(x, Math.min(h - 1, y + deepDistY));
+          const deep1Sat = getSat(x, Math.min(h - 1, y + Math.round(deepDistY * 0.65)));
+
+          // 若下方係深色筆跡 (belowL < 135)，但再往下又變返亮白紙 (deep1L > 180 或 deep2L > 180)，100% 係手寫字，剔除！
+          if (belowL < 140 && (deep1L > aboveL - 12 || deep2L > aboveL - 12)) {
+            continue;
+          }
+
+          const sustained = (aboveL - deep1L >= 2.2) || (aboveL - deep2L >= 2.2) || (deep1Sat >= 18);
+          if ((drop >= 3.0 || belowSat >= 20) && sustained) {
+            const v = Math.min(1.0, Math.max(drop, belowSat * 0.4) / 9);
+            votes += v;
+            if (isWing) wingVotes += v;
           }
         }
 
-        const lineContinuity = gradHits / (gCnt || 1);
-        const score = (gradSum / (gCnt || 1)) * lineContinuity * (wingRatioAbove >= 0.55 && wingRatioAbove2 >= 0.55 ? 3.0 : 0.3);
-
-        if (wingRatioAbove >= 0.62 && wingRatioAbove2 >= 0.62 && lineContinuity >= 0.48) {
-          boxBottom = y;
-          break;
+        const totalRatio = votes / (total || 1);
+        const wingRatio = wingVotes / (wingTotal || 1);
+        // 左右兩翼（無手寫字區域）必須同時有邊緣反應，徹底杜絕中央手寫字誤導
+        const score = (totalRatio * 0.55 + wingRatio * 0.45) * (wingRatio < 0.22 ? 0.25 : 1.0);
+        if (score > bestTopVotes) {
+          bestTopVotes = score;
+          boxTop = y;
         }
-        if (score > bestBotScore) {
-          bestBotScore = score;
+      }
+
+      // 4. 尋找底部邊界 boxBottom（由下往上避開「kein」簽名，鎖定相片底邊直線）
+      let boxBottom = Math.round(h * 0.792), bestBotVotes = -1;
+      for (let y = botMax; y >= botMin; y--) {
+        let votes = 0, total = 0;
+        let wingVotes = 0, wingTotal = 0;
+        const wingSpan = Math.round((scanX1 - scanX0) * 0.25);
+
+        for (let x = scanX0; x <= scanX1; x += step) {
+          total++;
+          const isWing = (x <= scanX0 + wingSpan) || (x >= scanX1 - wingSpan);
+          if (isWing) wingTotal++;
+
+          const belowL = (getLum(x, Math.min(h - 1, y + 2)) + getLum(x, Math.min(h - 1, y + 4))) * 0.5;
+          if (belowL < 155) continue; // 下方若係簽名墨水，跳過！
+
+          const aboveL = Math.min(getLum(x, y - 1), getLum(x, y - 3));
+          const aboveSat = getSat(x, y - 3);
+          const drop = belowL - aboveL;
+
+          const deep1L = getLum(x, Math.max(0, y - Math.round(deepDistY * 0.65)));
+          const deep2L = getLum(x, Math.max(0, y - deepDistY));
+          const deep1Sat = getSat(x, Math.max(0, y - Math.round(deepDistY * 0.65)));
+
+          if (aboveL < 140 && (deep1L > belowL - 12 || deep2L > belowL - 12)) {
+            continue;
+          }
+
+          const sustained = (belowL - deep1L >= 2.2) || (belowL - deep2L >= 2.2) || (deep1Sat >= 18);
+          if ((drop >= 3.0 || aboveSat >= 20) && sustained) {
+            const v = Math.min(1.0, Math.max(drop, aboveSat * 0.4) / 9);
+            votes += v;
+            if (isWing) wingVotes += v;
+          }
+        }
+
+        const totalRatio = votes / (total || 1);
+        const wingRatio = wingVotes / (wingTotal || 1);
+        const score = (totalRatio * 0.55 + wingRatio * 0.45) * (wingRatio < 0.22 ? 0.25 : 1.0);
+        if (score > bestBotVotes) {
+          bestBotVotes = score;
           boxBottom = y;
         }
       }
@@ -5586,44 +5635,36 @@ function switchCheerModalTab(mode) {
       return { left: boxLeft, right: boxRight, top: boxTop, bottom: boxBottom, paperLum };
     }
 
+    // ⬜ 零溢出純白相紙淨化引擎（100% 鎖定內框不越界，外框陰影與字體灰底完全純白化）
     function whitenChekiFramePixels(d, w, h, strength = 0.99) {
       const box = detectChekiInnerBox(d, w, h);
       const pLum = box.paperLum;
-      // 凡亮度達相紙 80% 以上的淺灰底色（包含字體筆畫中間與周圍陰影），一律平滑提亮為純白相紙色
-      const whitePoint = Math.max(145, pLum * 0.80);
-      const blackPoint = Math.max(40, pLum * 0.28);
+      // 外框凡亮度高於 148 的灰暗相紙底色一律淨化為純白，僅保留深色/彩色簽名墨水
+      const whitePoint = Math.max(145, pLum * 0.75);
+      const blackPoint = Math.max(42, pLum * 0.28);
       const outerCleanBand = Math.max(2, Math.round(Math.min(w, h) * 0.004));
 
       for (let y = 0; y < h; y++) {
         const inY = (y >= box.top && y <= box.bottom);
         for (let x = 0; x < w; x++) {
           const inX = (x >= box.left && x <= box.right);
-          if (inX && inY) continue; // 100% 保護相片內框不變
+          if (inX && inY) continue; // 100% 嚴格保護相片內框（連白牆背景亦絕不誤觸！）
 
           const idx = (y * w + x) * 4;
           const r = d[idx], g = d[idx + 1], b = d[idx + 2];
           const sat = Math.max(r, g, b) - Math.min(r, g, b);
           const lum = 0.299 * r + 0.587 * g + 0.114 * b;
 
-          // 最外緣極細邊框：若非深色簽名墨水，直接淨化為純白
           if (x < outerCleanBand || x >= w - outerCleanBand || y < outerCleanBand || y >= h - outerCleanBand) {
-            if (lum > pLum * 0.55 && sat < 45) {
+            if (lum > 130 && sat < 45) {
               d[idx] = 254; d[idx + 1] = 253; d[idx + 2] = 251;
               continue;
             }
           }
 
-          // 計算距離內框邊界的柔化權重
-          let dist = 999;
-          if (inX) dist = y < box.top ? (box.top - y) : (y - box.bottom);
-          else if (inY) dist = x < box.left ? (box.left - x) : (x - box.right);
-          else dist = Math.hypot(x < box.left ? (box.left - x) : (x - box.right), y < box.top ? (box.top - y) : (y - box.bottom));
-          const edgeWeight = dist <= 1.5 ? 0.65 : 1.0;
-
-          // 情況 A：彩色簽名筆跡 (高飽和度且非純白反光) -> 保留彩筆顏色，僅消除邊緣灰底
-          if (sat > 48 && lum < whitePoint) {
-            if (lum > pLum * 0.62) {
-              const cRatio = Math.min(1, (lum - pLum * 0.62) / (whitePoint - pLum * 0.62 || 1)) * strength * edgeWeight;
+          if (sat > 46 && lum < whitePoint) {
+            if (lum > pLum * 0.60) {
+              const cRatio = Math.min(1, (lum - pLum * 0.60) / (whitePoint - pLum * 0.60 || 1)) * strength;
               d[idx]     = Math.round(r + (254 - r) * cRatio);
               d[idx + 1] = Math.round(g + (253 - g) * cRatio);
               d[idx + 2] = Math.round(b + (251 - b) * cRatio);
@@ -5631,19 +5672,15 @@ function switchCheerModalTab(mode) {
             continue;
           }
 
-          // 情況 B：白邊相紙與黑色/深色簽名（如「香港のトミー」與「kein」）
           if (lum >= whitePoint) {
-            // 相紙底色區域：直接淨化為純白相紙色 (254, 253, 251)
-            const blend = strength * edgeWeight;
-            d[idx]     = Math.min(255, Math.round(r + (254 - r) * blend));
-            d[idx + 1] = Math.min(255, Math.round(g + (253 - g) * blend));
-            d[idx + 2] = Math.min(255, Math.round(b + (251 - b) * blend));
+            d[idx]     = Math.min(255, Math.round(r + (254 - r) * strength));
+            d[idx + 1] = Math.min(255, Math.round(g + (253 - g) * strength));
+            d[idx + 2] = Math.min(255, Math.round(b + (251 - b) * strength));
           } else if (lum > blackPoint) {
-            // 簽名筆跡邊緣過渡帶：使用平滑 S 曲線將灰暈直接拉向純白，徹底消除字體周圍灰框！
             let t = (lum - blackPoint) / (whitePoint - blackPoint || 1);
-            t = t * t * (3 - 2 * t); // Smoothstep S-curve
-            const whitePull = t * strength * edgeWeight;
-            const inkDarken = 0.88; // 讓墨水核心更深邃銳利
+            t = t * t * (3 - 2 * t);
+            const whitePull = t * strength;
+            const inkDarken = 0.88;
             const baseR = r * inkDarken, baseG = g * inkDarken, baseB = b * inkDarken;
             d[idx]     = Math.min(255, Math.round(baseR + (254 - baseR) * whitePull));
             d[idx + 1] = Math.min(255, Math.round(baseG + (253 - baseG) * whitePull));
