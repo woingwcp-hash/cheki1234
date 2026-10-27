@@ -9220,16 +9220,39 @@ function switchCheerModalTab(mode) {
       }
     };
 
-    // ⚡ 2. 雙解析度「輕量縮圖快取引擎 (Dual-Res Thumbnail Engine)」
-    // 平時卡冊/桌布/揀相行 360px 輕量縮圖 (慳 95% 記憶體)，點開大圖/匯出/海報時 100% 用無損原圖！
+    // ⚡ 2. 雙解析度「輕量縮圖快取引擎 (附帶相片指紋即時同步 + 防舊縮圖殘留)」
+    const chekiThumbSigMap = {}; // 記錄每張縮圖對應的原圖指紋，原圖一改即刻自動刷新！
+
+    function getCardImageSignature(imgStr) {
+      if (!imgStr || typeof imgStr !== 'string') return '';
+      return `${imgStr.length}_${imgStr.slice(-48)}`;
+    }
+
     function loadThumbsFromDB() {
       if (!db) return;
       try {
         const tx = db.transaction('meta', 'readonly');
-        const req = tx.objectStore('meta').get('chekiThumbsMap');
+        const store = tx.objectStore('meta');
+        const req = store.get('chekiThumbsMap');
+        const sigReq = store.get('chekiThumbSigMap');
         tx.oncomplete = () => {
           if (req.result && req.result.value && typeof req.result.value === 'object') {
             Object.assign(chekiThumbMap, req.result.value);
+          }
+          if (sigReq.result && sigReq.result.value && typeof sigReq.result.value === 'object') {
+            Object.assign(chekiThumbSigMap, sigReq.result.value);
+          }
+          // 檢查是否有已修改過但縮圖未更新的相片（如剛漂白白邊的相片），立即清除舊縮圖！
+          let hasStale = false;
+          cards.forEach(c => {
+            if (!c || !c.id || !c.image) return;
+            const curSig = getCardImageSignature(c.image);
+            if (chekiThumbMap[c.id] && chekiThumbSigMap[c.id] !== curSig) {
+              delete chekiThumbMap[c.id];
+              hasStale = true;
+            }
+          });
+          if (hasStale) {
             if (currentTab === 'binder') renderBinder();
             else if (currentTab === 'desk') renderDesk();
           }
@@ -9247,9 +9270,11 @@ function switchCheerModalTab(mode) {
         if (!db) return;
         try {
           const tx = db.transaction('meta', 'readwrite');
-          tx.objectStore('meta').put({ key: 'chekiThumbsMap', value: chekiThumbMap });
+          const store = tx.objectStore('meta');
+          store.put({ key: 'chekiThumbsMap', value: chekiThumbMap });
+          store.put({ key: 'chekiThumbSigMap', value: chekiThumbSigMap });
         } catch (_) {}
-      }, 600);
+      }, 500);
     }
 
     function createSingleCardThumb(srcUrl) {
@@ -9272,7 +9297,7 @@ function switchCheerModalTab(mode) {
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, w, h);
-          resolve(c.toDataURL('image/jpeg', 0.82));
+          resolve(c.toDataURL('image/jpeg', 0.84));
         };
         img.onerror = () => resolve(srcUrl);
         img.src = srcUrl;
@@ -9284,31 +9309,43 @@ function switchCheerModalTab(mode) {
       thumbGenQueueRunning = true;
 
       const processNextBatch = async () => {
-        const missing = cards.filter(c => c && c.id && c.image && !chekiThumbMap[c.id]).slice(0, 3);
+        const missing = cards.filter(c => {
+          if (!c || !c.id || !c.image) return false;
+          return !chekiThumbMap[c.id] || chekiThumbSigMap[c.id] !== getCardImageSignature(c.image);
+        }).slice(0, 3);
+
         if (missing.length === 0) {
           thumbGenQueueRunning = false;
           return;
         }
         for (const card of missing) {
+          const sig = getCardImageSignature(card.image);
           chekiThumbMap[card.id] = await createSingleCardThumb(card.image);
+          chekiThumbSigMap[card.id] = sig;
         }
         saveThumbsToDBDebounced();
-        setTimeout(processNextBatch, 90);
+        if (currentTab === 'binder') renderBinder();
+        setTimeout(processNextBatch, 80);
       };
 
-      setTimeout(processNextBatch, 300);
+      setTimeout(processNextBatch, 200);
     }
 
-    // 同步渲染代理器：只在建立細格仔縮圖 DOM 的瞬間注入輕量縮圖，0 秒還原 c.image 無損原圖屬性！
+    // 同步渲染代理器：核對指紋一致才使用快取縮圖；若相片剛修改過，直接顯示最新 c.image 並觸發背景更新！
     function runWithThumbnailProxy(syncRenderFn, ctx, args) {
       const backup = new Map();
+      let needRegen = false;
       try {
         for (let i = 0; i < cards.length; i++) {
           const c = cards[i];
-          const thumb = c && chekiThumbMap[c.id];
-          if (thumb) {
+          if (!c || !c.id || !c.image) continue;
+          const curSig = getCardImageSignature(c.image);
+          const thumb = chekiThumbMap[c.id];
+          if (thumb && chekiThumbSigMap[c.id] === curSig) {
             backup.set(c, c.image);
             c.image = thumb;
+          } else {
+            needRegen = true;
           }
         }
         return syncRenderFn.apply(ctx, args);
@@ -9316,8 +9353,101 @@ function switchCheerModalTab(mode) {
         backup.forEach((origImg, c) => {
           c.image = origImg;
         });
+        if (needRegen) scheduleBackgroundThumbnailGeneration();
       }
     }
+
+    // 📦 關鍵修復：分段串流備份引擎（支援 350+ 張甚至 1000+ 張高清相片零崩潰秒速匯出！）
+    window.exportAllData = function() {
+      const exportBtns = document.querySelectorAll('button[onclick="exportAllData()"]');
+      exportBtns.forEach(b => {
+        b._origHtml = b.innerHTML;
+        b.innerHTML = `⏳ 正在打包 ${cards.length} 張相片備份...`;
+        b.disabled = true;
+      });
+      window.showChekiToast(`⏳ 正在打包 ${cards.length} 張拍立得備份檔，請稍候...`, 4000);
+
+      setTimeout(() => {
+        try {
+          // 使用陣列分段串流建立 Blob，徹底避開 Chrome 單一字串 512MB 上限崩潰問題！
+          const chunks = [];
+          chunks.push('{"cards":[');
+
+          for (let i = 0; i < cards.length; i++) {
+            const c = cards[i];
+            if (i > 0) chunks.push(',');
+            // 僅輸出最終高清主圖與完整資料，剔除重複佔用 3 倍空間的暫存底圖複本
+            const slimCard = {
+              id: c.id,
+              createdAt: c.createdAt,
+              member: c.member,
+              date: c.date,
+              locationName: c.locationName,
+              lat: c.lat,
+              lng: c.lng,
+              note: c.note,
+              album: c.album,
+              albums: c.albums,
+              image: c.image,
+              filterConfig: c.filterConfig,
+              isLandscape: c.isLandscape,
+              backColor: c.backColor,
+              fav: c.fav,
+              deskX: c.deskX,
+              deskY: c.deskY,
+              deskRot: c.deskRot,
+              deskScale: c.deskScale,
+              deskZ: c.deskZ,
+              deskFlipped: c.deskFlipped,
+              chekiTags: c.chekiTags,
+              isRemastered: c.isRemastered,
+              remasterMode: c.remasterMode
+            };
+            chunks.push(JSON.stringify(slimCard));
+          }
+
+          chunks.push('],"albums":');
+          chunks.push(JSON.stringify(albums || []));
+          chunks.push(',"deskBgConfig":');
+          chunks.push(JSON.stringify(deskBgConfig || {}));
+          chunks.push(',"customChekiTags":');
+          chunks.push(JSON.stringify(typeof customChekiTags !== 'undefined' ? customChekiTags : []));
+          chunks.push(',"cheerEvents":');
+          chunks.push(JSON.stringify(typeof cheerEvents !== 'undefined' ? cheerEvents : []));
+          chunks.push(',"cheerTopics":');
+          chunks.push(JSON.stringify(typeof cheerTopics !== 'undefined' ? cheerTopics : []));
+          chunks.push(',"chekiSets":');
+          chunks.push(JSON.stringify(typeof chekiSets !== 'undefined' ? chekiSets : []));
+          chunks.push(',"exportedAt":');
+          chunks.push(JSON.stringify(new Date().toISOString()));
+          chunks.push('}');
+
+          const blob = new Blob(chunks, { type: 'application/json;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = url;
+          a.download = `ChekiPocket_Backup_${cards.length}cards_${new Date().toISOString().slice(0, 10)}.json`;
+          document.body.appendChild(a);
+          a.click();
+
+          setTimeout(() => {
+            a.remove();
+            URL.revokeObjectURL(url); // 延長至 60 秒後釋放，確保手機大檔案完整寫入磁碟
+          }, 60000);
+
+          const sizeMB = (blob.size / (1024 * 1024)).toFixed(1);
+          window.showChekiToast(`✅ 備份檔已開始下載（共 ${cards.length} 張 · 約 ${sizeMB} MB）！`, 4000);
+        } catch (err) {
+          _origNativeAlert.call(window, '❌ 匯出備份失敗：' + (err.message || err));
+        } finally {
+          exportBtns.forEach(b => {
+            if (b._origHtml) b.innerHTML = b._origHtml;
+            b.disabled = false;
+          });
+        }
+      }, 60);
+    };
 
     // 👆 3. 大圖檢視「👇 下拉關閉 + 🔍 雙擊 2.5 倍放大與拖曳平移 + 雙指縮放」手勢引擎
     function applyInspectZoomTransform(smooth = true) {
@@ -9364,7 +9494,6 @@ function switchCheerModalTab(mode) {
       if (!modal || !flipInner || !flipWrapper || modal._proGesturesBound) return;
       modal._proGesturesBound = true;
 
-      // 在底部提示列上方加入「🔍 雙擊放大 2.5x ｜ 👇 下拉關閉」互動膠囊
       const hintP = modal.querySelector('p.text-white\\/70');
       if (hintP) {
         hintP.innerHTML = `👆 單擊翻面 · 🔍 雙擊放大 2.5x · 👇 下拉關閉`;
@@ -9374,7 +9503,6 @@ function switchCheerModalTab(mode) {
         hintP.insertAdjacentElement('beforebegin', pillWrap);
       }
 
-      // 接管 flipWrapper 點擊：支援「快速雙擊＝2.5倍放大」、「單擊＝3D翻面」
       flipWrapper.removeAttribute('onclick');
       let lastTapTime = 0;
       let singleTapTimer = null;
@@ -9386,7 +9514,6 @@ function switchCheerModalTab(mode) {
         const isBackSide = flipInner.classList.contains('rotate-y-180');
 
         if (!isBackSide && (now - lastTapTime < 260)) {
-          // 觸發雙擊放大 / 還原！
           if (singleTapTimer) { clearTimeout(singleTapTimer); singleTapTimer = null; }
           lastTapTime = 0;
           window.triggerHaptic(12);
@@ -9403,10 +9530,7 @@ function switchCheerModalTab(mode) {
           }
         } else {
           lastTapTime = now;
-          if (inspectZoomScale > 1) {
-            // 放大狀態下單擊不翻面，避免誤觸
-            return;
-          }
+          if (inspectZoomScale > 1) return;
           if (singleTapTimer) clearTimeout(singleTapTimer);
           singleTapTimer = setTimeout(() => {
             singleTapTimer = null;
@@ -9416,7 +9540,6 @@ function switchCheerModalTab(mode) {
         }
       });
 
-      // 手勢處理：1. 放大時單指拖曳看細節 | 2. 雙指捏合無段縮放 | 3. 未放大時向下拉關閉視窗
       let startX = 0, startY = 0, initPanX = 0, initPanY = 0;
       let isPullingDown = false, pullDy = 0;
       let isPinchingZoom = false, pinchStartDist = 0, pinchInitScale = 1;
@@ -9459,7 +9582,6 @@ function switchCheerModalTab(mode) {
 
         if (Math.hypot(dx, dy) > 8) gestureMoved = true;
 
-        // 情況 A：已放大 (>1x) -> 單指自由平移睇相片細節，並阻擋左右滑動切相
         if (inspectZoomScale > 1.02) {
           e.stopPropagation();
           const maxPan = 180 * (inspectZoomScale - 1);
@@ -9469,7 +9591,6 @@ function switchCheerModalTab(mode) {
           return;
         }
 
-        // 情況 B：未放大 (1x) 且手指明顯向下拉 -> 觸發「👇 下拉縮小關閉視窗」動效
         if (dy > 16 && dy > Math.abs(dx) * 1.35) {
           isPullingDown = true;
           pullDy = dy;
@@ -9519,7 +9640,6 @@ function switchCheerModalTab(mode) {
       wrap.id = 'floatingBinderNavWrap';
       wrap.className = 'fixed bottom-20 right-3 z-40 flex flex-col items-end gap-1.5 pointer-events-none';
       wrap.innerHTML = `
-        <!-- 展開式月份快速跳轉清單 -->
         <div id="monthScrubberList" class="hidden pointer-events-auto bg-white/95 backdrop-blur-md rounded-2xl neo-box p-1.5 max-h-60 overflow-y-auto flex flex-col gap-1 shadow-2xl"></div>
 
         <div class="flex items-center gap-1.5">
@@ -9616,7 +9736,7 @@ function switchCheerModalTab(mode) {
       bindInspectProGestures();
       loadThumbsFromDB();
 
-      // 1. 將所有縮圖網格渲染函數包裹於 runWithThumbnailProxy，瞬間減少 95% 記憶體解碼負擔！
+      // 1. 將所有縮圖網格渲染函數包裹於 runWithThumbnailProxy（含指紋核對，改圖後 0 秒即時顯示新圖！）
       ['renderBinder', 'renderDesk', 'renderCalendarDayCards', 'renderBatchPickerGrid', 'renderBatchTagCardsGrid', 'renderPosterCardPicker', 'renderSlotPickerGrid'].forEach(fnName => {
         const origFn = window[fnName];
         if (typeof origFn === 'function' && !origFn._wrappedThumbProxy) {
@@ -9640,7 +9760,6 @@ function switchCheerModalTab(mode) {
             if (lastDeskTapCardId === card.id && (now - lastDeskTapTime < 280)) {
               lastDeskTapCardId = null;
               lastDeskTapTime = 0;
-              // 復原剛才第 2 下點擊觸發的翻面，並直接打開高清大圖
               card.deskFlipped = !card.deskFlipped;
               const inner = el.querySelector('.desk-flip-inner');
               if (inner) inner.classList.toggle('rotate-y-180', card.deskFlipped);
@@ -9664,29 +9783,36 @@ function switchCheerModalTab(mode) {
           const realCard = cards.find(c => c.id === id);
           const inspectImg = document.getElementById('inspectImg');
           if (realCard && inspectImg) {
-            inspectImg.src = realCard.image; // 強制確保大圖檢視永遠顯示 100% 原始無損大圖
+            inspectImg.src = realCard.image;
           }
           bindInspectProGestures();
         };
         window.openInspectModal._wrappedZoomReset = true;
       }
 
-      // 4. 當新增或修改儲存相片時，即時更新該相片的輕量縮圖快取
+      // 4. 當新增或修改儲存相片時，先即時清除舊縮圖，生成最新縮圖後立即重新渲染畫面！
       const origSaveCard = window.saveCard;
       if (typeof origSaveCard === 'function' && !origSaveCard._wrappedThumbUpdate) {
         window.saveCard = async function() {
           const targetId = editingCardId;
+          if (targetId) {
+            delete chekiThumbMap[targetId];
+            delete chekiThumbSigMap[targetId];
+          }
           await origSaveCard.apply(this, arguments);
           const saved = targetId ? cards.find(c => c.id === targetId) : cards[0];
           if (saved && saved.image) {
+            const newSig = getCardImageSignature(saved.image);
             chekiThumbMap[saved.id] = await createSingleCardThumb(saved.image);
+            chekiThumbSigMap[saved.id] = newSig;
             saveThumbsToDBDebounced();
+            renderCurrentTab(); // 縮圖更新後立即刷新卡冊/桌布預覽！
           }
         };
         window.saveCard._wrappedThumbUpdate = true;
       }
 
-      // 5. 當資料庫載入完成時，自動同步縮圖快取
+      // 5. 當資料庫載入完成時，自動同步縮圖快取並檢查過期縮圖
       const origLoadData = window.loadDataFromDB;
       if (typeof origLoadData === 'function' && !origLoadData._wrappedThumbLoad) {
         window.loadDataFromDB = async function() {
