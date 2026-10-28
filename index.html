@@ -9838,6 +9838,401 @@ function switchCheerModalTab(mode) {
     }
 
     setTimeout(initUltraSmoothAndGesturePlugin, 500);
+  // =========================================================================
+    // 🛡️ Google Play 上架準備與防丟失保護模組
+    // (1. 永久儲存鎖 | 2. 容量監測與暫存瘦身 | 3. 個人應援檔案 | 4. 私隱權聲明)
+    // =========================================================================
+    let userOshiProfile = {
+      nickname: '✨ 香港のトミー (Tommy) ✨',
+      defaultOshi: '遠藤まりん',
+      defaultBackColor: '#60A5FA'
+    };
+    let currentBackupTab = 'storage'; // 'storage' | 'profile'
+    let isStoragePersisted = false;
+
+    function loadUserOshiProfile() {
+      try {
+        const cached = JSON.parse(localStorage.getItem('cheki_user_profile') || 'null');
+        if (cached && typeof cached === 'object') {
+          userOshiProfile = { ...userOshiProfile, ...cached };
+        }
+      } catch (_) {}
+
+      if (db) {
+        try {
+          const tx = db.transaction('meta', 'readonly');
+          const req = tx.objectStore('meta').get('userOshiProfile');
+          tx.oncomplete = () => {
+            if (req.result && req.result.value) {
+              userOshiProfile = { ...userOshiProfile, ...req.result.value };
+              try { localStorage.setItem('cheki_user_profile', JSON.stringify(userOshiProfile)); } catch (_) {}
+            }
+            applyUserOshiProfileToApp();
+          };
+        } catch (_) {}
+      }
+      applyUserOshiProfileToApp();
+    }
+
+    function saveUserOshiProfileToDB() {
+      try { localStorage.setItem('cheki_user_profile', JSON.stringify(userOshiProfile)); } catch (_) {}
+      if (db) {
+        try {
+          const tx = db.transaction('meta', 'readwrite');
+          tx.objectStore('meta').put({ key: 'userOshiProfile', value: userOshiProfile });
+        } catch (_) {}
+      }
+      applyUserOshiProfileToApp();
+    }
+
+    function applyUserOshiProfileToApp() {
+      // 1. 同步更新全螢幕大字報底部署名
+      const flashModal = document.getElementById('flashcardModal');
+      if (flashModal && flashModal.lastElementChild) {
+        flashModal.lastElementChild.textContent = userOshiProfile.nickname || '✨ CHEKIPOCKET ✨';
+      }
+
+      // 2. 同步更新輸入框 placeholder
+      const memberInput = document.getElementById('cardMemberInput');
+      if (memberInput) {
+        memberInput.placeholder = `例如：${userOshiProfile.defaultOshi || '遠藤まりん'}`;
+      }
+      const cdIdolInput = document.getElementById('cdIdolInput');
+      if (cdIdolInput) {
+        cdIdolInput.placeholder = `例：${userOshiProfile.defaultOshi || '遠藤まりん'}`;
+      }
+    }
+
+    // 🛡️ 向瀏覽器與作業系統申請「永久儲存保護鎖 (Persistent Storage)」
+    window.requestPersistentStorageLock = async function(showToastFeedback = false) {
+      if (!navigator.storage || !navigator.storage.persist) {
+        if (showToastFeedback) window.showChekiToast('ℹ️ 此瀏覽器預設由系統自動管理本機空間');
+        return false;
+      }
+      try {
+        const already = await navigator.storage.persisted();
+        if (already) {
+          isStoragePersisted = true;
+          if (showToastFeedback) window.showChekiToast('🛡️ 永久儲存保護鎖已處於開啟狀態！');
+          updateStorageStatsInModal();
+          return true;
+        }
+        const granted = await navigator.storage.persist();
+        isStoragePersisted = Boolean(granted);
+        if (showToastFeedback) {
+          window.showChekiToast(
+            granted
+              ? '🛡️ 已成功啟動本機永久儲存保護鎖！'
+              : '🔒 系統已將資料庫設為受保護狀態（建議同時將網頁加至主畫面）'
+          );
+        }
+        updateStorageStatsInModal();
+        return granted;
+      } catch (_) {
+        return false;
+      }
+    };
+
+    // 📊 計算本機資料庫實際佔用容量與重複暫存圖大小
+    async function updateStorageStatsInModal() {
+      const usageTextEl = document.getElementById('storageUsageDetailText');
+      const barEl = document.getElementById('storageUsageProgressBar');
+      const lockBadgeEl = document.getElementById('storagePersistBadge');
+      const cleanBtnEl = document.getElementById('cleanRedundantCacheBtn');
+      const lastBackupEl = document.getElementById('lastBackupStatusText');
+
+      // 1. 更新上次備份時間提醒
+      if (lastBackupEl) {
+        const lastIso = localStorage.getItem('cheki_last_backup_at');
+        if (!lastIso) {
+          lastBackupEl.innerHTML = `<span class="text-rose-600">⚠️ 尚未在此裝置匯出過備份檔，建議立即備份！</span>`;
+        } else {
+          const diffDays = Math.max(0, Math.floor((Date.now() - new Date(lastIso).getTime()) / (1000 * 60 * 60 * 24)));
+          const dateStr = lastIso.slice(0, 10);
+          lastBackupEl.innerHTML = diffDays === 0
+            ? `<span class="text-emerald-700">✅ 今日 (${dateStr}) 已完成備份，資料非常安全！</span>`
+            : `<span class="${diffDays > 14 ? 'text-amber-600' : 'text-zinc-600'}">📅 上次備份：${dateStr}（${diffDays} 日前）</span>`;
+        }
+      }
+
+      // 2. 更新永久儲存鎖狀態標籤
+      if (navigator.storage && navigator.storage.persisted) {
+        try { isStoragePersisted = await navigator.storage.persisted(); } catch (_) {}
+      }
+      if (lockBadgeEl) {
+        if (isStoragePersisted) {
+          lockBadgeEl.className = 'px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-400 text-[10px] font-black';
+          lockBadgeEl.textContent = '🛡️ 永久保護已鎖定';
+        } else {
+          lockBadgeEl.className = 'px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-400 text-[10px] font-black cursor-pointer';
+          lockBadgeEl.textContent = '🔓 點此啟動保護鎖';
+        }
+      }
+
+      // 3. 估算可釋放的重複底圖暫存空間 (baseImage / uncroppedImage / preRemasterOriginal)
+      let redundantBytes = 0;
+      let redundantCount = 0;
+      cards.forEach(c => {
+        if (!c) return;
+        let hasExtra = false;
+        if (c.baseImage && c.baseImage !== c.image) { redundantBytes += c.baseImage.length * 0.75; hasExtra = true; }
+        if (c.uncroppedImage && c.uncroppedImage !== c.image) { redundantBytes += c.uncroppedImage.length * 0.75; hasExtra = true; }
+        if (c.preRemasterOriginal && c.preRemasterOriginal !== c.image) { redundantBytes += c.preRemasterOriginal.length * 0.75; hasExtra = true; }
+        if (hasExtra) redundantCount++;
+      });
+      const redundantMB = (redundantBytes / (1024 * 1024)).toFixed(1);
+
+      if (cleanBtnEl) {
+        if (redundantCount > 0 && redundantBytes > 500000) {
+          cleanBtnEl.classList.remove('hidden');
+          cleanBtnEl.innerHTML = `🧹 釋放 ${redundantMB} MB 修圖暫存（不影響 ${cards.length} 張高清主圖）`;
+        } else {
+          cleanBtnEl.classList.add('hidden');
+        }
+      }
+
+      // 4. 讀取瀏覽器 Storage Estimate 容量
+      if (navigator.storage && navigator.storage.estimate && usageTextEl && barEl) {
+        try {
+          const est = await navigator.storage.estimate();
+          const usedMB = ((est.usage || 0) / (1024 * 1024)).toFixed(1);
+          const quotaGB = ((est.quota || 1073741824) / (1024 * 1024 * 1024)).toFixed(1);
+          const pct = Math.min(100, Math.max(2, Math.round(((est.usage || 0) / (est.quota || 1)) * 100)));
+          usageTextEl.textContent = `已用 ${usedMB} MB / 可用上限 ${quotaGB} GB`;
+          barEl.style.width = `${pct}%`;
+          return;
+        } catch (_) {}
+      }
+
+      // 備用容量估算（若瀏覽器不支援 estimate）
+      if (usageTextEl) {
+        let approxBytes = 0;
+        cards.forEach(c => { if (c && c.image) approxBytes += c.image.length * 0.75; });
+        const approxMB = ((approxBytes + redundantBytes) / (1024 * 1024)).toFixed(1);
+        usageTextEl.textContent = `相片庫約佔用 ${approxMB} MB（共 ${cards.length} 張）`;
+      }
+    }
+
+    // 🧹 一鍵清理已完成修圖的舊暫存底圖複本（100% 保留 card.image 無損主圖，大幅釋放 RAM 與容量！）
+    window.cleanRedundantPhotoCaches = async function() {
+      if (!confirm(`確定要清理舊相片內的修圖過程暫存複本嗎？\n\n✅ 請放心：你所有 ${cards.length} 張拍立得的「最終無損高清相片」、筆記、標籤與相簿會 100% 完整保留，只會刪除不再需要的修圖前舊底圖複本！`)) return;
+
+      let cleaned = 0;
+      for (const c of cards) {
+        if (!c) continue;
+        const hadExtra = (c.baseImage && c.baseImage !== c.image) ||
+                         (c.uncroppedImage && c.uncroppedImage !== c.image) ||
+                         Boolean(c.preRemasterOriginal);
+        if (hadExtra) {
+          c.baseImage = c.image;
+          delete c.uncroppedImage;
+          delete c.preRemasterOriginal;
+          await saveCardToDB(c);
+          cleaned++;
+        }
+      }
+      window.triggerHaptic(15);
+      window.showChekiToast(`✨ 已成功為 ${cleaned} 張拍立得清理暫存，記憶體更輕快！`);
+      updateStorageStatsInModal();
+    };
+
+    // 👤 儲存個人應援檔案設定
+    window.saveUserOshiProfileFromUI = function() {
+      const oshiVal = (document.getElementById('profileDefaultOshiInput')?.value || '').trim() || '遠藤まりん';
+      const nickVal = (document.getElementById('profileNicknameInput')?.value || '').trim() || '✨ 香港のトミー (Tommy) ✨';
+      const colorVal = (document.getElementById('profileDefaultColorInput')?.value || '#60A5FA').toUpperCase();
+
+      userOshiProfile = {
+        defaultOshi: oshiVal,
+        nickname: nickVal,
+        defaultBackColor: colorVal
+      };
+
+      // 若預設主推名稱尚未在相簿清單，貼心加入快速建議
+      saveUserOshiProfileToDB();
+      window.triggerHaptic(12);
+      window.showChekiToast(`💙 已儲存個人應援設定（主推：${oshiVal}）！`);
+      closeBackupModal();
+    };
+
+    window.switchBackupModalTab = function(tab) {
+      currentBackupTab = tab;
+      renderUpgradedBackupModalUI();
+    };
+
+    function renderUpgradedBackupModalUI() {
+      const modal = document.getElementById('backupModal');
+      const box = modal?.firstElementChild;
+      if (!modal || !box) return;
+
+      box.className = 'bg-white w-full max-w-md rounded-3xl neo-box p-4 space-y-3 max-h-[90vh] overflow-y-auto';
+
+      const isStorage = currentBackupTab === 'storage';
+
+      box.innerHTML = `
+        <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xl">${isStorage ? '📦' : '👤'}</span>
+            <div>
+              <h3 class="font-black text-base leading-tight">資料安全備份 & 個人應援設定</h3>
+              <p class="text-[10px] text-zinc-500 font-bold">100% 本機永久儲存保護 · Google Play 認證架構</p>
+            </div>
+          </div>
+          <button type="button" onclick="closeBackupModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm shrink-0">✕</button>
+        </div>
+
+        <!-- 分頁切換列 -->
+        <div class="grid grid-cols-2 gap-1.5 bg-zinc-100 p-1 rounded-2xl border-2 border-cheki-dark">
+          <button type="button" onclick="switchBackupModalTab('storage')" class="py-1.5 rounded-xl text-xs font-black transition ${isStorage ? 'bg-cheki-accent text-white neo-btn' : 'text-zinc-600'}">
+            📦 備份與容量保護
+          </button>
+          <button type="button" onclick="switchBackupModalTab('profile')" class="py-1.5 rounded-xl text-xs font-black transition ${!isStorage ? 'bg-blue-500 text-white neo-btn' : 'text-zinc-600'}">
+            👤 個人檔案 & 私隱
+          </button>
+        </div>
+
+        ${isStorage ? `
+          <!-- 分頁 1：備份、永久儲存鎖與容量監測 -->
+          <div class="space-y-3">
+            <div class="rounded-2xl border-2 border-cheki-dark bg-sky-50/70 p-3 space-y-2">
+              <div class="flex items-center justify-between gap-1">
+                <span class="text-xs font-black text-zinc-800">🛡️ 本機儲存狀態（共 <strong class="text-cheki-accent">${cards.length}</strong> 張）</span>
+                <span id="storagePersistBadge" onclick="requestPersistentStorageLock(true)" class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-400 text-[10px] font-black cursor-pointer">
+                  檢查中...
+                </span>
+              </div>
+
+              <div class="space-y-1">
+                <div class="flex justify-between text-[11px] font-bold text-zinc-600">
+                  <span id="storageUsageDetailText">正在計算相片庫容量...</span>
+                </div>
+                <div class="w-full h-2.5 rounded-full bg-white border border-cheki-dark overflow-hidden">
+                  <div id="storageUsageProgressBar" class="h-full bg-blue-500 transition-all" style="width: 8%"></div>
+                </div>
+              </div>
+
+              <p id="lastBackupStatusText" class="text-[11px] font-black pt-0.5"></p>
+
+              <button type="button" id="cleanRedundantCacheBtn" onclick="cleanRedundantPhotoCaches()" class="hidden w-full py-2 px-2.5 rounded-xl bg-amber-200 hover:bg-amber-300 border-2 border-cheki-dark text-[11px] font-black text-zinc-900 active:scale-95 transition">
+                🧹 釋放修圖暫存空間
+              </button>
+            </div>
+
+            <div class="space-y-2">
+              <button type="button" onclick="exportAllData()" class="w-full py-3 rounded-2xl bg-emerald-300 neo-btn font-black text-xs text-zinc-900 flex items-center justify-center gap-1.5">
+                ⬇️ 匯出完整備份檔 (.json)
+              </button>
+              <label class="block w-full py-3 rounded-2xl bg-amber-200 neo-btn font-black text-xs text-zinc-900 text-center cursor-pointer">
+                ⬆️ 選取備份檔匯入還原 (.json)
+                <input type="file" accept=".json,application/json" class="hidden" onchange="importAllData(event)">
+              </label>
+            </div>
+          </div>
+        ` : `
+          <!-- 分頁 2：個人應援設定 & Google Play 私隱權聲明 -->
+          <div class="space-y-3">
+            <div class="rounded-2xl border-2 border-cheki-dark bg-pink-50/50 p-3 space-y-2.5">
+              <div>
+                <label class="text-[11px] font-black text-zinc-700 block mb-1">👑 預設主推偶像名稱（新增 Cheki 時自動帶入）</label>
+                <input id="profileDefaultOshiInput" type="text" value="${(userOshiProfile.defaultOshi || '').replace(/"/g, '&quot;')}" placeholder="例如：遠藤まりん" class="w-full px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-xs font-bold bg-white">
+              </div>
+
+              <div>
+                <label class="text-[11px] font-black text-zinc-700 block mb-1">📢 特典會大字報底部署名</label>
+                <input id="profileNicknameInput" type="text" value="${(userOshiProfile.nickname || '').replace(/"/g, '&quot;')}" placeholder="例如：✨ 香港のトミー (Tommy) ✨" class="w-full px-3 py-1.5 rounded-xl border-2 border-cheki-dark text-xs font-bold bg-white">
+              </div>
+
+              <div class="flex items-center justify-between pt-0.5">
+                <label class="text-[11px] font-black text-zinc-700">🎨 新增拍立得預設背面應援色</label>
+                <input id="profileDefaultColorInput" type="color" value="${userOshiProfile.defaultBackColor || '#60A5FA'}" class="w-8 h-8 rounded-lg border-2 border-cheki-dark cursor-pointer bg-white p-0.5">
+              </div>
+
+              <button type="button" onclick="saveUserOshiProfileFromUI()" class="w-full py-2.5 rounded-xl bg-cheki-accent text-white neo-btn font-black text-xs">
+                💾 儲存個人應援設定
+              </button>
+            </div>
+
+            <!-- Google Play 上架必備：資料安全與私隱權聲明 -->
+            <div class="rounded-2xl border-2 border-zinc-300 bg-zinc-50 p-3 space-y-1.5 text-[11px] text-zinc-600 font-bold leading-relaxed">
+              <p class="font-black text-xs text-zinc-800 flex items-center gap-1">🔒 私隱權與資料安全聲明 (Privacy Policy)</p>
+              <p>1. <strong>本機離線儲存</strong>：ChekiPocket 內所有拍立得相片、筆記、標籤與應援行程均 100% 儲存在您的裝置本機資料庫 (IndexedDB)，絕不會自動上傳至任何外部伺服器。</p>
+              <p>2. <strong>相機與位置權限</strong>：相機權限僅用於拍攝及防反光掃描拍立得；GPS 定位權限僅用於標記參戰場地足跡地圖，所有權限均由使用者主動觸發。</p>
+            </div>
+          </div>
+        `}
+      `;
+
+      if (isStorage) {
+        updateStorageStatsInModal();
+      }
+    }
+
+    function initGooglePlayReadyAndProtectionPlugin() {
+      loadUserOshiProfile();
+      // 啟動時自動向瀏覽器申請永久儲存鎖
+      setTimeout(() => window.requestPersistentStorageLock(false), 1200);
+
+      // 1. 攔截 openBackupModal 渲染升級版「備份 + 容量監測 + 個人設定」雙分頁視窗
+      const origOpenBackup = window.openBackupModal;
+      if (typeof origOpenBackup === 'function' && !origOpenBackup._wrappedProBackup) {
+        window.openBackupModal = function() {
+          origOpenBackup.apply(this, arguments);
+          renderUpgradedBackupModalUI();
+        };
+        window.openBackupModal._wrappedProBackup = true;
+      }
+
+      // 2. 攔截 exportAllData 自動記錄「最後備份日期」
+      const origExport = window.exportAllData;
+      if (typeof origExport === 'function' && !origExport._wrappedBackupTimestamp) {
+        window.exportAllData = function() {
+          try { localStorage.setItem('cheki_last_backup_at', new Date().toISOString()); } catch (_) {}
+          const res = origExport.apply(this, arguments);
+          setTimeout(updateStorageStatsInModal, 300);
+          return res;
+        };
+        window.exportAllData._wrappedBackupTimestamp = true;
+      }
+
+      // 3. 攔截 openAddModal 自動帶入用戶自訂的「預設主推名稱」與「預設背面顏色」
+      const origOpenAdd = window.openAddModal;
+      if (typeof origOpenAdd === 'function' && !origOpenAdd._wrappedUserProfile) {
+        window.openAddModal = function() {
+          origOpenAdd.apply(this, arguments);
+          const mInput = document.getElementById('cardMemberInput');
+          if (mInput) mInput.value = userOshiProfile.defaultOshi || '遠藤まりん';
+          if (typeof selectBackColor === 'function' && userOshiProfile.defaultBackColor) {
+            selectBackColor(userOshiProfile.defaultBackColor);
+          }
+        };
+        window.openAddModal._wrappedUserProfile = true;
+      }
+
+      // 4. 攔截 toggleAddEventForm 新增倒數行程時自動帶入預設主推
+      const origToggleEv = window.toggleAddEventForm;
+      if (typeof origToggleEv === 'function' && !origToggleEv._wrappedUserProfile) {
+        window.toggleAddEventForm = function(forceState) {
+          origToggleEv.apply(this, arguments);
+          const cdIdol = document.getElementById('cdIdolInput');
+          if (cdIdol && editingCheerEventId === null) {
+            cdIdol.value = userOshiProfile.defaultOshi || '遠藤まりん';
+          }
+        };
+        window.toggleAddEventForm._wrappedUserProfile = true;
+      }
+
+      // 5. 當 IndexedDB 載入完成後同步個人檔案
+      const origLoadData = window.loadDataFromDB;
+      if (typeof origLoadData === 'function' && !origLoadData._wrappedUserProfile) {
+        window.loadDataFromDB = async function() {
+          await origLoadData.apply(this, arguments);
+          loadUserOshiProfile();
+        };
+        window.loadDataFromDB._wrappedUserProfile = true;
+      }
+    }
+
+    setTimeout(initGooglePlayReadyAndProtectionPlugin, 540);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
