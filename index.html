@@ -10233,6 +10233,684 @@ function switchCheerModalTab(mode) {
     }
 
     setTimeout(initGooglePlayReadyAndProtectionPlugin, 540);
+// =========================================================================
+    // 💬 特典會對話氣泡劇場 (Oshi Talk Log) ＋ 🖼️ 正背面同框炫耀分享卡 (IG / X Showcase)
+    // =========================================================================
+    let showcaseRatioMode = '4:3'; // '4:3' (X 橫式並排) | '9:16' (IG Story 直式)
+    let showcaseThemeMode = 'card'; // 'card' | 'blue' | 'pink' | 'dark' | 'white'
+    let showcaseCurrentDataUrl = '';
+
+    // 1. 解析筆記文字：自動識別「我：...」、「偶像：...」與「旁白/Pose備註」
+    function parseOshiTalkNote(rawNote, memberName) {
+      const text = (rawNote || '').trim();
+      if (!text) return { hasDialogue: false, lines: [] };
+
+      const rawLines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const userPrefixRegex = /^(我|自分|僕|俺|トミー|tommy|me|🗣️|🙋‍♂️)\s*[:：]\s*(.+)$/i;
+      const genericSpeakerRegex = /^([^:：]{1,12})\s*[:：]\s*(.+)$/;
+
+      let dialogueCount = 0;
+      const parsed = rawLines.map(line => {
+        const userMatch = line.match(userPrefixRegex);
+        if (userMatch) {
+          dialogueCount++;
+          return { type: 'user', speaker: '我', content: userMatch[2].trim() };
+        }
+        const spMatch = line.match(genericSpeakerRegex);
+        if (spMatch) {
+          const sp = spMatch[1].trim();
+          // 排除純時間格式如 12:30
+          if (!/^\d+$/.test(sp)) {
+            dialogueCount++;
+            const cleanSp = sp.replace(/^[💙👑🌸✨🎤💌]+\s*/, '') || (memberName || '推し');
+            return { type: 'idol', speaker: cleanSp, content: spMatch[2].trim() };
+          }
+        }
+        return { type: 'memo', speaker: '', content: line };
+      });
+
+      return { hasDialogue: dialogueCount > 0, lines: parsed };
+    }
+
+    // 2. 在新增/編輯視窗的「背面筆記」上方加入一鍵插入對話按鈕
+    function injectTalkQuickButtonsInEditModal() {
+      const noteInput = document.getElementById('cardNoteInput');
+      if (!noteInput || !noteInput.parentElement || document.getElementById('oshiTalkQuickBar')) return;
+
+      const bar = document.createElement('div');
+      bar.id = 'oshiTalkQuickBar';
+      bar.className = 'flex items-center justify-between gap-1 mb-1.5 flex-wrap';
+      bar.innerHTML = `
+        <span class="text-[11px] font-black text-zinc-700">💬 背面筆記 / 特典會對話劇場</span>
+        <div class="flex items-center gap-1">
+          <button type="button" onclick="insertOshiTalkPrefix('idol')" class="px-2 py-0.5 rounded-lg bg-blue-100 hover:bg-blue-200 border border-cheki-dark text-[10px] font-black text-blue-900 active:scale-95 transition">
+            + 💙偶像講
+          </button>
+          <button type="button" onclick="insertOshiTalkPrefix('user')" class="px-2 py-0.5 rounded-lg bg-pink-100 hover:bg-pink-200 border border-cheki-dark text-[10px] font-black text-pink-900 active:scale-95 transition">
+            + 🗣️我講
+          </button>
+          <button type="button" onclick="insertOshiTalkPrefix('memo')" class="px-2 py-0.5 rounded-lg bg-amber-100 hover:bg-amber-200 border border-cheki-dark text-[10px] font-black text-amber-900 active:scale-95 transition">
+            + 📸Pose備註
+          </button>
+        </div>
+      `;
+
+      const oldLabel = noteInput.parentElement.querySelector('label');
+      if (oldLabel) oldLabel.style.display = 'none';
+      noteInput.parentElement.insertBefore(bar, noteInput);
+      noteInput.rows = 3;
+      noteInput.placeholder = '可自由輸入筆記，或點上方按鈕記錄對話：\n我：香港から会いに来たよ！💙\nまりん：えー！ありがとう！また来てね✨';
+    }
+
+    window.insertOshiTalkPrefix = function(role) {
+      const noteInput = document.getElementById('cardNoteInput');
+      if (!noteInput) return;
+      const memberRaw = (document.getElementById('cardMemberInput')?.value || '遠藤まりん').trim();
+      // 取偶像名字簡稱讓氣泡更親切
+      const shortMember = memberRaw.includes('まりん') ? 'まりん' : memberRaw;
+
+      let prefix = '';
+      if (role === 'idol') prefix = `${shortMember}：`;
+      else if (role === 'user') prefix = `我：`;
+      else prefix = `📸 `;
+
+      const cur = noteInput.value;
+      const needsNewline = cur.length > 0 && !cur.endsWith('\n');
+      noteInput.value = cur + (needsNewline ? '\n' : '') + prefix;
+      noteInput.focus();
+      noteInput.scrollTop = noteInput.scrollHeight;
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(8);
+    };
+
+    // 3. 將大圖檢視背面 (#inspectBackNote) 升級為「💬 LINE 風雙人對話氣泡劇場」
+    function renderInspectBackTalkTheatre(card) {
+      const noteEl = document.getElementById('inspectBackNote');
+      if (!noteEl || !card) return;
+
+      const parsed = parseOshiTalkNote(card.note, card.member);
+      if (!parsed.hasDialogue) {
+        noteEl.className = 'font-marker text-lg sm:text-xl font-black text-center whitespace-pre-wrap break-words my-auto px-1 overflow-y-auto max-h-full no-scrollbar';
+        noteEl.textContent = card.note || '（尚無背面筆記）';
+        return;
+      }
+
+      noteEl.className = 'w-full flex-1 my-2 overflow-y-auto no-scrollbar flex flex-col gap-2 px-0.5 py-1 text-left font-sans';
+      noteEl.innerHTML = parsed.lines.map(item => {
+        if (item.type === 'idol') {
+          return `
+            <div class="flex items-start gap-1.5 w-full pr-3">
+              <div class="w-6 h-6 rounded-full bg-white text-blue-600 border-2 border-zinc-900 flex items-center justify-center text-[11px] font-black shrink-0 shadow-sm mt-0.5">
+                💙
+              </div>
+              <div class="flex flex-col items-start min-w-0">
+                <span class="text-[9px] font-black opacity-85 pl-1 mb-0.5">${item.speaker}</span>
+                <div class="px-2.5 py-1.5 rounded-2xl rounded-tl-sm bg-white/95 text-zinc-900 border-2 border-zinc-900 shadow-sm text-xs font-black leading-snug break-words">
+                  ${item.content}
+                </div>
+              </div>
+            </div>
+          `;
+        } else if (item.type === 'user') {
+          return `
+            <div class="flex flex-col items-end w-full pl-5">
+              <span class="text-[9px] font-black opacity-80 pr-1 mb-0.5">🗣️ 我</span>
+              <div class="px-2.5 py-1.5 rounded-2xl rounded-tr-sm bg-zinc-900/85 text-white border-2 border-white/60 shadow-sm text-xs font-black leading-snug break-words text-left">
+                ${item.content}
+              </div>
+            </div>
+          `;
+        } else {
+          return `
+            <div class="self-center px-2.5 py-0.5 rounded-full bg-black/20 border border-current/30 text-[10px] font-black text-center max-w-[92%] break-words">
+              ${item.content}
+            </div>
+          `;
+        }
+      }).join('');
+    }
+
+    // =========================================================================
+    // 🖼️ 「正背面同框」IG Story / X 炫耀分享卡生成器
+    // =========================================================================
+    function ensureShowcaseModalExists() {
+      if (document.getElementById('showcaseCardModal')) return;
+      const div = document.createElement('div');
+      div.innerHTML = `
+        <div id="showcaseCardModal" class="hidden fixed inset-0 z-[110] bg-black/85 flex items-center justify-center p-2.5 overflow-y-auto">
+          <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-3.5 space-y-3 max-h-[92vh] overflow-y-auto block">
+            <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xl">🖼️</span>
+                <div>
+                  <h3 class="font-black text-base leading-tight text-zinc-900">正背面同框 · 炫耀分享卡</h3>
+                  <p class="text-[10px] text-zinc-500 font-bold">同時展示正面 Cheki 與背面對話/筆記，直發 IG / X ✨</p>
+                </div>
+              </div>
+              <button type="button" onclick="closeShowcaseCardModal()" class="w-8 h-8 rounded-full bg-white neo-btn font-black text-sm text-zinc-900 shrink-0">✕</button>
+            </div>
+
+            <!-- 預覽框 -->
+            <div class="bg-zinc-900 rounded-2xl p-2.5 border-2 border-cheki-dark overflow-hidden block">
+              <div id="showcaseLoadingHint" class="hidden text-xs font-black text-amber-300 py-8 text-center animate-pulse">⏳ 正在合成超清正背面分享卡...</div>
+              <div class="w-full h-[38vh] max-h-[310px] overflow-hidden flex items-center justify-center bg-zinc-950/80 rounded-xl p-1.5 border border-zinc-800">
+                <img id="showcasePreviewImg" src="" class="max-h-full max-w-full w-auto h-auto object-contain rounded-lg shadow-2xl block mx-auto" alt="正背面分享卡預覽">
+              </div>
+            </div>
+
+            <!-- 版面比例與主題選擇 -->
+            <div class="neo-box bg-white rounded-2xl p-3 space-y-2.5 text-zinc-900">
+              <div class="grid grid-cols-2 gap-1.5">
+                <button type="button" id="scRatioBtn43" onclick="setShowcaseRatio('4:3')" class="py-2 px-2 rounded-xl border-2 border-cheki-dark text-xs font-black transition">
+                  🐦 X 橫式並排 (4:3)
+                </button>
+                <button type="button" id="scRatioBtn916" onclick="setShowcaseRatio('9:16')" class="py-2 px-2 rounded-xl border-2 border-cheki-dark text-xs font-black transition">
+                  📱 IG Story 直式 (9:16)
+                </button>
+              </div>
+
+              <div>
+                <span class="text-[10px] font-black text-zinc-500 block mb-1">🎨 分享卡背景主題：</span>
+                <div class="grid grid-cols-5 gap-1" id="showcaseThemeBtns">
+                  <button type="button" onclick="setShowcaseTheme('card')" data-sctheme="card" class="py-1.5 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-sky-100">🌈 卡片色</button>
+                  <button type="button" onclick="setShowcaseTheme('blue')" data-sctheme="blue" class="py-1.5 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-blue-100">💙 天藍</button>
+                  <button type="button" onclick="setShowcaseTheme('pink')" data-sctheme="pink" class="py-1.5 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-pink-100">🌸 櫻粉</button>
+                  <button type="button" onclick="setShowcaseTheme('dark')" data-sctheme="dark" class="py-1.5 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-zinc-800 text-white">🖤 星空黑</button>
+                  <button type="button" onclick="setShowcaseTheme('white')" data-sctheme="white" class="py-1.5 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-zinc-50">✨ 純白</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 下載與系統分享 -->
+            <div class="grid grid-cols-2 gap-2">
+              <button type="button" onclick="downloadShowcaseCard()" class="py-3 px-3 rounded-2xl bg-cheki-accent text-white neo-btn font-black text-xs flex items-center justify-center gap-1">
+                ⬇️ 下載高清分享卡
+              </button>
+              <button type="button" onclick="shareShowcaseCard()" class="py-3 px-3 rounded-2xl bg-sky-300 text-zinc-900 neo-btn font-black text-xs flex items-center justify-center gap-1">
+                📤 分享至 IG / X
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(div);
+    }
+
+    window.openShowcaseCardModal = function() {
+      const card = cards.find(c => c.id === inspectingCardId);
+      if (!card) return;
+      ensureShowcaseModalExists();
+      updateShowcaseControlsUI();
+      document.getElementById('showcaseCardModal').classList.remove('hidden');
+      renderShowcaseCardCanvas(card);
+    };
+
+    window.closeShowcaseCardModal = function() {
+      document.getElementById('showcaseCardModal')?.classList.add('hidden');
+    };
+
+    window.setShowcaseRatio = function(r) {
+      showcaseRatioMode = r;
+      updateShowcaseControlsUI();
+      const card = cards.find(c => c.id === inspectingCardId);
+      if (card) renderShowcaseCardCanvas(card);
+    };
+
+    window.setShowcaseTheme = function(t) {
+      showcaseThemeMode = t;
+      updateShowcaseControlsUI();
+      const card = cards.find(c => c.id === inspectingCardId);
+      if (card) renderShowcaseCardCanvas(card);
+    };
+
+    function updateShowcaseControlsUI() {
+      const b43 = document.getElementById('scRatioBtn43');
+      const b916 = document.getElementById('scRatioBtn916');
+      if (b43) b43.className = `py-2 px-2 rounded-xl border-2 border-cheki-dark text-xs font-black transition ${showcaseRatioMode === '4:3' ? 'bg-cheki-accent text-white shadow' : 'bg-zinc-100 text-zinc-700'}`;
+      if (b916) b916.className = `py-2 px-2 rounded-xl border-2 border-cheki-dark text-xs font-black transition ${showcaseRatioMode === '9:16' ? 'bg-cheki-accent text-white shadow' : 'bg-zinc-100 text-zinc-700'}`;
+
+      document.querySelectorAll('#showcaseThemeBtns button').forEach(btn => {
+        const active = btn.dataset.sctheme === showcaseThemeMode;
+        btn.style.outline = active ? '3px solid #FF5C8A' : 'none';
+        btn.style.outlineOffset = '1px';
+      });
+    }
+
+    // Canvas 自動斷行輔助函數
+    function wrapCanvasTextLines(ctx, text, maxWidth) {
+      const paragraphs = (text || '').split('\n');
+      const lines = [];
+      paragraphs.forEach(p => {
+        if (!p) { lines.push(''); return; }
+        let cur = '';
+        for (const ch of p) {
+          const test = cur + ch;
+          if (ctx.measureText(test).width > maxWidth && cur.length > 0) {
+            lines.push(cur);
+            cur = ch;
+          } else {
+            cur = test;
+          }
+        }
+        if (cur) lines.push(cur);
+      });
+      return lines;
+    }
+
+    // 在 Canvas 上繪製仿真拍立得背面卡（支援 💬 雙人對話氣泡 與 ✒️ 手寫筆記）
+    function drawSimulatedBackCardOnCanvas(ctx, card, x, y, w, h, tiltDeg) {
+      ctx.save();
+      const cx = x + w / 2, cy = y + h / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((tiltDeg * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+
+      const cornerR = Math.round(w * 0.045);
+      const backColor = card.backColor || '#60A5FA';
+      const textColor = typeof getContrastTextColor === 'function' ? getContrastTextColor(backColor) : '#FFFFFF';
+      const isLightCard = textColor === '#272228';
+
+      // 1. 立體硬陰影與卡紙主體
+      ctx.fillStyle = 'rgba(20, 20, 28, 0.32)';
+      drawRoundedRectPath(ctx, x + 12, y + 16, w, h, cornerR);
+      ctx.fill();
+
+      ctx.fillStyle = backColor;
+      drawRoundedRectPath(ctx, x, y, w, h, cornerR);
+      ctx.fill();
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = isLightCard ? '#272228' : 'rgba(255,255,255,0.75)';
+      ctx.stroke();
+
+      // 2. 筆記本橫紋暗線
+      ctx.save();
+      drawRoundedRectPath(ctx, x, y, w, h, cornerR);
+      ctx.clip();
+      ctx.strokeStyle = isLightCard ? 'rgba(39,34,40,0.08)' : 'rgba(255,255,255,0.16)';
+      ctx.lineWidth = 2;
+      const lineSpacing = Math.round(h / 13);
+      for (let ly = y + Math.round(h * 0.16); ly < y + h - Math.round(h * 0.14); ly += lineSpacing) {
+        ctx.beginPath();
+        ctx.moveTo(x + 28, ly);
+        ctx.lineTo(x + w - 28, ly);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      const pad = Math.round(w * 0.065);
+      // 3. 頂部郵戳日期與場地膠囊
+      const topY = y + pad;
+      const pillH = Math.round(h * 0.055);
+      ctx.font = `900 ${Math.round(w * 0.033)}px "Zen Maru Gothic", sans-serif`;
+      ctx.textBaseline = 'middle';
+
+      if (card.date) {
+        const dTxt = `📅 ${card.date}`;
+        const dw = ctx.measureText(dTxt).width + 28;
+        ctx.fillStyle = isLightCard ? 'rgba(39,34,40,0.08)' : 'rgba(0,0,0,0.22)';
+        drawRoundedRectPath(ctx, x + pad, topY, dw, pillH, pillH / 2);
+        ctx.fill();
+        ctx.fillStyle = textColor;
+        ctx.fillText(dTxt, x + pad + 14, topY + pillH / 2 + 1);
+      }
+
+      if (card.locationName) {
+        const lTxt = `📍 ${card.locationName.slice(0, 12)}`;
+        const lw = Math.min(w * 0.48, ctx.measureText(lTxt).width + 28);
+        const lx = x + w - pad - lw;
+        ctx.fillStyle = isLightCard ? 'rgba(39,34,40,0.08)' : 'rgba(0,0,0,0.22)';
+        drawRoundedRectPath(ctx, lx, topY, lw, pillH, pillH / 2);
+        ctx.fill();
+        ctx.fillStyle = textColor;
+        ctx.fillText(lTxt, lx + 14, topY + pillH / 2 + 1);
+      }
+
+      // 4. 中段內容區：自動判斷繪製「💬 對話氣泡劇場」或「✒️ 置中手寫筆記」
+      const contentTop = topY + pillH + Math.round(h * 0.035);
+      const contentBottom = y + h - Math.round(h * 0.14);
+      const availH = contentBottom - contentTop;
+      const parsed = parseOshiTalkNote(card.note, card.member);
+
+      if (parsed.hasDialogue) {
+        let curY = contentTop;
+        const maxBubbleW = Math.round((w - pad * 2) * 0.82);
+        const fontSize = Math.round(w * 0.038);
+        const lineH = Math.round(fontSize * 1.38);
+
+        parsed.lines.forEach(item => {
+          if (curY > contentBottom - lineH) return;
+          ctx.font = `900 ${fontSize}px "Zen Maru Gothic", sans-serif`;
+
+          if (item.type === 'memo') {
+            const mLines = wrapCanvasTextLines(ctx, item.content, w - pad * 2 - 24).slice(0, 2);
+            const mh = mLines.length * lineH + 14;
+            const mw = Math.min(w - pad * 2, Math.max(...mLines.map(l => ctx.measureText(l).width)) + 36);
+            const mx = x + Math.round((w - mw) / 2);
+            ctx.fillStyle = isLightCard ? 'rgba(39,34,40,0.1)' : 'rgba(0,0,0,0.25)';
+            drawRoundedRectPath(ctx, mx, curY, mw, mh, mh / 2);
+            ctx.fill();
+            ctx.fillStyle = textColor;
+            ctx.textAlign = 'center';
+            mLines.forEach((ml, idx) => {
+              ctx.fillText(ml, x + w / 2, curY + 7 + idx * lineH + lineH / 2);
+            });
+            ctx.textAlign = 'left';
+            curY += mh + 14;
+            return;
+          }
+
+          const bLines = wrapCanvasTextLines(ctx, item.content, maxBubbleW - 36).slice(0, 4);
+          const textMaxW = Math.max(...bLines.map(l => ctx.measureText(l).width), 60);
+          const bubbleW = Math.min(maxBubbleW, textMaxW + 38);
+          const bubbleH = bLines.length * lineH + 22;
+
+          // 繪製說話者小標籤
+          ctx.font = `900 ${Math.round(w * 0.027)}px "Zen Maru Gothic", sans-serif`;
+          ctx.fillStyle = textColor;
+          if (item.type === 'idol') {
+            ctx.fillText(`💙 ${item.speaker}`, x + pad + 6, curY + 8);
+          } else {
+            ctx.textAlign = 'right';
+            ctx.fillText(`🗣️ 我`, x + w - pad - 6, curY + 8);
+            ctx.textAlign = 'left';
+          }
+          curY += Math.round(w * 0.036);
+
+          const bx = item.type === 'idol' ? (x + pad) : (x + w - pad - bubbleW);
+
+          // 氣泡陰影與底框
+          ctx.fillStyle = 'rgba(0,0,0,0.18)';
+          drawRoundedRectPath(ctx, bx + 3, curY + 4, bubbleW, bubbleH, 20);
+          ctx.fill();
+
+          ctx.fillStyle = item.type === 'idol' ? '#FFFFFF' : '#272228';
+          drawRoundedRectPath(ctx, bx, curY, bubbleW, bubbleH, 20);
+          ctx.fill();
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = '#272228';
+          ctx.stroke();
+
+          ctx.font = `900 ${fontSize}px "Zen Maru Gothic", sans-serif`;
+          ctx.fillStyle = item.type === 'idol' ? '#272228' : '#FFFFFF';
+          bLines.forEach((bl, idx) => {
+            ctx.fillText(bl, bx + 18, curY + 11 + idx * lineH + lineH / 2);
+          });
+
+          curY += bubbleH + 16;
+        });
+      } else {
+        // 置中手寫風筆記
+        const noteStr = (card.note && card.note.trim()) ? card.note.trim() : `✨ ${card.member || 'Cheki'} Memory ✨`;
+        const fontSize = noteStr.length > 45 ? Math.round(w * 0.045) : Math.round(w * 0.056);
+        const lineH = Math.round(fontSize * 1.45);
+        ctx.font = `900 ${fontSize}px "Caveat", "Zen Maru Gothic", sans-serif`;
+        ctx.fillStyle = textColor;
+        ctx.textAlign = 'center';
+
+        const wrapped = wrapCanvasTextLines(ctx, noteStr, w - pad * 2 - 16).slice(0, 8);
+        const totalTextH = wrapped.length * lineH;
+        let startY = contentTop + Math.max(0, Math.round((availH - totalTextH) / 2)) + lineH / 2;
+
+        wrapped.forEach(line => {
+          ctx.fillText(line, x + w / 2, startY);
+          startY += lineH;
+        });
+        ctx.textAlign = 'left';
+      }
+
+      // 5. 底部 INSTAX CHEKI MEMORY 簽名銘牌
+      const footerLineY = y + h - Math.round(h * 0.115);
+      ctx.strokeStyle = isLightCard ? 'rgba(39,34,40,0.22)' : 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(x + pad, footerLineY);
+      ctx.lineTo(x + w - pad, footerLineY);
+      ctx.stroke();
+
+      const plaqueY = footerLineY + Math.round(h * 0.055);
+      ctx.fillStyle = textColor;
+      ctx.font = `900 ${Math.round(w * 0.025)}px "Inter", "Zen Maru Gothic", sans-serif`;
+      ctx.fillText('INSTAX CHEKI MEMORY', x + pad, plaqueY);
+
+      ctx.textAlign = 'right';
+      ctx.font = `900 ${Math.round(w * 0.042)}px "Zen Maru Gothic", sans-serif`;
+      ctx.fillText(`✒️ ${card.member || ''}`, x + w - pad, plaqueY);
+      ctx.textAlign = 'left';
+
+      ctx.restore();
+    }
+
+    // 繪製正面拍立得卡片
+    function drawFrontChekiOnCanvas(ctx, img, x, y, w, h, tiltDeg) {
+      ctx.save();
+      const cx = x + w / 2, cy = y + h / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((tiltDeg * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+
+      const cornerR = Math.round(w * 0.045);
+      ctx.fillStyle = 'rgba(20, 20, 28, 0.35)';
+      drawRoundedRectPath(ctx, x + 12, y + 16, w, h, cornerR);
+      ctx.fill();
+
+      ctx.fillStyle = '#FFFDF9';
+      drawRoundedRectPath(ctx, x, y, w, h, cornerR);
+      ctx.fill();
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#272228';
+      ctx.stroke();
+
+      if (img) {
+        const pad = Math.round(w * 0.028);
+        const availW = w - pad * 2;
+        const availH = h - pad * 2;
+        const sc = Math.min(availW / img.naturalWidth, availH / img.naturalHeight);
+        const dw = Math.round(img.naturalWidth * sc);
+        const dh = Math.round(img.naturalHeight * sc);
+        const dx = x + Math.round((w - dw) / 2);
+        const dy = y + Math.round((h - dh) / 2);
+
+        ctx.save();
+        drawRoundedRectPath(ctx, dx, dy, dw, dh, Math.round(cornerR * 0.6));
+        ctx.clip();
+        ctx.drawImage(img, dx, dy, dw, dh);
+
+        // 柔和 45 度卡膜反光斜紋
+        const sheen = ctx.createLinearGradient(dx, dy, dx + dw, dy + dh);
+        sheen.addColorStop(0.35, 'rgba(255,255,255,0)');
+        sheen.addColorStop(0.48, 'rgba(255,255,255,0.22)');
+        sheen.addColorStop(0.60, 'rgba(255,255,255,0)');
+        ctx.fillStyle = sheen;
+        ctx.fillRect(dx, dy, dw, dh);
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    async function renderShowcaseCardCanvas(card) {
+      const previewImg = document.getElementById('showcasePreviewImg');
+      const loadingHint = document.getElementById('showcaseLoadingHint');
+      if (!previewImg || !card) return;
+      if (loadingHint) loadingHint.classList.remove('hidden');
+
+      const img = await loadImgPromise(card.image);
+      const is43 = showcaseRatioMode === '4:3';
+      const canvasW = is43 ? 1600 : 1080;
+      const canvasH = is43 ? 1200 : 1920;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+
+      // 1. 背景配色
+      const cardColor = card.backColor || '#60A5FA';
+      const themes = {
+        card:  { bg1: '#F0F7FF', bg2: cardColor, dark: false },
+        blue:  { bg1: '#E0F2FE', bg2: '#93C5FD', dark: false },
+        pink:  { bg1: '#FCE7F3', bg2: '#F9A8D4', dark: false },
+        dark:  { bg1: '#0F172A', bg2: '#1E293B', dark: true },
+        white: { bg1: '#FFFDF9', bg2: '#E4E4E7', dark: false }
+      };
+      const th = themes[showcaseThemeMode] || themes.card;
+
+      const grad = ctx.createLinearGradient(0, 0, canvasW, canvasH);
+      grad.addColorStop(0, th.bg1);
+      grad.addColorStop(1, th.bg2);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvasW, canvasH);
+
+      // 背景圓點網格暗紋
+      ctx.fillStyle = th.dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.45)';
+      for (let py = 36; py < canvasH; py += 48) {
+        for (let px = 36; px < canvasW; px += 48) {
+          ctx.beginPath();
+          ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // 2. 頂部標題膠囊橫幅
+      const hdrW = canvasW - 110;
+      const hdrH = is43 ? 115 : 130;
+      const hdrX = 55, hdrY = 48;
+
+      ctx.fillStyle = '#272228';
+      drawRoundedRectPath(ctx, hdrX + 6, hdrY + 6, hdrW, hdrH, 30);
+      ctx.fill();
+
+      ctx.fillStyle = th.dark ? '#1E293B' : '#FFFFFF';
+      drawRoundedRectPath(ctx, hdrX, hdrY, hdrW, hdrH, 30);
+      ctx.fill();
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#272228';
+      ctx.stroke();
+
+      ctx.fillStyle = th.dark ? '#F8FAFC' : '#272228';
+      ctx.font = `900 ${is43 ? 42 : 40}px "Zen Maru Gothic", sans-serif`;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`👑 ${card.member || 'Cheki'}`, hdrX + 34, hdrY + hdrH * 0.38);
+
+      const metaParts = [];
+      if (card.date) metaParts.push(`📅 ${card.date}`);
+      if (card.locationName) metaParts.push(`📍 ${card.locationName}`);
+      const allOpts = typeof getAllChekiTagOptions === 'function' ? getAllChekiTagOptions() : [];
+      if (Array.isArray(card.chekiTags) && card.chekiTags.length > 0) {
+        const tagLabels = card.chekiTags.map(id => allOpts.find(o => o.id === id)?.label).filter(Boolean).slice(0, 2);
+        if (tagLabels.length) metaParts.push(tagLabels.join(' · '));
+      }
+
+      ctx.fillStyle = th.dark ? '#94A3B8' : '#52525B';
+      ctx.font = `700 ${is43 ? 24 : 22}px "Zen Maru Gothic", sans-serif`;
+      ctx.fillText(metaParts.join('  ｜  ') || '✨ Cheki Front & Back Memory', hdrX + 36, hdrY + hdrH * 0.74);
+
+      // 3. 繪製正面與背面雙卡
+      if (is43) {
+        // 🐦 4:3 橫式左右並排
+        const cardW = 580;
+        const cardH = 820;
+        const cardsY = hdrY + hdrH + 55;
+        drawFrontChekiOnCanvas(ctx, img, 145, cardsY, cardW, cardH, -2.2);
+        drawSimulatedBackCardOnCanvas(ctx, card, 875, cardsY, cardW, cardH, 2.2);
+      } else {
+        // 📱 9:16 IG Story 上下錯位疊放
+        const cardW = 560;
+        const cardH = 760;
+        drawFrontChekiOnCanvas(ctx, img, 85, hdrY + hdrH + 45, cardW, cardH, -3.2);
+        drawSimulatedBackCardOnCanvas(ctx, card, 435, hdrY + hdrH + 740, cardW, cardH, 2.8);
+      }
+
+      // 4. 底部個人署名銘牌
+      const nick = (typeof userOshiProfile !== 'undefined' && userOshiProfile.nickname)
+        ? userOshiProfile.nickname
+        : '✨ 香港のトミー (Tommy) ✨';
+      ctx.fillStyle = th.dark ? 'rgba(255,255,255,0.75)' : 'rgba(39,34,40,0.70)';
+      ctx.font = '900 24px "Zen Maru Gothic", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${nick}  ·  📸 ChekiPocket`, canvasW / 2, canvasH - 34);
+      ctx.textAlign = 'left';
+
+      showcaseCurrentDataUrl = canvas.toDataURL('image/jpeg', 0.96);
+      previewImg.src = showcaseCurrentDataUrl;
+      if (loadingHint) loadingHint.classList.add('hidden');
+    }
+
+    window.downloadShowcaseCard = function() {
+      if (!showcaseCurrentDataUrl) return;
+      const card = cards.find(c => c.id === inspectingCardId);
+      const a = document.createElement('a');
+      a.href = showcaseCurrentDataUrl;
+      a.download = `${card?.member || 'Cheki'}_${card?.date || ''}_正背面分享卡.jpg`;
+      a.click();
+    };
+
+    window.shareShowcaseCard = async function() {
+      if (!showcaseCurrentDataUrl) return;
+      try {
+        const res = await fetch(showcaseCurrentDataUrl);
+        const blob = await res.blob();
+        const file = new File([blob], `Cheki_Showcase_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: 'Cheki 正背面珍藏分享卡',
+            files: [file]
+          });
+          return;
+        }
+      } catch (_) {}
+      window.downloadShowcaseCard();
+    };
+
+    function initTalkTheatreAndShowcasePlugin() {
+      injectTalkQuickButtonsInEditModal();
+
+      // 1. 升級大圖檢視底部按鈕列：並列「📥 匯出原圖」與「🖼️ 正背面分享卡」
+      const exportBtn = document.querySelector('#inspectModal button[onclick="exportInspectImage()"]');
+      if (exportBtn && !document.getElementById('openShowcaseModalBtn')) {
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-2 gap-2 w-full shrink-0 z-30';
+        exportBtn.parentNode.insertBefore(row, exportBtn);
+
+        exportBtn.className = 'w-full py-2.5 rounded-2xl bg-white text-zinc-900 font-black text-xs neo-box flex items-center justify-center gap-1 active:scale-95 transition';
+        exportBtn.innerHTML = '📥 匯出原畫質原圖';
+        row.appendChild(exportBtn);
+
+        const scBtn = document.createElement('button');
+        scBtn.type = 'button';
+        scBtn.id = 'openShowcaseModalBtn';
+        scBtn.onclick = window.openShowcaseCardModal;
+        scBtn.className = 'w-full py-2.5 rounded-2xl bg-cheki-accent text-white font-black text-xs neo-box flex items-center justify-center gap-1 active:scale-95 transition';
+        scBtn.innerHTML = '🖼️ 正背面分享卡';
+        row.appendChild(scBtn);
+      }
+
+      // 2. 攔截 openInspectModal 自動將背面筆記渲染為「💬 對話氣泡劇場」
+      const origOpenInspect = window.openInspectModal;
+      if (typeof origOpenInspect === 'function' && !origOpenInspect._wrappedTalkTheatre) {
+        window.openInspectModal = function(id) {
+          origOpenInspect.apply(this, arguments);
+          const card = cards.find(c => c.id === id);
+          if (card) renderInspectBackTalkTheatre(card);
+        };
+        window.openInspectModal._wrappedTalkTheatre = true;
+      }
+
+      // 3. 攔截 openAddModal / openEditFromInspect 確保插入對話按鈕就緒
+      ['openAddModal', 'openEditFromInspect'].forEach(fnName => {
+        const origFn = window[fnName];
+        if (typeof origFn === 'function' && !origFn._wrappedTalkQuickBar) {
+          window[fnName] = function() {
+            const res = origFn.apply(this, arguments);
+            injectTalkQuickButtonsInEditModal();
+            return res;
+          };
+          window[fnName]._wrappedTalkQuickBar = true;
+        }
+      });
+    }
+
+    setTimeout(initTalkTheatreAndShowcasePlugin, 580);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
