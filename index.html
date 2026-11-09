@@ -11711,6 +11711,454 @@ function switchCheerModalTab(mode) {
     }
 
     setTimeout(initUltimateStatsUpgradePlugin, 620);
+// =========================================================================
+    // 🔧 底層隱患修復 ＋ ⚡ 卡冊分批渲染加速與批次 IndexedDB 寫入引擎
+    // =========================================================================
+    const BINDER_BATCH_SIZE = 24;
+    let binderRenderLimit = BINDER_BATCH_SIZE;
+    let binderCurrentFullList = [];
+    let binderIntersectionObserver = null;
+
+    // 1. 高速批次寫入 IndexedDB（單一 Transaction 一次過寫入多張卡，比逐張 await 快約 10 倍）
+    window.saveCardsBatchToDB = function(cardList) {
+      return new Promise((resolve) => {
+        if (!db || !Array.isArray(cardList) || cardList.length === 0) return resolve();
+        try {
+          const tx = db.transaction('cards', 'readwrite');
+          const store = tx.objectStore('cards');
+          cardList.forEach(c => {
+            if (c && c.id) store.put(c);
+          });
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+        } catch (_) {
+          resolve();
+        }
+      });
+    };
+
+    // 2. 建立單張仿真卡冊袋 DOM 節點（直接整合輕量縮圖與卡冊袋外觀，免除多層攔截重繪）
+    function createBinderCardSlotNode(card) {
+      const thumbSrc = (typeof chekiThumbMap !== 'undefined' &&
+                        typeof chekiThumbSigMap !== 'undefined' &&
+                        typeof getCardImageSignature === 'function' &&
+                        chekiThumbMap[card.id] &&
+                        chekiThumbSigMap[card.id] === getCardImageSignature(card.image))
+        ? chekiThumbMap[card.id]
+        : card.image;
+
+      const item = document.createElement('div');
+      item.className = 'cheki-pocket-slot cursor-pointer group flex flex-col items-center';
+      item.dataset.cardId = card.id;
+      item.onclick = () => openInspectModal(card.id);
+      item.innerHTML = `
+        <div class="cheki-pocket-inner w-full aspect-[3/4] flex items-center justify-center p-1 relative">
+          <img src="${thumbSrc}" loading="lazy" decoding="async" draggable="false" class="max-h-full max-w-full object-contain rounded-lg shadow-md group-active:scale-95 transition pointer-events-none">
+          ${card.fav ? '<span class="absolute top-2 right-2 text-base drop-shadow">⭐</span>' : ''}
+        </div>
+        <div class="pocket-label-upgraded w-full pt-1.5 mt-1 border-t border-zinc-100 flex flex-col items-center text-center">
+          <p class="font-black text-xs text-zinc-900 truncate max-w-full px-1">${card.member || '未命名'}</p>
+          <p class="text-[10px] text-zinc-500 font-bold">${card.date || ''}</p>
+          ${card.locationName ? `<p class="text-[9px] font-black px-2 py-0.5 mt-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 truncate max-w-full">📍 ${card.locationName}</p>` : ''}
+        </div>
+      `;
+      return item;
+    }
+
+    // 3. 滾動到底部時無縫追加下一批拍立得節點
+    function appendNextBinderBatch() {
+      const grid = document.getElementById('binderGrid');
+      if (!grid) return;
+
+      const sentinel = document.getElementById('binderScrollSentinel');
+      if (sentinel) sentinel.remove();
+
+      const currentRendered = grid.querySelectorAll('.cheki-pocket-slot').length;
+      if (currentRendered >= binderCurrentFullList.length) return;
+
+      const nextSlice = binderCurrentFullList.slice(currentRendered, binderRenderLimit);
+      const frag = document.createDocumentFragment();
+      nextSlice.forEach(card => {
+        frag.appendChild(createBinderCardSlotNode(card));
+      });
+      grid.appendChild(frag);
+
+      if (binderRenderLimit < binderCurrentFullList.length) {
+        const nextSentinel = document.createElement('div');
+        nextSentinel.id = 'binderScrollSentinel';
+        nextSentinel.className = 'col-span-full py-4 text-center text-xs font-black text-zinc-400';
+        nextSentinel.textContent = `⏳ 向下滑動載入更多拍立得 (${binderRenderLimit} / ${binderCurrentFullList.length})...`;
+        grid.appendChild(nextSentinel);
+
+        if (!binderIntersectionObserver && 'IntersectionObserver' in window) {
+          binderIntersectionObserver = new IntersectionObserver((entries) => {
+            if (entries.some(e => e.isIntersecting)) {
+              binderRenderLimit = Math.min(binderCurrentFullList.length, binderRenderLimit + BINDER_BATCH_SIZE);
+              appendNextBinderBatch();
+            }
+          }, { rootMargin: '260px' });
+        }
+        if (binderIntersectionObserver) {
+          binderIntersectionObserver.observe(nextSentinel);
+        }
+      }
+    }
+
+    // 4. 以單一高效能分批渲染引擎取代原本 6 層包裹的 renderBinder
+    window.renderBinder = function(keepScrollLimit = false) {
+      const pills = document.getElementById('albumFilterPills');
+      if (pills) {
+        pills.innerHTML = '';
+        ['ALL', ...albums].forEach(alb => {
+          const btn = document.createElement('button');
+          const active = selectedAlbumFilter === alb;
+          const count = alb === 'ALL' ? cards.length : cards.filter(c => cardBelongsToAlbum(c, alb)).length;
+          btn.className = `px-3 py-1.5 rounded-full text-xs font-black neo-btn shrink-0 ${active ? 'bg-cheki-accent text-white' : 'bg-white'}`;
+          btn.textContent = alb === 'ALL' ? `全部相簿 (${count})` : `${alb} (${count})`;
+          btn.onclick = () => { selectedAlbumFilter = alb; renderBinder(false); };
+          pills.appendChild(btn);
+        });
+      }
+
+      const actionBar = document.getElementById('currentAlbumActionBar');
+      if (actionBar) {
+        if (selectedAlbumFilter !== 'ALL') {
+          actionBar.classList.remove('hidden');
+          const titleEl = document.getElementById('currentAlbumTitleText');
+          if (titleEl) titleEl.textContent = `📁 當前相簿：${selectedAlbumFilter}`;
+        } else {
+          actionBar.classList.add('hidden');
+        }
+      }
+
+      const memberPills = document.getElementById('memberFilterPills');
+      if (memberPills) {
+        memberPills.innerHTML = '';
+        const idolCounts = getIdolCounts();
+        if (idolCounts.length > 0) {
+          const allMemberBtn = document.createElement('button');
+          const isAllMember = selectedMemberFilter === 'ALL';
+          allMemberBtn.className = `px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark shrink-0 ${isAllMember ? 'bg-blue-500 text-white' : 'bg-blue-50 text-zinc-700'}`;
+          allMemberBtn.textContent = `👥 全部偶像 (${cards.length}張)`;
+          allMemberBtn.onclick = () => { selectedMemberFilter = 'ALL'; renderBinder(false); };
+          memberPills.appendChild(allMemberBtn);
+
+          idolCounts.forEach(item => {
+            const btn = document.createElement('button');
+            const active = selectedMemberFilter === item.member;
+            btn.className = `px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark shrink-0 ${active ? 'bg-blue-500 text-white' : 'bg-white text-zinc-700'}`;
+            btn.textContent = `${item.member} (${item.count}張)`;
+            btn.onclick = () => { selectedMemberFilter = item.member; renderBinder(false); };
+            memberPills.appendChild(btn);
+          });
+        }
+      }
+
+      const favBtn = document.getElementById('favFilterBtn');
+      if (favBtn) {
+        favBtn.className = `px-3 py-1.5 rounded-full text-xs font-black neo-btn shrink-0 ${favOnlyFilter ? 'bg-amber-300' : 'bg-white'}`;
+      }
+
+      const grid = document.getElementById('binderGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      binderCurrentFullList = getFilteredCards();
+      if (!keepScrollLimit) {
+        binderRenderLimit = BINDER_BATCH_SIZE;
+      } else {
+        binderRenderLimit = Math.max(BINDER_BATCH_SIZE, Math.min(binderCurrentFullList.length || BINDER_BATCH_SIZE, binderRenderLimit));
+      }
+
+      if (binderCurrentFullList.length === 0) {
+        const curTag = typeof selectedTagFilter !== 'undefined' ? selectedTagFilter : 'ALL';
+        grid.innerHTML = `
+          <div class="col-span-full text-center py-10 space-y-3">
+            <p class="text-zinc-400 font-bold text-sm">此分類或搜尋條件下尚無拍立得</p>
+            ${(selectedAlbumFilter !== 'ALL' || selectedMemberFilter !== 'ALL' || favOnlyFilter || curTag !== 'ALL') ? `<button onclick="resetAllBinderFilters()" class="px-4 py-2 rounded-xl bg-blue-100 neo-btn text-xs font-black">🔄 顯示全部相簿與偶像</button>` : ''}
+            ${selectedAlbumFilter !== 'ALL' ? `<button onclick="openBatchAlbumPicker('${selectedAlbumFilter.replace(/'/g, "\\'")}')" class="px-4 py-2 rounded-xl bg-cheki-accent text-white neo-btn text-xs font-black">➕ 從現有 Cheki 勾選加入此相簿</button>` : ''}
+          </div>
+        `;
+      } else {
+        appendNextBinderBatch();
+      }
+
+      if (typeof applyBinderGridColumnsUI === 'function') applyBinderGridColumnsUI();
+      if (typeof updateBinderUpgradeToolbarUI === 'function') updateBinderUpgradeToolbarUI();
+      if (typeof organizeBinderCleanUI === 'function') organizeBinderCleanUI();
+      if (typeof scheduleBackgroundThumbnailGeneration === 'function') scheduleBackgroundThumbnailGeneration();
+    };
+    window.renderBinder._wrappedPoster = true;
+    window.renderBinder._wrappedForUpgrade = true;
+    window.renderBinder._wrappedCleanUI = true;
+    window.renderBinder._wrappedPocketDesign = true;
+    window.renderBinder._wrappedThumbProxy = true;
+
+    // 5. 升級月份快跳：若目標月份超出目前首屏 24 張範圍，自動展開所需格仔並順滑定位
+    window.jumpToBinderCardIndex = function(cardIdx, ymLabel) {
+      const scList = document.getElementById('monthScrubberList');
+      isMonthScrubberOpen = false;
+      if (scList) scList.classList.add('hidden');
+
+      if (cardIdx >= binderRenderLimit) {
+        binderRenderLimit = Math.min(binderCurrentFullList.length, cardIdx + BINDER_BATCH_SIZE);
+        appendNextBinderBatch();
+        if (typeof applyBinderGridColumnsUI === 'function') applyBinderGridColumnsUI();
+      }
+
+      const grid = document.getElementById('binderGrid');
+      const targetEl = grid?.querySelectorAll('.cheki-pocket-slot')?.[cardIdx];
+      if (targetEl) {
+        if (typeof window.triggerHaptic === 'function') window.triggerHaptic(12);
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        targetEl.style.outline = '3.5px solid var(--oshi-accent)';
+        targetEl.style.outlineOffset = '4px';
+        setTimeout(() => {
+          targetEl.style.outline = '';
+          targetEl.style.outlineOffset = '';
+        }, 1600);
+        const mText = document.getElementById('floatingCurrentMonthText');
+        if (mText) mText.textContent = ymLabel;
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast(`📅 已跳轉至 ${ymLabel} 的拍立得`);
+        }
+      }
+    };
+
+    // 6. 將桌布排列與批次儲存改為單一 Transaction 高速批次寫入
+    const _origScatterDesk = window.scatterDeskCards;
+    if (typeof _origScatterDesk === 'function') {
+      window.scatterDeskCards = function() {
+        const origSingleSave = window.saveCardToDB;
+        const dirtyCards = [];
+        window.saveCardToDB = (c) => { dirtyCards.push(c); return Promise.resolve(); };
+        try {
+          _origScatterDesk.apply(this, arguments);
+        } finally {
+          window.saveCardToDB = origSingleSave;
+          window.saveCardsBatchToDB(dirtyCards);
+        }
+      };
+    }
+
+    const _origNeatDesk = window.neatArrangeDeskCards;
+    if (typeof _origNeatDesk === 'function') {
+      window.neatArrangeDeskCards = function() {
+        const origSingleSave = window.saveCardToDB;
+        const dirtyCards = [];
+        window.saveCardToDB = (c) => { dirtyCards.push(c); return Promise.resolve(); };
+        try {
+          _origNeatDesk.apply(this, arguments);
+        } finally {
+          window.saveCardToDB = origSingleSave;
+          window.saveCardsBatchToDB(dirtyCards);
+        }
+      };
+    }
+
+    window.saveBatchAlbumSelection = async function() {
+      if (!batchTargetAlbum) return;
+      const modified = [];
+      for (const c of cards) {
+        const curAlbums = new Set(getCardAlbums(c));
+        const shouldBeIn = batchSelectedCardIds.has(c.id);
+        const currentlyIn = curAlbums.has(batchTargetAlbum);
+
+        if (shouldBeIn && !currentlyIn) {
+          curAlbums.add(batchTargetAlbum);
+          setCardAlbums(c, [...curAlbums]);
+          modified.push(c);
+        } else if (!shouldBeIn && currentlyIn) {
+          curAlbums.delete(batchTargetAlbum);
+          setCardAlbums(c, [...curAlbums]);
+          modified.push(c);
+        }
+      }
+      if (modified.length > 0) await window.saveCardsBatchToDB(modified);
+      closeBatchAlbumPicker();
+      updateHeaderStats();
+      renderCurrentTab();
+    };
+
+    window.saveBatchTagOldChekis = async function() {
+      const curOpt = getAllChekiTagOptions().find(t => t.id === batchTagCurrentId);
+      if (!curOpt) return;
+
+      const modified = [];
+      for (const c of cards) {
+        const tagSet = new Set(Array.isArray(c.chekiTags) ? c.chekiTags : []);
+        const shouldHave = batchTagSelectedCardIds.has(c.id);
+        const currentlyHas = tagSet.has(batchTagCurrentId);
+
+        if (shouldHave && !currentlyHas) {
+          if (curOpt.group === 'sign' || curOpt.group === 'shot') {
+            getAllChekiTagOptions().filter(t => t.group === curOpt.group).forEach(t => tagSet.delete(t.id));
+          }
+          tagSet.add(batchTagCurrentId);
+          c.chekiTags = [...tagSet];
+          modified.push(c);
+        } else if (!shouldHave && currentlyHas) {
+          tagSet.delete(batchTagCurrentId);
+          c.chekiTags = [...tagSet];
+          modified.push(c);
+        }
+      }
+
+      if (modified.length > 0) await window.saveCardsBatchToDB(modified);
+      closeBatchTagOldChekisModal();
+      renderCurrentTab();
+      alert(`✅ 已成功將「${curOpt.label}」同步更新至 ${batchTagSelectedCardIds.size} 張 Cheki！`);
+    };
+
+    // 7. 修復備份匯出與高速批次還原（補齊 chekiSets 與 userOshiProfile 還原，並使用單一 Transaction 匯入）
+    const _prevExportAll = window.exportAllData;
+    window.exportAllData = function() {
+      // 確保 userOshiProfile 同步寫入 localStorage 並納入備份
+      try {
+        localStorage.setItem('cheki_last_backup_at', new Date().toISOString());
+        if (typeof userOshiProfile !== 'undefined') {
+          localStorage.setItem('cheki_user_profile', JSON.stringify(userOshiProfile));
+        }
+      } catch (_) {}
+      return _prevExportAll.apply(this, arguments);
+    };
+
+    window.importAllData = function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast('⏳ 正在讀取並高速還原備份檔...', 3500);
+      }
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        try {
+          const parsed = JSON.parse(ev.target.result);
+          const importedCards = Array.isArray(parsed) ? parsed : (parsed.cards || parsed.chekis || []);
+          const importedAlbums = Array.isArray(parsed.albums) ? parsed.albums : [];
+
+          if (parsed.deskBgConfig && typeof parsed.deskBgConfig === 'object') {
+            deskBgConfig = { ...deskBgConfig, ...parsed.deskBgConfig };
+            await saveDeskBgConfigToDB();
+          }
+
+          if (Array.isArray(parsed.customChekiTags) && typeof customChekiTags !== 'undefined') {
+            parsed.customChekiTags.forEach(tagObj => {
+              if (tagObj && tagObj.id && !customChekiTags.some(t => t.id === tagObj.id)) {
+                customChekiTags.push(tagObj);
+              }
+            });
+            if (typeof saveCustomTagsToDB === 'function') saveCustomTagsToDB();
+          }
+
+          if (Array.isArray(parsed.cheerEvents) && parsed.cheerEvents.length > 0 && typeof cheerEvents !== 'undefined') {
+            cheerEvents = parsed.cheerEvents;
+          }
+          if (Array.isArray(parsed.cheerTopics) && typeof cheerTopics !== 'undefined') {
+            cheerTopics = parsed.cheerTopics;
+          }
+          if (typeof saveCheerDataToDB === 'function') saveCheerDataToDB();
+          if (typeof updateCountdownDisplays === 'function') updateCountdownDisplays();
+
+          // 補齊還原連拍套組 (chekiSets)
+          if (Array.isArray(parsed.chekiSets) && typeof chekiSets !== 'undefined') {
+            chekiSets = parsed.chekiSets;
+            if (typeof saveChekiSetsToDB === 'function') saveChekiSetsToDB();
+          }
+
+          // 補齊還原個人應援檔案設定 (userOshiProfile)
+          if (parsed.userOshiProfile && typeof parsed.userOshiProfile === 'object' && typeof userOshiProfile !== 'undefined') {
+            userOshiProfile = { ...userOshiProfile, ...parsed.userOshiProfile };
+            if (typeof saveUserOshiProfileToDB === 'function') saveUserOshiProfileToDB();
+          }
+
+          for (const alb of importedAlbums) {
+            if (alb && !albums.includes(alb)) albums.push(alb);
+          }
+
+          const batchToSave = [];
+          let count = 0;
+          for (const raw of importedCards) {
+            const rawAlbs = Array.isArray(raw.albums) && raw.albums.length > 0
+              ? raw.albums
+              : [raw.album || albums[0] || '預設相簿'];
+
+            const imgStr = raw.image || raw.img || raw.dataUrl || '';
+            if (!imgStr) continue;
+
+            const rawTags = Array.isArray(raw.chekiTags)
+              ? raw.chekiTags
+              : (Array.isArray(raw.tags) ? raw.tags : []);
+
+            const normalized = {
+              ...raw,
+              id: raw.id || (Date.now() + count + Math.floor(Math.random() * 100000)),
+              createdAt: raw.createdAt || Date.now(),
+              member: raw.member || raw.idol || raw.name || '遠藤まりん',
+              date: raw.date || new Date().toISOString().split('T')[0],
+              locationName: raw.locationName || raw.location || '',
+              lat: typeof raw.lat === 'number' ? raw.lat : null,
+              lng: typeof raw.lng === 'number' ? raw.lng : null,
+              note: raw.note || raw.memo || '',
+              image: imgStr,
+              baseImage: imgStr, // 統一使用主圖，避免重複底圖佔用 3 倍空間
+              filterConfig: raw.filterConfig || { sharpen: 0, deglare: 0, brightness: 100, contrast: 100 },
+              isLandscape: Boolean(raw.isLandscape),
+              backColor: raw.backColor || '#60A5FA',
+              fav: Boolean(raw.fav || raw.favorite),
+              deskX: typeof raw.deskX === 'number' ? raw.deskX : 45 + (count * 35) % 150,
+              deskY: typeof raw.deskY === 'number' ? raw.deskY : 45 + (count * 45) % 170,
+              deskRot: typeof raw.deskRot === 'number' ? raw.deskRot : (count % 2 === 0 ? 5 : -5),
+              deskScale: raw.deskScale || 1,
+              deskZ: raw.deskZ || (count + 1),
+              deskFlipped: Boolean(raw.deskFlipped),
+              chekiTags: rawTags
+            };
+            delete normalized.uncroppedImage;
+            delete normalized.preRemasterOriginal;
+
+            setCardAlbums(normalized, rawAlbs);
+            getCardAlbums(normalized).forEach(a => {
+              if (a && !albums.includes(a)) albums.push(a);
+            });
+
+            batchToSave.push(normalized);
+            count++;
+          }
+
+          await window.saveCardsBatchToDB(batchToSave);
+          await saveAlbumsToDB();
+          await loadDataFromDB();
+          if (typeof syncFastCacheToLocalStorage === 'function') syncFastCacheToLocalStorage();
+          closeBackupModal();
+          e.target.value = '';
+          alert(`✅ 成功高速還原 ${count} 張拍立得（含連拍套組、標籤、相簿與設定）！`);
+        } catch (err) {
+          alert('❌ 備份檔案格式不正確，請確認選取的是 .json 備份檔！');
+        }
+      };
+      reader.readAsText(file);
+    };
+
+    // 8. 儲存單張相片後自動釋放暫存複本記憶體，保持長開流暢
+    const _prevSaveCard = window.saveCard;
+    if (typeof _prevSaveCard === 'function' && !_prevSaveCard._wrappedMemoryLean) {
+      window.saveCard = async function() {
+        const targetEditId = editingCardId;
+        await _prevSaveCard.apply(this, arguments);
+        const savedCard = targetEditId ? cards.find(c => c.id === targetEditId) : cards[0];
+        if (savedCard && savedCard.image) {
+          savedCard.baseImage = savedCard.image;
+          delete savedCard.uncroppedImage;
+          delete savedCard.preRemasterOriginal;
+          await saveCardToDB(savedCard);
+        }
+      };
+      window.saveCard._wrappedMemoryLean = true;
+    }
+
+    if (currentTab === 'binder') {
+      window.renderBinder(false);
+    }
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
