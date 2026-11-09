@@ -12159,6 +12159,692 @@ function switchCheerModalTab(mode) {
     if (currentTab === 'binder') {
       window.renderBinder(false);
     }
+// =========================================================================
+    // 🎬 3D 翻面動態短片生成器 (3D Flip Video Engine) ＋ 💫 每日幸運 Cheki 抽卡機 (Oshi Gacha)
+    // =========================================================================
+    let flipVideoRatio = '9:16'; // '9:16' (IG Story/Reels) | '1:1' (X/Square)
+    let flipVideoTheme = 'card'; // 'card' | 'blue' | 'pink' | 'dark' | 'white'
+    let flipVideoPreviewRaf = null;
+    let flipVideoIsRecording = false;
+    let flipVideoFrontImg = null;
+    let flipVideoCardRef = null;
+
+    // -------------------------------------------------------------------------
+    // 🎬 PART 1：3D 翻面動態短片渲染與錄製引擎
+    // -------------------------------------------------------------------------
+    function ensureFlipVideoModalExists() {
+      if (document.getElementById('flipVideoModal')) return;
+      const div = document.createElement('div');
+      div.innerHTML = `
+        <div id="flipVideoModal" class="hidden fixed inset-0 z-[115] bg-black/85 flex items-center justify-center p-2.5 overflow-y-auto">
+          <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-3.5 space-y-3 max-h-[92vh] overflow-y-auto text-zinc-900">
+            <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xl">🎬</span>
+                <div>
+                  <h3 class="font-black text-base leading-tight">3D 翻面動態短片生成器</h3>
+                  <p class="text-[10px] text-zinc-500 font-bold">自動合成 5 秒「正面閃膜 ⇄ 背面對話」無縫循環片 ✨</p>
+                </div>
+              </div>
+              <button type="button" onclick="closeFlipVideoModal()" class="w-8 h-8 rounded-full bg-white neo-btn font-black text-sm shrink-0">✕</button>
+            </div>
+
+            <!-- 即時 3D 動畫預覽畫布 -->
+            <div class="bg-zinc-900 rounded-2xl p-2.5 border-2 border-cheki-dark overflow-hidden flex flex-col items-center">
+              <div class="w-full h-[38vh] max-h-[300px] flex items-center justify-center bg-zinc-950/80 rounded-xl p-1.5 border border-zinc-800 relative">
+                <canvas id="flipVideoPreviewCanvas" class="max-h-full max-w-full w-auto h-auto object-contain rounded-lg shadow-2xl"></canvas>
+                <div id="flipVideoRecordOverlay" class="hidden absolute inset-0 bg-black/65 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center p-4 space-y-2 text-white">
+                  <span class="text-xs font-black text-amber-300 animate-pulse" id="flipVideoProgressText">🔴 正在錄製 3D 翻面短片 (0%)...</span>
+                  <div class="w-48 h-2.5 rounded-full bg-zinc-800 border border-white/30 overflow-hidden">
+                    <div id="flipVideoProgressBar" class="h-full bg-cheki-accent transition-all duration-100" style="width: 0%"></div>
+                  </div>
+                </div>
+              </div>
+              <p class="mt-1.5 text-[10px] font-bold text-zinc-400 text-center">💡 預覽畫面正即時播放 3D 翻轉效果，點下方按鈕即可輸出短片</p>
+            </div>
+
+            <!-- 比例與背景主題設定 -->
+            <div class="neo-box bg-white rounded-2xl p-3 space-y-2.5">
+              <div class="grid grid-cols-2 gap-1.5">
+                <button type="button" id="fvRatio916" onclick="setFlipVideoRatio('9:16')" class="py-2 px-2 rounded-xl border-2 border-cheki-dark text-xs font-black transition">
+                  📱 9:16 直式 (IG Reels)
+                </button>
+                <button type="button" id="fvRatio11" onclick="setFlipVideoRatio('1:1')" class="py-2 px-2 rounded-xl border-2 border-cheki-dark text-xs font-black transition">
+                  🐦 1:1 方形 (X / IG)
+                </button>
+              </div>
+
+              <div>
+                <span class="text-[10px] font-black text-zinc-500 block mb-1">🎨 短片背景主題：</span>
+                <div class="grid grid-cols-5 gap-1" id="fvThemeBtns">
+                  <button type="button" onclick="setFlipVideoTheme('card')" data-fvtheme="card" class="py-1.5 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-sky-100">🌈 卡片色</button>
+                  <button type="button" onclick="setFlipVideoTheme('blue')" data-fvtheme="blue" class="py-1.5 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-blue-100">💙 天藍</button>
+                  <button type="button" onclick="setFlipVideoTheme('pink')" data-fvtheme="pink" class="py-1.5 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-pink-100">🌸 櫻粉</button>
+                  <button type="button" onclick="setFlipVideoTheme('dark')" data-fvtheme="dark" class="py-1.5 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-zinc-800 text-white">🖤 舞台黑</button>
+                  <button type="button" onclick="setFlipVideoTheme('white')" data-fvtheme="white" class="py-1.5 rounded-lg border-2 border-cheki-dark text-[10px] font-black bg-zinc-50">✨ 純白</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 錄製與分享按鈕 -->
+            <div class="grid grid-cols-2 gap-2">
+              <button type="button" id="fvDownloadBtn" onclick="startFlipVideoRecording(false)" class="py-3 px-3 rounded-2xl bg-cheki-accent text-white neo-btn font-black text-xs flex items-center justify-center gap-1">
+                🎬 錄製並下載短片
+              </button>
+              <button type="button" id="fvShareBtn" onclick="startFlipVideoRecording(true)" class="py-3 px-3 rounded-2xl bg-sky-300 text-zinc-900 neo-btn font-black text-xs flex items-center justify-center gap-1">
+                📤 錄製並分享 (IG/X)
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(div);
+    }
+
+    window.openFlipVideoModal = async function(customCardId) {
+      const targetId = customCardId || inspectingCardId;
+      const card = cards.find(c => c.id === targetId);
+      if (!card) return;
+      ensureFlipVideoModalExists();
+      flipVideoCardRef = card;
+      flipVideoIsRecording = false;
+      updateFlipVideoControlsUI();
+
+      document.getElementById('flipVideoModal').classList.remove('hidden');
+      document.getElementById('flipVideoRecordOverlay')?.classList.add('hidden');
+
+      flipVideoFrontImg = await loadImgPromise(card.image);
+      setupFlipVideoCanvasSize();
+      startFlipVideoPreviewLoop();
+    };
+
+    window.closeFlipVideoModal = function() {
+      flipVideoIsRecording = false;
+      if (flipVideoPreviewRaf) {
+        cancelAnimationFrame(flipVideoPreviewRaf);
+        flipVideoPreviewRaf = null;
+      }
+      document.getElementById('flipVideoModal')?.classList.add('hidden');
+    };
+
+    window.setFlipVideoRatio = function(r) {
+      if (flipVideoIsRecording) return;
+      flipVideoRatio = r;
+      updateFlipVideoControlsUI();
+      setupFlipVideoCanvasSize();
+    };
+
+    window.setFlipVideoTheme = function(t) {
+      if (flipVideoIsRecording) return;
+      flipVideoTheme = t;
+      updateFlipVideoControlsUI();
+    };
+
+    function updateFlipVideoControlsUI() {
+      const b916 = document.getElementById('fvRatio916');
+      const b11 = document.getElementById('fvRatio11');
+      if (b916) b916.className = `py-2 px-2 rounded-xl border-2 border-cheki-dark text-xs font-black transition ${flipVideoRatio === '9:16' ? 'bg-cheki-accent text-white shadow' : 'bg-zinc-100 text-zinc-700'}`;
+      if (b11) b11.className = `py-2 px-2 rounded-xl border-2 border-cheki-dark text-xs font-black transition ${flipVideoRatio === '1:1' ? 'bg-cheki-accent text-white shadow' : 'bg-zinc-100 text-zinc-700'}`;
+
+      document.querySelectorAll('#fvThemeBtns button').forEach(btn => {
+        const active = btn.dataset.fvtheme === flipVideoTheme;
+        btn.style.outline = active ? '3px solid #FF5C8A' : 'none';
+        btn.style.outlineOffset = '1px';
+      });
+    }
+
+    function setupFlipVideoCanvasSize() {
+      const canvas = document.getElementById('flipVideoPreviewCanvas');
+      if (!canvas) return;
+      if (flipVideoRatio === '9:16') {
+        canvas.width = 720;
+        canvas.height = 1280;
+      } else {
+        canvas.width = 960;
+        canvas.height = 960;
+      }
+    }
+
+    // 繪製單一影格 (tSec: 0 ~ 5.0 秒無縫循環)
+    function renderFlipVideoFrame(ctx, w, h, card, frontImg, tSec) {
+      const loopDuration = 5.0;
+      const t = (tSec % loopDuration);
+
+      // 計算 3D 翻轉角度 (0 -> PI -> 2*PI)
+      // 0.0~1.45s: 正面展示 | 1.45~2.15s: 翻去背面 | 2.15~4.15s: 背面展示 | 4.15~4.85s: 翻回正面
+      const easeInOut = (p) => p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+      let angleRad = 0;
+      if (t < 1.45) {
+        angleRad = 0;
+      } else if (t < 2.15) {
+        angleRad = easeInOut((t - 1.45) / 0.70) * Math.PI;
+      } else if (t < 4.15) {
+        angleRad = Math.PI;
+      } else if (t < 4.85) {
+        angleRad = Math.PI + easeInOut((t - 4.15) / 0.70) * Math.PI;
+      } else {
+        angleRad = 0;
+      }
+
+      // 1. 繪製動態主題背景
+      const cardColor = card.backColor || '#60A5FA';
+      const themes = {
+        card:  { bg1: '#E0F2FE', bg2: cardColor, dark: false },
+        blue:  { bg1: '#DBEAFE', bg2: '#60A5FA', dark: false },
+        pink:  { bg1: '#FCE7F3', bg2: '#F472B6', dark: false },
+        dark:  { bg1: '#0F172A', bg2: '#1E293B', dark: true },
+        white: { bg1: '#FFFDF9', bg2: '#E4E4E7', dark: false }
+      };
+      const th = themes[flipVideoTheme] || themes.card;
+
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, th.bg1);
+      grad.addColorStop(1, th.bg2);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      // 隨時間緩慢飄移嘅背景波點暗紋
+      const dotShift = (t / loopDuration) * 36;
+      ctx.fillStyle = th.dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.42)';
+      for (let py = -36 + (dotShift % 36); py < h; py += 36) {
+        for (let px = -36 + (dotShift % 36); px < w; px += 36) {
+          ctx.beginPath();
+          ctx.arc(px, py, 2.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // 2. 頂部成員與場地標題卡
+      const is916 = w < h;
+      const hdrW = w - 68;
+      const hdrH = is916 ? 98 : 86;
+      const hdrX = 34, hdrY = is916 ? 44 : 28;
+
+      ctx.fillStyle = '#272228';
+      drawRoundedRectPath(ctx, hdrX + 5, hdrY + 5, hdrW, hdrH, 24);
+      ctx.fill();
+
+      ctx.fillStyle = th.dark ? '#1E293B' : '#FFFFFF';
+      drawRoundedRectPath(ctx, hdrX, hdrY, hdrW, hdrH, 24);
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#272228';
+      ctx.stroke();
+
+      ctx.fillStyle = th.dark ? '#F8FAFC' : '#272228';
+      ctx.font = `900 ${is916 ? 30 : 28}px "Zen Maru Gothic", sans-serif`;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`👑 ${card.member || 'Cheki'}`, hdrX + 24, hdrY + hdrH * 0.36);
+
+      const subInfo = [card.date ? `📅 ${card.date}` : '', card.locationName ? `📍 ${card.locationName}` : ''].filter(Boolean).join('  ·  ');
+      ctx.fillStyle = th.dark ? '#94A3B8' : '#52525B';
+      ctx.font = `700 ${is916 ? 18 : 17}px "Zen Maru Gothic", sans-serif`;
+      ctx.fillText(subInfo || '✨ 3D Cheki Memory', hdrX + 26, hdrY + hdrH * 0.73);
+
+      // 右上角顯示目前係 FRONT 定 BACK 狀態膠囊
+      const cosVal = Math.cos(angleRad);
+      const isShowingFront = cosVal >= 0;
+      const sideBadge = isShowingFront ? '📸 FRONT 正面' : '💌 BACK 背面';
+      ctx.font = '900 16px "Zen Maru Gothic", sans-serif';
+      const sbW = ctx.measureText(sideBadge).width + 28;
+      const sbX = hdrX + hdrW - sbW - 18;
+      const sbY = hdrY + (hdrH - 34) / 2;
+      ctx.fillStyle = isShowingFront ? '#2563EB' : '#FF5C8A';
+      drawRoundedRectPath(ctx, sbX, sbY, sbW, 34, 17);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.textAlign = 'center';
+      ctx.fillText(sideBadge, sbX + sbW / 2, sbY + 18);
+      ctx.textAlign = 'left';
+
+      // 3. 計算中央拍立得卡片尺寸與 3D 懸浮縮放
+      const cardW = is916 ? 520 : 470;
+      const cardH = is916 ? 740 : 668;
+      const floatY = Math.sin((t / loopDuration) * Math.PI * 2) * 10;
+      const centerX = w / 2;
+      const centerY = (hdrY + hdrH) + (h - (hdrY + hdrH) - 60) / 2 + floatY;
+
+      const scaleX = Math.max(0.03, Math.abs(cosVal));
+      // 翻轉時輕微放大 (Pop Effect) 增強 3D 立體張力
+      const popScale = 1 + Math.sin(angleRad) * 0.06;
+
+      // 先畫底部動態投影
+      ctx.save();
+      ctx.translate(centerX, centerY + cardH * 0.52);
+      ctx.scale(scaleX * popScale, 0.12);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.26)';
+      ctx.beginPath();
+      ctx.arc(0, 0, cardW * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // 繪製 3D 翻轉中嘅拍立得本體
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.scale(scaleX * popScale, popScale);
+
+      // 當卡片側面接近 90 度時，畫出白色卡紙厚度邊緣
+      if (scaleX < 0.35) {
+        const edgeThickness = Math.round(14 / scaleX);
+        ctx.fillStyle = '#E2E8F0';
+        drawRoundedRectPath(ctx, -cardW / 2 - edgeThickness / 2, -cardH / 2, cardW + edgeThickness, cardH, 24);
+        ctx.fill();
+      }
+
+      if (isShowingFront) {
+        drawFrontChekiOnCanvas(ctx, frontImg, -cardW / 2, -cardH / 2, cardW, cardH, 0);
+
+        // 加上隨時間流動嘅 3D 閃卡反光帶 (Dynamic Holo Shimmer Sweep)
+        const sweepPos = ((t * 0.85) % 1.6) - 0.3;
+        const sheenGrad = ctx.createLinearGradient(
+          -cardW / 2 + cardW * (sweepPos - 0.25), -cardH / 2,
+          -cardW / 2 + cardW * (sweepPos + 0.25), cardH / 2
+        );
+        sheenGrad.addColorStop(0, 'rgba(255,255,255,0)');
+        sheenGrad.addColorStop(0.5, 'rgba(255,255,255,0.34)');
+        sheenGrad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = sheenGrad;
+        drawRoundedRectPath(ctx, -cardW / 2 + 12, -cardH / 2 + 12, cardW - 24, cardH - 24, 16);
+        ctx.fill();
+      } else {
+        drawSimulatedBackCardOnCanvas(ctx, card, -cardW / 2, -cardH / 2, cardW, cardH, 0);
+      }
+      ctx.restore();
+
+      // 4. 底部個人署名水印
+      const nick = (typeof userOshiProfile !== 'undefined' && userOshiProfile.nickname)
+        ? userOshiProfile.nickname
+        : '✨ 香港のトミー (Tommy) ✨';
+      ctx.fillStyle = th.dark ? 'rgba(255,255,255,0.75)' : 'rgba(39,34,40,0.70)';
+      ctx.font = '900 18px "Zen Maru Gothic", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${nick}  ·  📸 ChekiPocket`, w / 2, h - 26);
+      ctx.textAlign = 'left';
+    }
+
+    function startFlipVideoPreviewLoop() {
+      if (flipVideoPreviewRaf) cancelAnimationFrame(flipVideoPreviewRaf);
+      const canvas = document.getElementById('flipVideoPreviewCanvas');
+      if (!canvas || !flipVideoCardRef) return;
+      const ctx = canvas.getContext('2d');
+      const startMs = performance.now();
+
+      function loop(now) {
+        if (flipVideoIsRecording) return;
+        const modal = document.getElementById('flipVideoModal');
+        if (!modal || modal.classList.contains('hidden')) return;
+        const elapsedSec = (now - startMs) / 1000;
+        renderFlipVideoFrame(ctx, canvas.width, canvas.height, flipVideoCardRef, flipVideoFrontImg, elapsedSec);
+        flipVideoPreviewRaf = requestAnimationFrame(loop);
+      }
+      flipVideoPreviewRaf = requestAnimationFrame(loop);
+    }
+
+    function getSupportedVideoMimeType() {
+      const candidates = [
+        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+        'video/mp4',
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm'
+      ];
+      if (typeof MediaRecorder === 'undefined') return '';
+      for (const mime of candidates) {
+        if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(mime)) {
+          return mime;
+        }
+      }
+      return '';
+    }
+
+    window.startFlipVideoRecording = async function(shareAfterRecord = false) {
+      if (flipVideoIsRecording || !flipVideoCardRef) return;
+      const canvas = document.getElementById('flipVideoPreviewCanvas');
+      if (!canvas || typeof canvas.captureStream !== 'function' || typeof MediaRecorder === 'undefined') {
+        alert('此瀏覽器暫不支援 Canvas 直接錄影，請使用「🖼️ 正背面分享卡」功能！');
+        return;
+      }
+
+      flipVideoIsRecording = true;
+      if (flipVideoPreviewRaf) cancelAnimationFrame(flipVideoPreviewRaf);
+
+      const overlay = document.getElementById('flipVideoRecordOverlay');
+      const progText = document.getElementById('flipVideoProgressText');
+      const progBar = document.getElementById('flipVideoProgressBar');
+      if (overlay) overlay.classList.remove('hidden');
+
+      const mimeType = getSupportedVideoMimeType();
+      const isMp4 = mimeType.includes('mp4');
+      const ext = isMp4 ? 'mp4' : 'webm';
+
+      const stream = canvas.captureStream(30);
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 6000000 })
+        : new MediaRecorder(stream);
+
+      const chunks = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        flipVideoIsRecording = false;
+        if (overlay) overlay.classList.add('hidden');
+        startFlipVideoPreviewLoop();
+
+        const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
+        const fileName = `${flipVideoCardRef.member || 'Cheki'}_${flipVideoCardRef.date || ''}_3D翻面短片.${ext}`;
+
+        if (shareAfterRecord && navigator.canShare) {
+          try {
+            const file = new File([blob], fileName, { type: blob.type });
+            if (navigator.canShare({ files: [file] })) {
+              await navigator.share({ title: `${flipVideoCardRef.member || 'Cheki'} 3D 翻面短片`, files: [file] });
+              return;
+            }
+          } catch (_) {}
+        }
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 15000);
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast(`🎬 3D 翻面短片已下載 (${fileName})！`, 3500);
+        }
+      };
+
+      const ctx = canvas.getContext('2d');
+      const durationMs = 5000;
+      const startRecMs = performance.now();
+      recorder.start(100);
+
+      function recordStep(now) {
+        const elapsed = now - startRecMs;
+        const pct = Math.min(100, Math.round((elapsed / durationMs) * 100));
+        if (progText) progText.textContent = `🔴 正在合成 3D 翻面短片 (${pct}%)...`;
+        if (progBar) progBar.style.width = `${pct}%`;
+
+        renderFlipVideoFrame(ctx, canvas.width, canvas.height, flipVideoCardRef, flipVideoFrontImg, elapsed / 1000);
+
+        if (elapsed < durationMs) {
+          requestAnimationFrame(recordStep);
+        } else {
+          recorder.stop();
+        }
+      }
+      requestAnimationFrame(recordStep);
+    };
+
+    // -------------------------------------------------------------------------
+    // 💫 PART 2：每日「幸運 Cheki 抽卡機 (Daily Lucky Oshi Gacha)」
+    // -------------------------------------------------------------------------
+    let gachaCurrentCard = null;
+    let gachaIsFlipped = false;
+
+    const GACHA_FORTUNES = [
+      { luck: '🌟 大吉 · 神番預感', tip: '今日應援運勢爆棚！下一場 Live 極有機會抽中神整理番號 ✨' },
+      { luck: '💙 大吉 · 心電感應', tip: '今日與主推默契滿分，特典會對視時記得擺你最鍾意嘅 Pose！' },
+      { luck: '🌸 中吉 · 驚喜神回', tip: '幸運物係藍色應援小物，今日適合重溫以前寫落嘅特典會筆記 💌' },
+      { luck: '✨ 特吉 · 閃耀回憶', tip: '每一張拍立得都係獨一無二嘅羈絆，今日聽住愛曲心情會超好 🎵' },
+      { luck: '🎉 超吉 · 歐氣滿滿', tip: '抽選運與通販運上升中！不妨喺話題備忘記低想講嘅日文吧 💙' }
+    ];
+
+    function ensureLuckyGachaModalExists() {
+      if (document.getElementById('luckyGachaModal')) return;
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes gachaSpinReveal {
+          0%   { transform: scale(0.25) rotateY(0deg) translateY(60px); opacity: 0; filter: brightness(2.2); }
+          55%  { transform: scale(1.06) rotateY(360deg) translateY(-8px); opacity: 1; filter: brightness(1.3); }
+          100% { transform: scale(1) rotateY(360deg) translateY(0px); opacity: 1; filter: brightness(1); }
+        }
+        .gacha-card-pop {
+          animation: gachaSpinReveal 0.68s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+      `;
+      document.head.appendChild(style);
+
+      const div = document.createElement('div');
+      div.innerHTML = `
+        <div id="luckyGachaModal" class="hidden fixed inset-0 z-[116] bg-black/85 flex items-center justify-center p-3 overflow-y-auto">
+          <div class="bg-gradient-to-b from-indigo-950 via-slate-900 to-zinc-950 w-full max-w-md rounded-3xl neo-box border-white/40 p-4 space-y-3 text-white max-h-[92vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b border-white/15 pb-2">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xl cute-float">💫</span>
+                <div>
+                  <h3 class="font-black text-base text-sky-300 leading-tight">幸運 Cheki 應援抽卡機</h3>
+                  <p class="text-[10px] text-zinc-400 font-bold">從珍藏中召喚今日命定拍立得 · 點擊卡面可 3D 翻面 ✨</p>
+                </div>
+              </div>
+              <button type="button" onclick="closeLuckyGachaModal()" class="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 text-white font-black text-sm">✕</button>
+            </div>
+
+            <!-- 稀有度與紀念日徽章 -->
+            <div class="flex items-center justify-between gap-2 px-1">
+              <span id="gachaRarityBadge" class="px-3 py-0.5 rounded-full bg-gradient-to-r from-amber-300 via-pink-300 to-sky-300 text-zinc-950 font-black text-xs shadow">🌈 UR 命定神抽</span>
+              <span id="gachaDaysAgoBadge" class="px-2.5 py-0.5 rounded-full bg-white/10 border border-white/20 text-[11px] font-black text-sky-200">💫 回憶計算中...</span>
+            </div>
+
+            <!-- 3D 抽卡展示台 -->
+            <div class="py-2 flex flex-col items-center justify-center">
+              <div id="gachaCardStage" onclick="toggleGachaCardFlip()" class="perspective-1000 cursor-pointer flex items-center justify-center w-full">
+                <div id="gachaFlipInner" class="transform-style-3d relative w-56 aspect-[54/86] flex items-center justify-center">
+                  <!-- 正面 -->
+                  <div class="backface-hidden w-full h-full bg-[#FFFDF9] rounded-2xl p-2 border-2 border-white shadow-[0_0_35px_rgba(56,189,248,0.45)] flex flex-col items-center justify-center cheki-sleeve-holo">
+                    <img id="gachaFrontImg" src="" draggable="false" class="max-h-full max-w-full object-contain rounded-lg pointer-events-none">
+                  </div>
+                  <!-- 背面 -->
+                  <div id="gachaBackCard" class="backface-hidden rotate-y-180 absolute inset-0 rounded-2xl p-3.5 flex flex-col justify-between shadow-2xl border-2 border-white/60 instax-back-ruled text-left">
+                    <div class="flex justify-between items-center text-[10px] font-black opacity-90 gap-1">
+                      <span id="gachaBackDate"></span>
+                      <span id="gachaBackLoc" class="truncate"></span>
+                    </div>
+                    <div id="gachaBackNote" class="my-auto overflow-y-auto max-h-48 no-scrollbar text-xs font-black whitespace-pre-wrap break-words text-center"></div>
+                    <div class="text-right text-[11px] font-black pt-1 border-t border-current/25" id="gachaBackMember"></div>
+                  </div>
+                </div>
+              </div>
+              <p class="text-[11px] font-bold text-sky-200/80 mt-2">👆 點擊拍立得可 3D 翻面睇背面筆記</p>
+            </div>
+
+            <!-- 今日應援運勢籤盒 -->
+            <div class="rounded-2xl bg-white/10 border border-white/20 p-3 space-y-1">
+              <div class="flex items-center justify-between">
+                <span id="gachaCardTitle" class="font-black text-sm text-white truncate">👑 遠藤まりん</span>
+                <span id="gachaFortuneTitle" class="text-xs font-black text-amber-300">🌟 大吉</span>
+              </div>
+              <p id="gachaFortuneTip" class="text-[11px] font-bold text-zinc-200 leading-relaxed"></p>
+            </div>
+
+            <!-- 底部操作按鈕 -->
+            <div class="grid grid-cols-3 gap-2 pt-1">
+              <button type="button" onclick="drawLuckyGachaCard(true)" class="py-2.5 px-2 rounded-2xl bg-gradient-to-r from-amber-300 to-pink-400 text-zinc-950 neo-btn font-black text-xs flex items-center justify-center gap-1 active:scale-95">
+                🎰 再抽一張
+              </button>
+              <button type="button" onclick="openGachaCardInInspect()" class="py-2.5 px-2 rounded-2xl bg-white/15 hover:bg-white/25 border border-white/30 text-white font-black text-xs flex items-center justify-center gap-1 active:scale-95">
+                🔍 查看大圖
+              </button>
+              <button type="button" onclick="openGachaCardInFlipVideo()" class="py-2.5 px-2 rounded-2xl bg-sky-400 text-zinc-950 neo-btn font-black text-xs flex items-center justify-center gap-1 active:scale-95">
+                🎬 拍3D短片
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(div);
+    }
+
+    window.openLuckyGachaModal = function(forceRandom = false) {
+      if (!cards || cards.length === 0) {
+        alert('目前尚無拍立得相片，快先新增第一張 Cheki 吧！');
+        return;
+      }
+      ensureLuckyGachaModalExists();
+      document.getElementById('luckyGachaModal').classList.remove('hidden');
+      window.drawLuckyGachaCard(forceRandom);
+    };
+
+    window.closeLuckyGachaModal = function() {
+      document.getElementById('luckyGachaModal')?.classList.add('hidden');
+    };
+
+    window.drawLuckyGachaCard = function(forceRandom = true) {
+      if (!cards || cards.length === 0) return;
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(18);
+
+      const pool = (currentTab === 'binder' && typeof getFilteredCards === 'function' && getFilteredCards().length > 0)
+        ? getFilteredCards()
+        : cards;
+
+      let picked = null;
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const savedDailyId = localStorage.getItem('cheki_daily_gacha_' + todayKey);
+
+      if (!forceRandom && savedDailyId) {
+        picked = cards.find(c => String(c.id) === String(savedDailyId));
+      }
+      if (!picked) {
+        // 若抽多於一次，盡量抽唔同嘅相片
+        const candidates = pool.length > 1 && gachaCurrentCard
+          ? pool.filter(c => c.id !== gachaCurrentCard.id)
+          : pool;
+        picked = candidates[Math.floor(Math.random() * candidates.length)] || pool[0];
+        if (!savedDailyId) {
+          try { localStorage.setItem('cheki_daily_gacha_' + todayKey, String(picked.id)); } catch (_) {}
+        }
+      }
+
+      gachaCurrentCard = picked;
+      gachaIsFlipped = false;
+
+      const flipInner = document.getElementById('gachaFlipInner');
+      if (flipInner) flipInner.classList.remove('rotate-y-180');
+
+      const stage = document.getElementById('gachaCardStage');
+      if (stage) {
+        stage.classList.remove('gacha-card-pop');
+        void stage.offsetWidth;
+        stage.classList.add('gacha-card-pop');
+      }
+
+      // 填充正背面內容
+      document.getElementById('gachaFrontImg').src = picked.image;
+      document.getElementById('gachaBackDate').textContent = picked.date ? `📅 ${picked.date}` : '';
+      document.getElementById('gachaBackLoc').textContent = picked.locationName ? `📍 ${picked.locationName}` : '';
+      document.getElementById('gachaBackNote').textContent = picked.note || `✨ ${picked.member || 'Cheki'} 珍貴回憶 ✨`;
+      document.getElementById('gachaBackMember').textContent = `✒️ ${picked.member || ''}`;
+
+      const backCard = document.getElementById('gachaBackCard');
+      const bg = picked.backColor || '#60A5FA';
+      if (backCard) {
+        backCard.style.backgroundColor = bg;
+        backCard.style.color = typeof getContrastTextColor === 'function' ? getContrastTextColor(bg) : '#FFFFFF';
+      }
+
+      // 判定稀有度標籤
+      const tags = Array.isArray(picked.chekiTags) ? picked.chekiTags : [];
+      const rarityEl = document.getElementById('gachaRarityBadge');
+      if (rarityEl) {
+        if (picked.fav) {
+          rarityEl.textContent = '🌈 UR 最愛命定神抽';
+        } else if (tags.includes('signed')) {
+          rarityEl.textContent = '✨ SSR 親筆簽名神抽';
+        } else {
+          rarityEl.textContent = '💙 SR 心動應援回憶';
+        }
+      }
+
+      // 計算距離拍攝當日過咗幾多日
+      const daysEl = document.getElementById('gachaDaysAgoBadge');
+      if (daysEl) {
+        if (picked.date && /^\d{4}-\d{2}-\d{2}$/.test(picked.date)) {
+          const diff = Math.max(0, Math.floor((Date.now() - new Date(picked.date + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)));
+          daysEl.textContent = diff === 0 ? '🎉 今日最新拍攝！' : `🕰️ 距離拍攝已 ${diff} 日`;
+        } else {
+          daysEl.textContent = '💫 永恆應援珍藏';
+        }
+      }
+
+      // 隨機抽出今日應援運勢籤
+      const fortune = GACHA_FORTUNES[Math.floor(Math.random() * GACHA_FORTUNES.length)];
+      document.getElementById('gachaCardTitle').textContent = `👑 ${picked.member || '未命名'} ${picked.date ? `(${picked.date})` : ''}`;
+      document.getElementById('gachaFortuneTitle').textContent = fortune.luck;
+      document.getElementById('gachaFortuneTip').textContent = fortune.tip;
+
+      if (typeof window.fireCheerConfetti === 'function') {
+        window.fireCheerConfetti();
+      }
+    };
+
+    window.toggleGachaCardFlip = function() {
+      gachaIsFlipped = !gachaIsFlipped;
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(8);
+      document.getElementById('gachaFlipInner')?.classList.toggle('rotate-y-180', gachaIsFlipped);
+    };
+
+    window.openGachaCardInInspect = function() {
+      if (!gachaCurrentCard) return;
+      const id = gachaCurrentCard.id;
+      closeLuckyGachaModal();
+      openInspectModal(id);
+    };
+
+    window.openGachaCardInFlipVideo = function() {
+      if (!gachaCurrentCard) return;
+      const id = gachaCurrentCard.id;
+      closeLuckyGachaModal();
+      window.openFlipVideoModal(id);
+    };
+
+    // -------------------------------------------------------------------------
+    // 🚀 初始化掛載：整合大圖底部 3 掣列 ＋ 頂部「💫 抽卡機」快捷掣
+    // -------------------------------------------------------------------------
+    function initFlipVideoAndLuckyGachaPlugin() {
+      ensureFlipVideoModalExists();
+      ensureLuckyGachaModalExists();
+
+      // 1. 將卡冊「🎲 隨機抽」直接升級為打開「💫 幸運 Cheki 抽卡機」
+      window.openRandomChekiInspect = function() {
+        window.openLuckyGachaModal(true);
+      };
+
+      // 2. 在頂部 Header 加入「💫 抽卡」快捷按鈕
+      const topThemeBtn = document.getElementById('topOshiThemeBtn') || document.getElementById('topSearchBtn');
+      if (topThemeBtn && topThemeBtn.parentElement && !document.getElementById('topLuckyGachaBtn')) {
+        const gachaBtn = document.createElement('button');
+        gachaBtn.type = 'button';
+        gachaBtn.id = 'topLuckyGachaBtn';
+        gachaBtn.onclick = () => window.openLuckyGachaModal(false);
+        gachaBtn.className = 'w-9 h-9 rounded-2xl bg-gradient-to-br from-amber-200 via-pink-200 to-sky-200 neo-btn flex items-center justify-center text-base shrink-0';
+        gachaBtn.title = '每日幸運 Cheki 抽卡機';
+        gachaBtn.textContent = '💫';
+        topThemeBtn.parentElement.insertBefore(gachaBtn, topThemeBtn);
+      }
+
+      // 3. 在大圖檢視 (#inspectModal) 底部加入「🎬 3D翻面片」按鈕（組成 3 格快捷列）
+      const scBtn = document.getElementById('openShowcaseModalBtn');
+      const exportBtn = document.querySelector('#inspectModal button[onclick="exportInspectImage()"]');
+      const bottomRow = scBtn?.parentElement;
+
+      if (bottomRow && exportBtn && scBtn && !document.getElementById('openFlipVideoModalBtn')) {
+        bottomRow.className = 'grid grid-cols-3 gap-1.5 w-full shrink-0 z-30';
+        exportBtn.innerHTML = '📥 原畫質圖';
+        scBtn.innerHTML = '🖼️ 正背同框';
+
+        const fvBtn = document.createElement('button');
+        fvBtn.type = 'button';
+        fvBtn.id = 'openFlipVideoModalBtn';
+        fvBtn.onclick = () => window.openFlipVideoModal();
+        fvBtn.className = 'w-full py-2.5 rounded-2xl bg-gradient-to-r from-indigo-500 via-blue-500 to-sky-400 text-white font-black text-xs neo-box flex items-center justify-center gap-1 active:scale-95 transition';
+        fvBtn.innerHTML = '🎬 3D翻面片';
+        bottomRow.appendChild(fvBtn);
+      }
+    }
+
+    setTimeout(initFlipVideoAndLuckyGachaPlugin, 650);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
