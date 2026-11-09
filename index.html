@@ -10911,6 +10911,806 @@ function switchCheerModalTab(mode) {
     }
 
     setTimeout(initTalkTheatreAndShowcasePlugin, 580);
+// =========================================================================
+    // 📊 終極統計升級模組：
+    // (1. 一屏多欄圖鑑+領獎台+圓環圖 | 2. 偶像個人成績單彈窗 | 3. 年月動態篩選+全月份展開 | 4. 📸 應援總結報告長圖)
+    // =========================================================================
+    let statsTimeFilter = 'ALL'; // 'ALL' | 'YEAR:2026' | 'MONTH:2026-11'
+    let statsIdolViewMode = localStorage.getItem('cheki_stats_view') || 'grid'; // 'grid' (一屏多欄圖鑑) | 'list' (詳細長條)
+    let statsIdolSortMode = 'count'; // 'count' | 'fav' | 'latest'
+    let statsShowAllMonths = false;
+    let statsWrappedDataUrl = '';
+
+    const CHART_PALETTE = ['#2563EB', '#FF5C8A', '#F59E0B', '#10B981', '#8B5CF6', '#06B6D4', '#EC4899', '#64748B'];
+
+    function getThumbOrFull(card) {
+      if (!card) return '';
+      return (typeof chekiThumbMap !== 'undefined' && chekiThumbMap[card.id]) ? chekiThumbMap[card.id] : (card.image || '');
+    }
+
+    // 1. 依目前選中的「年份 / 月份」篩選統計相片池
+    function getStatsTimeFilteredCards() {
+      if (!statsTimeFilter || statsTimeFilter === 'ALL') return cards;
+      if (statsTimeFilter.startsWith('YEAR:')) {
+        const yr = statsTimeFilter.slice(5);
+        return cards.filter(c => (c.date || '').startsWith(yr + '-'));
+      }
+      if (statsTimeFilter.startsWith('MONTH:')) {
+        const ym = statsTimeFilter.slice(6);
+        return cards.filter(c => (c.date || '').startsWith(ym));
+      }
+      return cards;
+    }
+
+    function getStatsTimeFilterLabel() {
+      if (!statsTimeFilter || statsTimeFilter === 'ALL') return '全部時間';
+      if (statsTimeFilter.startsWith('YEAR:')) return `${statsTimeFilter.slice(5)} 年`;
+      if (statsTimeFilter.startsWith('MONTH:')) return `${statsTimeFilter.slice(6)} 月`;
+      return '全部時間';
+    }
+
+    window.setStatsTimeFilter = function(filterVal) {
+      statsTimeFilter = filterVal || 'ALL';
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(8);
+      renderStats();
+    };
+
+    window.setStatsIdolViewMode = function(mode) {
+      statsIdolViewMode = mode;
+      try { localStorage.setItem('cheki_stats_view', mode); } catch (_) {}
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(8);
+      renderUpgradedIdolLeaderboard();
+    };
+
+    window.cycleStatsIdolSortMode = function() {
+      const order = ['count', 'fav', 'latest'];
+      statsIdolSortMode = order[(order.indexOf(statsIdolSortMode) + 1) % order.length];
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(8);
+      renderUpgradedIdolLeaderboard();
+    };
+
+    window.toggleStatsShowAllMonths = function() {
+      statsShowAllMonths = !statsShowAllMonths;
+      renderUpgradedMonthlyList();
+    };
+
+    // 2. 注入統計頁頂部「🗓️ 時間範圍篩選列 ＋ 📸 總結報告圖按鈕」
+    function renderStatsTopFilterBar() {
+      const statsSec = document.getElementById('tab-stats');
+      if (!statsSec) return;
+
+      let bar = document.getElementById('statsTopTimeFilterBar');
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'statsTopTimeFilterBar';
+        bar.className = 'neo-box bg-white rounded-2xl p-2.5 space-y-2';
+        statsSec.prepend(bar);
+      }
+
+      const years = [...new Set(cards.map(c => (c.date || '').slice(0, 4)).filter(y => /^\d{4}$/.test(y)))].sort((a, b) => b.localeCompare(a));
+      const months = [...new Set(cards.map(c => (c.date || '').slice(0, 7)).filter(m => /^\d{4}-\d{2}$/.test(m)))].sort((a, b) => b.localeCompare(a));
+      const curMonthVal = statsTimeFilter.startsWith('MONTH:') ? statsTimeFilter : '';
+
+      bar.innerHTML = `
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-1 min-w-0">
+            <span class="text-xs font-black text-zinc-800 truncate">📊 統計範圍：<span class="text-cheki-accent">${getStatsTimeFilterLabel()}</span></span>
+          </div>
+          <button type="button" onclick="openStatsWrappedModal()" class="px-2.5 py-1 rounded-xl bg-gradient-to-r from-blue-500 to-pink-500 text-white neo-btn text-[11px] font-black shrink-0 flex items-center gap-1 active:scale-95">
+            📸 總結報告圖
+          </button>
+        </div>
+
+        <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
+          <button type="button" onclick="setStatsTimeFilter('ALL')" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark shrink-0 transition ${statsTimeFilter === 'ALL' ? 'bg-cheki-accent text-white shadow-sm' : 'bg-zinc-100 text-zinc-700'}">
+            🗓️ 全部 (${cards.length})
+          </button>
+          ${years.map(yr => {
+            const cnt = cards.filter(c => (c.date || '').startsWith(yr + '-')).length;
+            const active = statsTimeFilter === `YEAR:${yr}`;
+            return `
+              <button type="button" onclick="setStatsTimeFilter('YEAR:${yr}')" class="px-2.5 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark shrink-0 transition ${active ? 'bg-blue-500 text-white shadow-sm' : 'bg-white text-zinc-700'}">
+                ${yr}年 (${cnt})
+              </button>
+            `;
+          }).join('')}
+          <select onchange="setStatsTimeFilter(this.value)" class="px-2 py-1 rounded-full text-[11px] font-black border-2 border-cheki-dark bg-amber-100 text-zinc-900 shrink-0 focus:outline-none">
+            <option value="ALL" ${!curMonthVal ? 'selected' : ''}>📅 指定月份...</option>
+            ${months.map(m => {
+              const cnt = cards.filter(c => (c.date || '').startsWith(m)).length;
+              return `<option value="MONTH:${m}" ${curMonthVal === `MONTH:${m}` ? 'selected' : ''}>📅 ${m} (${cnt}張)</option>`;
+            }).join('')}
+          </select>
+        </div>
+      `;
+    }
+
+    // 3. 升級版偶像排行榜：🍩 SVG 圓環圖 ＋ 🏆 Top 3 領獎台 ＋ 🎛️ 3 欄緊湊圖鑑格（一屏睇晒全部成員！）
+    function renderUpgradedIdolLeaderboard() {
+      const board = document.getElementById('idolStatsLeaderboard');
+      if (!board) return;
+      const box = board.closest('.neo-box');
+
+      // 升級排行榜標題列：加入「一屏圖鑑 / 詳細清單」與排序切換按鈕
+      const hdrRow = box?.firstElementChild;
+      if (hdrRow) {
+        const sortLabels = { count: '🔢 按張數', fav: '⭐ 按最愛', latest: '📅 按最新' };
+        hdrRow.className = 'flex items-center justify-between border-b-2 border-zinc-100 pb-2 gap-1 flex-wrap';
+        hdrRow.innerHTML = `
+          <div>
+            <h3 class="font-black text-sm sm:text-base">👑 偶像應援排行榜</h3>
+            <p class="text-[10px] font-bold text-zinc-400">點擊任何偶像可打開「個人專屬應援成績單」✨</p>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button type="button" onclick="cycleStatsIdolSortMode()" class="px-2 py-1 rounded-xl bg-zinc-100 border border-cheki-dark text-[10px] font-black text-zinc-800 active:scale-95">
+              ${sortLabels[statsIdolSortMode] || '🔢 按張數'}
+            </button>
+            <div class="flex items-center bg-zinc-200/80 p-0.5 rounded-xl border-2 border-cheki-dark">
+              <button type="button" onclick="setStatsIdolViewMode('grid')" class="px-2 py-0.5 rounded-lg text-[10px] font-black transition ${statsIdolViewMode === 'grid' ? 'bg-cheki-accent text-white shadow-sm' : 'text-zinc-600'}">
+                🎛️ 圖鑑
+              </button>
+              <button type="button" onclick="setStatsIdolViewMode('list')" class="px-2 py-0.5 rounded-lg text-[10px] font-black transition ${statsIdolViewMode === 'list' ? 'bg-cheki-accent text-white shadow-sm' : 'text-zinc-600'}">
+                📜 清單
+              </button>
+            </div>
+          </div>
+        `;
+      }
+
+      // 同時令頂部「主推 No.1 大卡」點擊時打開個人成績單
+      const topOshiCard = document.getElementById('topOshiHighlightCard');
+      const rawCounts = getIdolCounts();
+      if (topOshiCard && rawCounts.length > 0) {
+        const topMemberSafe = rawCounts[0].member.replace(/'/g, "\\'");
+        const innerDiv = topOshiCard.firstElementChild;
+        if (innerDiv) {
+          innerDiv.setAttribute('onclick', `openIdolReportCardModal('${topMemberSafe}')`);
+        }
+      }
+
+      if (rawCounts.length === 0) {
+        board.innerHTML = `<p class="text-center py-6 text-zinc-400 font-bold text-xs">此時段尚無拍立得紀錄 ✨</p>`;
+        return;
+      }
+
+      // 依排序模式排列偶像
+      const sortedIdols = [...rawCounts].sort((a, b) => {
+        if (statsIdolSortMode === 'fav') return (b.favCount - a.favCount) || (b.count - a.count);
+        if (statsIdolSortMode === 'latest') return (b.latestDate || '').localeCompare(a.latestDate || '') || (b.count - a.count);
+        return b.count - a.count;
+      });
+
+      const totalCardsInScope = rawCounts.reduce((s, i) => s + i.count, 0) || 1;
+
+      // A. 建立頂部迷你「🍩 應援佔比圓環圖 (SVG Donut Chart)」
+      const topSlice = rawCounts.slice(0, 6);
+      const othersCount = rawCounts.slice(6).reduce((s, i) => s + i.count, 0);
+      const chartItems = [...topSlice.map((it, idx) => ({ label: it.member, count: it.count, color: CHART_PALETTE[idx % CHART_PALETTE.length] }))];
+      if (othersCount > 0) {
+        chartItems.push({ label: `其他 (${rawCounts.length - 6}人)`, count: othersCount, color: '#CBD5E1' });
+      }
+
+      let cumulativePct = 0;
+      const radius = 15.9155; // 周長剛好 = 100
+      const svgCircles = chartItems.map(seg => {
+        const pct = Math.max(0.5, (seg.count / totalCardsInScope) * 100);
+        const dashArray = `${pct} ${100 - pct}`;
+        const dashOffset = 25 - cumulativePct;
+        cumulativePct += pct;
+        return `<circle cx="21" cy="21" r="${radius}" fill="transparent" stroke="${seg.color}" stroke-width="6.5" stroke-dasharray="${dashArray}" stroke-dashoffset="${dashOffset}"></circle>`;
+      }).join('');
+
+      const donutHtml = `
+        <div class="p-2.5 rounded-2xl bg-zinc-50 border-2 border-zinc-200/80 flex items-center gap-3">
+          <div class="relative w-20 h-20 shrink-0 flex items-center justify-center">
+            <svg viewBox="0 0 42 42" class="w-full h-full -rotate-90 overflow-visible">${svgCircles}</svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+              <span class="text-[9px] font-bold text-zinc-400 leading-none">總數</span>
+              <span class="text-xs font-black text-zinc-800">${totalCardsInScope}</span>
+            </div>
+          </div>
+          <div class="flex-1 grid grid-cols-2 gap-x-2 gap-y-1 min-w-0">
+            ${chartItems.map(seg => {
+              const pct = Math.round((seg.count / totalCardsInScope) * 100);
+              return `
+                <div class="flex items-center gap-1 min-w-0 text-[10px] font-black">
+                  <span class="w-2.5 h-2.5 rounded-full shrink-0 border border-black/20" style="background:${seg.color}"></span>
+                  <span class="truncate text-zinc-700">${seg.label}</span>
+                  <span class="text-zinc-400 shrink-0 ml-auto">${pct}%</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+
+      // B. 視圖模式 1：「🎛️ 一屏多欄圖鑑模式」（Top 3 領獎台 + 3欄緊湊小卡，一屏睇晒全部偶像！）
+      if (statsIdolViewMode === 'grid') {
+        const top3 = sortedIdols.slice(0, 3);
+        const restIdols = sortedIdols.slice(3);
+
+        const podiumHtml = `
+          <div class="grid grid-cols-3 gap-2 pt-1">
+            ${top3.map((item, idx) => {
+              const safeName = item.member.replace(/'/g, "\\'");
+              const rankEmoji = idx === 0 ? '🥇 No.1' : idx === 1 ? '🥈 No.2' : '🥉 No.3';
+              const bgClass = idx === 0
+                ? 'bg-gradient-to-b from-amber-100/90 via-pink-50 to-white border-amber-400'
+                : (idx === 1 ? 'bg-gradient-to-b from-sky-100/80 to-white border-sky-300' : 'bg-gradient-to-b from-orange-100/70 to-white border-orange-300');
+              return `
+                <div onclick="openIdolReportCardModal('${safeName}')" class="neo-btn rounded-2xl p-2 flex flex-col items-center text-center cursor-pointer relative ${bgClass}">
+                  <span class="px-2 py-0.5 rounded-full bg-zinc-900 text-white text-[9px] font-black mb-1.5 shadow-sm">${rankEmoji}</span>
+                  <div class="w-16 h-20 rounded-xl bg-white border border-zinc-200 flex items-center justify-center overflow-hidden p-0.5 shadow-sm">
+                    ${item.cover ? `<img src="${item.cover}" loading="lazy" class="max-h-full max-w-full object-contain rounded pointer-events-none">` : '📸'}
+                  </div>
+                  <p class="font-black text-xs text-zinc-900 truncate w-full mt-1.5">${item.member}</p>
+                  <p class="font-black text-xs text-cheki-accent leading-tight">${item.count} 張 <span class="text-[9px] text-zinc-500">(${item.percent}%)</span></p>
+                  <div class="w-full h-1.5 rounded-full bg-zinc-200 overflow-hidden mt-1">
+                    <div class="h-full bg-cheki-accent" style="width:${Math.max(8, item.percent)}%"></div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+
+        const bentoGridHtml = restIdols.length > 0 ? `
+          <div class="grid grid-cols-3 gap-1.5 pt-1">
+            ${restIdols.map((item, idx) => {
+              const rankNum = idx + 4;
+              const safeName = item.member.replace(/'/g, "\\'");
+              return `
+                <div onclick="openIdolReportCardModal('${safeName}')" class="rounded-xl border-2 border-zinc-800 bg-white hover:bg-pink-50/50 p-1.5 flex flex-col justify-between cursor-pointer active:scale-95 transition shadow-[2px_2px_0px_#272228]">
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    <div class="w-9 h-11 rounded-lg bg-zinc-100 border border-zinc-200 flex items-center justify-center overflow-hidden shrink-0">
+                      ${item.cover ? `<img src="${item.cover}" loading="lazy" class="max-h-full max-w-full object-contain pointer-events-none">` : '📸'}
+                    </div>
+                    <div class="min-w-0 flex-1 text-left">
+                      <span class="text-[9px] font-black text-zinc-400 block leading-none">#${rankNum}</span>
+                      <p class="font-black text-[11px] text-zinc-900 truncate leading-tight mt-0.5">${item.member}</p>
+                      <p class="font-black text-[11px] text-cheki-accent leading-tight">${item.count}張 <span class="text-[9px] text-zinc-400">(${item.percent}%)</span></p>
+                    </div>
+                  </div>
+                  <div class="w-full h-1 rounded-full bg-zinc-100 overflow-hidden mt-1.5">
+                    <div class="h-full bg-blue-400" style="width:${Math.max(6, item.percent)}%"></div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : '';
+
+        board.innerHTML = donutHtml + podiumHtml + bentoGridHtml;
+        return;
+      }
+
+      // C. 視圖模式 2：「📜 詳細清單模式」（點擊同樣打開個人成績單）
+      board.innerHTML = donutHtml + `
+        <div class="space-y-2 pt-1">
+          ${sortedIdols.map((item, idx) => {
+            const safeName = item.member.replace(/'/g, "\\'");
+            const rankBadge = idx === 0 ? '🥇 No.1' : idx === 1 ? '🥈 No.2' : idx === 2 ? '🥉 No.3' : `#${idx + 1}`;
+            const barColor = idx === 0 ? 'bg-cheki-accent' : idx === 1 ? 'bg-blue-400' : 'bg-amber-400';
+            return `
+              <div onclick="openIdolReportCardModal('${safeName}')" class="neo-btn bg-pink-50/60 rounded-2xl p-2 flex items-center gap-2.5 cursor-pointer">
+                <div class="w-11 h-13 rounded-xl bg-white border border-pink-200 flex items-center justify-center overflow-hidden shrink-0">
+                  ${item.cover ? `<img src="${item.cover}" loading="lazy" class="max-h-full max-w-full object-contain pointer-events-none">` : '📸'}
+                </div>
+                <div class="flex-1 min-w-0 space-y-1">
+                  <div class="flex justify-between items-center gap-1">
+                    <div class="flex items-center gap-1.5 truncate">
+                      <span class="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-200 border border-cheki-dark shrink-0">${rankBadge}</span>
+                      <span class="font-black text-xs sm:text-sm truncate text-zinc-900">${item.member}</span>
+                    </div>
+                    <span class="font-black text-xs sm:text-sm text-cheki-accent shrink-0">${item.count} 張 (${item.percent}%)</span>
+                  </div>
+                  <div class="w-full h-2 rounded-full bg-white border border-cheki-dark overflow-hidden">
+                    <div class="h-full ${barColor}" style="width: ${item.percent}%"></div>
+                  </div>
+                  <div class="flex justify-between text-[10px] text-zinc-500 font-bold">
+                    <span>⭐ 最愛 ${item.favCount} 張 · 🌱 初見 ${item.firstDate || '-'}</span>
+                    <span>📅 最新 ${item.latestDate || '-'}</span>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    // 4. 解除每月統計 6 個月上限，支援一鍵展開全部歷史月份與點擊篩選
+    function renderUpgradedMonthlyList() {
+      const monthlyBox = document.getElementById('monthlyStatsList');
+      if (!monthlyBox) return;
+      const monthlyCounts = getMonthlyCounts();
+      if (monthlyCounts.length === 0) {
+        monthlyBox.innerHTML = `<p class="text-center py-4 text-zinc-400 font-bold text-xs">尚無月份紀錄</p>`;
+        return;
+      }
+
+      const maxM = Math.max(...monthlyCounts.map(m => m.count), 1);
+      const visibleList = statsShowAllMonths ? monthlyCounts : monthlyCounts.slice(0, 8);
+
+      monthlyBox.innerHTML = visibleList.map(m => {
+        const w = Math.max(8, Math.round((m.count / maxM) * 100));
+        return `
+          <div onclick="filterBinderBySpecificDate('${m.month}')" class="space-y-1 cursor-pointer hover:bg-blue-50/50 p-1 rounded-xl transition" title="點擊檢視該月所有 Cheki">
+            <div class="flex justify-between text-xs font-black">
+              <span>🗓️ ${m.month}</span>
+              <span class="text-blue-600">${m.count} 張 ▶</span>
+            </div>
+            <div class="w-full h-2 rounded-full bg-blue-50 border border-blue-200 overflow-hidden">
+              <div class="h-full bg-blue-400 rounded-full" style="width: ${w}%"></div>
+            </div>
+          </div>
+        `;
+      }).join('') + (monthlyCounts.length > 8 ? `
+        <button type="button" onclick="toggleStatsShowAllMonths()" class="w-full py-1.5 mt-1 rounded-xl bg-zinc-100 hover:bg-zinc-200 border border-cheki-dark text-[11px] font-black text-zinc-700">
+          ${statsShowAllMonths ? '🔼 收起較早月份' : `🔽 展開全部 ${monthlyCounts.length} 個月份紀錄`}
+        </button>
+      ` : '');
+    }
+
+    // =========================================================================
+    // 👤 偶像個人專屬應援成績單彈窗 (Idol Report Card Modal)
+    // =========================================================================
+    function ensureIdolReportModalExists() {
+      if (document.getElementById('idolReportCardModal')) return;
+      const div = document.createElement('div');
+      div.innerHTML = `
+        <div id="idolReportCardModal" class="hidden fixed inset-0 z-[108] bg-black/80 flex items-center justify-center p-3 overflow-y-auto">
+          <div id="idolReportCardContent" class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-4 space-y-3 max-h-[92vh] overflow-y-auto text-zinc-900"></div>
+        </div>
+      `;
+      document.body.appendChild(div);
+    }
+
+    window.openIdolReportCardModal = function(memberName) {
+      ensureIdolReportModalExists();
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(10);
+
+      const allMemberCards = cards.filter(c => (c.member || '未命名').trim() === memberName);
+      if (allMemberCards.length === 0) return;
+
+      const allIdolRanks = getIdolCounts();
+      const rankIdx = allIdolRanks.findIndex(i => i.member === memberName);
+      const rankLabel = rankIdx === 0 ? '👑 主推 No.1' : `🏆 應援排行 #${rankIdx + 1}`;
+      const sharePct = Math.round((allMemberCards.length / Math.max(1, cards.length)) * 100);
+
+      // 計算初見日、相識天數、最近見面日
+      const datedCards = allMemberCards.filter(c => c.date && /^\d{4}-\d{2}-\d{2}$/.test(c.date)).sort((a, b) => a.date.localeCompare(b.date));
+      const firstDate = datedCards[0]?.date || '-';
+      const latestDate = datedCards[datedCards.length - 1]?.date || '-';
+
+      let daysKnownText = '珍貴回憶';
+      if (firstDate !== '-') {
+        const diffDays = Math.max(1, Math.floor((Date.now() - new Date(firstDate + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)) + 1);
+        daysKnownText = `已相識 ${diffDays} 日`;
+      }
+
+      // 計算簽名與 2S 比例
+      let signedCnt = 0, twoShotCnt = 0, favCnt = 0;
+      const venueMap = {};
+      allMemberCards.forEach(c => {
+        if (c.fav) favCnt++;
+        const tags = Array.isArray(c.chekiTags) ? c.chekiTags : [];
+        if (tags.includes('signed')) signedCnt++;
+        if (tags.includes('2shot')) twoShotCnt++;
+        const loc = (c.locationName || '').trim();
+        if (loc) venueMap[loc] = (venueMap[loc] || 0) + 1;
+      });
+
+      const signedPct = Math.round((signedCnt / allMemberCards.length) * 100);
+      const twoShotPct = Math.round((twoShotCnt / allMemberCards.length) * 100);
+      const topVenues = Object.entries(venueMap).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      const coverCard = allMemberCards.find(c => c.fav) || allMemberCards[0];
+      const safeName = memberName.replace(/'/g, "\\'");
+
+      const contentBox = document.getElementById('idolReportCardContent');
+      contentBox.innerHTML = `
+        <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xl">💌</span>
+            <div>
+              <h3 class="font-black text-base leading-tight">${memberName} · 專屬應援成績單</h3>
+              <p class="text-[10px] text-zinc-500 font-bold">個人收藏深度分析與參戰回憶錄 ✨</p>
+            </div>
+          </div>
+          <button type="button" onclick="document.getElementById('idolReportCardModal').classList.add('hidden')" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm">✕</button>
+        </div>
+
+        <!-- 頂部偶像主卡 -->
+        <div class="rounded-2xl border-2 border-cheki-dark bg-gradient-to-br from-sky-100 via-pink-50 to-amber-50 p-3 flex items-center gap-3 shadow-sm">
+          <div onclick="document.getElementById('idolReportCardModal').classList.add('hidden');openInspectModal(${coverCard.id});" class="w-20 h-24 rounded-xl bg-white border-2 border-cheki-dark p-1 flex items-center justify-center overflow-hidden shrink-0 cursor-pointer shadow">
+            <img src="${getThumbOrFull(coverCard)}" class="max-h-full max-w-full object-contain rounded">
+          </div>
+          <div class="flex-1 min-w-0 space-y-1">
+            <span class="px-2.5 py-0.5 rounded-full bg-cheki-accent text-white border border-cheki-dark text-[10px] font-black">${rankLabel}</span>
+            <h4 class="font-black text-lg text-zinc-900 truncate">${memberName}</h4>
+            <p class="text-xs font-black text-blue-700">累積珍藏：<span class="text-base">${allMemberCards.length}</span> 張 Cheki（佔總數 ${sharePct}%）</p>
+            <p class="text-[11px] font-bold text-zinc-600">⭐ 最愛珍藏：${favCnt} 張</p>
+          </div>
+        </div>
+
+        <!-- 4 大核心數據格 -->
+        <div class="grid grid-cols-2 gap-2">
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-2.5">
+            <span class="text-[10px] font-bold text-zinc-400 block">🌱 初見紀念日</span>
+            <p class="font-black text-xs text-zinc-900 mt-0.5">${firstDate}</p>
+            <span class="inline-block mt-1 px-2 py-0.5 rounded-full bg-pink-100 text-cheki-accent text-[10px] font-black">💙 ${daysKnownText}</span>
+          </div>
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-2.5">
+            <span class="text-[10px] font-bold text-zinc-400 block">📅 最近見面日</span>
+            <p class="font-black text-xs text-zinc-900 mt-0.5">${latestDate}</p>
+            <span class="inline-block mt-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-black">🗓️ 共 ${new Set(datedCards.map(c => c.date)).size} 個參戰日</span>
+          </div>
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-2.5">
+            <span class="text-[10px] font-bold text-zinc-400 block">✍️ 簽名拍立得</span>
+            <p class="font-black text-xs text-zinc-900 mt-0.5">${signedCnt} 張 (${signedPct}%)</p>
+            <div class="w-full h-1.5 rounded-full bg-zinc-100 overflow-hidden mt-1.5">
+              <div class="h-full bg-blue-500" style="width:${signedPct}%"></div>
+            </div>
+          </div>
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-2.5">
+            <span class="text-[10px] font-bold text-zinc-400 block">👫 雙人 2S 合照</span>
+            <p class="font-black text-xs text-zinc-900 mt-0.5">${twoShotCnt} 張 (${twoShotPct}%)</p>
+            <div class="w-full h-1.5 rounded-full bg-zinc-100 overflow-hidden mt-1.5">
+              <div class="h-full bg-cheki-accent" style="width:${twoShotPct}%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 最常去場地 Top 3 -->
+        ${topVenues.length > 0 ? `
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-2.5 space-y-1.5">
+            <span class="text-[11px] font-black text-zinc-700 block">📍 最常與 ${memberName} 見面的場地：</span>
+            <div class="space-y-1">
+              ${topVenues.map(([vName, vCnt], idx) => `
+                <div class="flex items-center justify-between text-xs font-black px-2 py-1 rounded-xl bg-blue-50/70">
+                  <span class="truncate">${idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'} ${vName}</span>
+                  <span class="text-blue-600 shrink-0">${vCnt} 張</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- 近期代表作預覽列 -->
+        <div class="space-y-1">
+          <span class="text-[11px] font-black text-zinc-700 px-1">🎴 拍立得快速預覽（點選可放大）：</span>
+          <div class="flex gap-2 overflow-x-auto no-scrollbar py-1">
+            ${allMemberCards.slice(0, 10).map(c => `
+              <div onclick="document.getElementById('idolReportCardModal').classList.add('hidden');openInspectModal(${c.id});" class="shrink-0 w-16 flex flex-col items-center cursor-pointer">
+                <div class="w-16 h-20 rounded-xl bg-white border-2 border-cheki-dark p-0.5 flex items-center justify-center overflow-hidden shadow-sm">
+                  <img src="${getThumbOrFull(c)}" loading="lazy" class="max-h-full max-w-full object-contain rounded">
+                </div>
+                <span class="text-[9px] font-bold text-zinc-500 mt-0.5">${(c.date || '').slice(5)}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- 底部操作按鈕 -->
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <button type="button" onclick="document.getElementById('idolReportCardModal').classList.add('hidden');filterByMemberInBinder('${safeName}');" class="py-2.5 px-3 rounded-2xl bg-blue-500 text-white neo-btn font-black text-xs flex items-center justify-center gap-1">
+            🎴 去卡冊睇晒 (${allMemberCards.length}張)
+          </button>
+          <button type="button" onclick="document.getElementById('idolReportCardModal').classList.add('hidden');openChekiPosterModal(cards.filter(c=>(c.member||'').trim()==='${safeName}'), '👑 ${safeName} · 應援珍藏合集');" class="py-2.5 px-3 rounded-2xl bg-cheki-accent text-white neo-btn font-black text-xs flex items-center justify-center gap-1">
+            🖼️ 生成專屬海報
+          </button>
+        </div>
+      `;
+
+      document.getElementById('idolReportCardModal').classList.remove('hidden');
+    };
+
+    // =========================================================================
+    // 📸 一鍵生成「應援數據總結報告圖 (Oshikatsu Wrapped Infographic)」
+    // =========================================================================
+    function ensureStatsWrappedModalExists() {
+      if (document.getElementById('statsWrappedModal')) return;
+      const div = document.createElement('div');
+      div.innerHTML = `
+        <div id="statsWrappedModal" class="hidden fixed inset-0 z-[112] bg-black/85 flex items-center justify-center p-2.5 overflow-y-auto">
+          <div class="bg-cheki-surface w-full max-w-md rounded-3xl neo-box p-3.5 space-y-3 max-h-[92vh] overflow-y-auto text-zinc-900">
+            <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xl">📊</span>
+                <div>
+                  <h3 class="font-black text-base leading-tight">應援數據總結報告圖</h3>
+                  <p class="text-[10px] text-zinc-500 font-bold">一圖打包排行榜、參戰日數與比例，直發 IG / X ✨</p>
+                </div>
+              </div>
+              <button type="button" onclick="document.getElementById('statsWrappedModal').classList.add('hidden')" class="w-8 h-8 rounded-full bg-white neo-btn font-black text-sm">✕</button>
+            </div>
+
+            <div class="bg-zinc-900 rounded-2xl p-2.5 border-2 border-cheki-dark overflow-hidden">
+              <div id="wrappedLoadingHint" class="text-xs font-black text-amber-300 py-8 text-center animate-pulse">⏳ 正在繪製高清應援總結報告圖...</div>
+              <div class="w-full h-[46vh] max-h-[380px] overflow-y-auto flex items-center justify-center bg-zinc-950/80 rounded-xl p-1.5">
+                <img id="wrappedPreviewImg" src="" class="max-h-full max-w-full w-auto h-auto object-contain rounded-lg shadow-2xl mx-auto">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <button type="button" onclick="downloadStatsWrappedImg()" class="py-3 px-3 rounded-2xl bg-cheki-accent text-white neo-btn font-black text-xs flex items-center justify-center gap-1">
+                ⬇️ 下載高清報告圖
+              </button>
+              <button type="button" onclick="shareStatsWrappedImg()" class="py-3 px-3 rounded-2xl bg-sky-300 text-zinc-900 neo-btn font-black text-xs flex items-center justify-center gap-1">
+                📤 分享至 IG / X
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(div);
+    }
+
+    window.openStatsWrappedModal = async function() {
+      ensureStatsWrappedModalExists();
+      document.getElementById('statsWrappedModal').classList.remove('hidden');
+      const hint = document.getElementById('wrappedLoadingHint');
+      const preview = document.getElementById('wrappedPreviewImg');
+      if (hint) hint.classList.remove('hidden');
+      if (preview) preview.src = '';
+
+      const scopedCards = getStatsTimeFilteredCards();
+      const canvasW = 1080, canvasH = 1920;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+
+      // 1. 背景漸層
+      const grad = ctx.createLinearGradient(0, 0, canvasW, canvasH);
+      grad.addColorStop(0, '#E0F2FE');
+      grad.addColorStop(0.5, '#FFF1F2');
+      grad.addColorStop(1, '#FEF3C7');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvasW, canvasH);
+
+      // 2. 頂部標題卡
+      const pad = 52;
+      ctx.fillStyle = '#272228';
+      drawRoundedRectPath(ctx, pad + 8, pad + 8, canvasW - pad * 2, 165, 32);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      drawRoundedRectPath(ctx, pad, pad, canvasW - pad * 2, 165, 32);
+      ctx.fill();
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#272228';
+      ctx.stroke();
+
+      ctx.fillStyle = '#272228';
+      ctx.font = '900 46px "Zen Maru Gothic", sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.fillText('📊 ChekiPocket 應援數據總結', pad + 36, pad + 32);
+
+      ctx.fillStyle = '#2563EB';
+      ctx.font = '900 28px "Zen Maru Gothic", sans-serif';
+      ctx.fillText(`🗓️ 統計範圍：${getStatsTimeFilterLabel()}  ·  📅 生成日：${new Date().toISOString().slice(0, 10)}`, pad + 38, pad + 102);
+
+      // 計算各項統計
+      const idolMap = {};
+      const locMap = {};
+      const dateSet = new Set();
+      let favCnt = 0, signedCnt = 0, twoShotCnt = 0;
+
+      scopedCards.forEach(c => {
+        const m = (c.member || '未命名').trim();
+        if (!idolMap[m]) idolMap[m] = { member: m, count: 0, cover: c.image || '' };
+        idolMap[m].count++;
+        if (c.fav) { favCnt++; idolMap[m].cover = c.image || idolMap[m].cover; }
+        if (c.date) dateSet.add(c.date);
+        if (c.locationName) locMap[c.locationName.trim()] = (locMap[c.locationName.trim()] || 0) + 1;
+        const tags = Array.isArray(c.chekiTags) ? c.chekiTags : [];
+        if (tags.includes('signed')) signedCnt++;
+        if (tags.includes('2shot')) twoShotCnt++;
+      });
+
+      const idolList = Object.values(idolMap).sort((a, b) => b.count - a.count);
+      const topLocs = Object.entries(locMap).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      const total = scopedCards.length;
+
+      // 3. 繪製 4 大核心數據方塊
+      const kpis = [
+        { label: '總拍立得數', val: `${total} 張`, bg: '#FCE7F3', col: '#FF5C8A' },
+        { label: '應援偶像數', val: `${idolList.length} 人`, bg: '#DBEAFE', col: '#2563EB' },
+        { label: '累積參戰日', val: `${dateSet.size} 日`, bg: '#FEF3C7', col: '#D97706' },
+        { label: '最愛珍藏數', val: `${favCnt} 張`, bg: '#D1FAE5', col: '#059669' }
+      ];
+      const kpiW = Math.floor((canvasW - pad * 2 - 24 * 3) / 4);
+      const kpiY = pad + 195;
+
+      kpis.forEach((k, idx) => {
+        const kx = pad + idx * (kpiW + 24);
+        ctx.fillStyle = '#272228';
+        drawRoundedRectPath(ctx, kx + 5, kpiY + 5, kpiW, 135, 24);
+        ctx.fill();
+        ctx.fillStyle = k.bg;
+        drawRoundedRectPath(ctx, kx, kpiY, kpiW, 135, 24);
+        ctx.fill();
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#272228';
+        ctx.stroke();
+
+        ctx.fillStyle = '#52525B';
+        ctx.font = '900 22px "Zen Maru Gothic", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(k.label, kx + kpiW / 2, kpiY + 26);
+
+        ctx.fillStyle = k.col;
+        ctx.font = '900 40px "Zen Maru Gothic", sans-serif';
+        ctx.fillText(k.val, kx + kpiW / 2, kpiY + 72);
+      });
+      ctx.textAlign = 'left';
+
+      // 4. 繪製 Top 6 偶像排行榜（含拍立得縮圖）
+      const boardY = kpiY + 168;
+      const boardH = 980;
+      ctx.fillStyle = '#272228';
+      drawRoundedRectPath(ctx, pad + 8, boardY + 8, canvasW - pad * 2, boardH, 32);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      drawRoundedRectPath(ctx, pad, boardY, canvasW - pad * 2, boardH, 32);
+      ctx.fill();
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#272228';
+      ctx.stroke();
+
+      ctx.fillStyle = '#272228';
+      ctx.font = '900 34px "Zen Maru Gothic", sans-serif';
+      ctx.fillText('👑 偶像應援張數排行榜 Top 6', pad + 34, boardY + 28);
+
+      const top6 = idolList.slice(0, 6);
+      const loadedCovers = await Promise.all(top6.map(it => loadImgPromise(it.cover)));
+
+      top6.forEach((it, idx) => {
+        const ry = boardY + 95 + idx * 142;
+        const rx = pad + 32;
+        const rw = canvasW - pad * 2 - 64;
+        const pct = Math.round((it.count / Math.max(1, total)) * 100);
+
+        ctx.fillStyle = idx === 0 ? '#FFF1F2' : '#F8FAFC';
+        drawRoundedRectPath(ctx, rx, ry, rw, 124, 22);
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#272228';
+        ctx.stroke();
+
+        // 繪製縮圖
+        const cov = loadedCovers[idx];
+        if (cov) {
+          ctx.save();
+          drawRoundedRectPath(ctx, rx + 14, ry + 12, 76, 100, 12);
+          ctx.clip();
+          ctx.drawImage(cov, rx + 14, ry + 12, 76, 100);
+          ctx.restore();
+        }
+
+        const rankTxt = idx === 0 ? '🥇 No.1' : idx === 1 ? '🥈 No.2' : idx === 2 ? '🥉 No.3' : `#${idx + 1}`;
+        ctx.fillStyle = '#272228';
+        ctx.font = '900 30px "Zen Maru Gothic", sans-serif';
+        ctx.fillText(`${rankTxt}  ${it.member}`, rx + 110, ry + 22);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#FF5C8A';
+        ctx.fillText(`${it.count} 張 (${pct}%)`, rx + rw - 24, ry + 22);
+        ctx.textAlign = 'left';
+
+        // 進度條
+        const barX = rx + 110, barY = ry + 76, barW = rw - 136, barH = 24;
+        ctx.fillStyle = '#E2E8F0';
+        drawRoundedRectPath(ctx, barX, barY, barW, barH, 12);
+        ctx.fill();
+
+        ctx.fillStyle = CHART_PALETTE[idx % CHART_PALETTE.length];
+        drawRoundedRectPath(ctx, barX, barY, Math.max(24, Math.round(barW * (pct / 100))), barH, 12);
+        ctx.fill();
+      });
+
+      // 5. 底部類型與常去場地卡
+      const botY = boardY + boardH + 32;
+      const botH = 340;
+      ctx.fillStyle = '#272228';
+      drawRoundedRectPath(ctx, pad + 8, botY + 8, canvasW - pad * 2, botH, 32);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      drawRoundedRectPath(ctx, pad, botY, canvasW - pad * 2, botH, 32);
+      ctx.fill();
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#272228';
+      ctx.stroke();
+
+      const signedPct = Math.round((signedCnt / Math.max(1, total)) * 100);
+      const twoShotPct = Math.round((twoShotCnt / Math.max(1, total)) * 100);
+
+      ctx.fillStyle = '#272228';
+      ctx.font = '900 30px "Zen Maru Gothic", sans-serif';
+      ctx.fillText(`✍️ 有簽名比例：${signedCnt} 張 (${signedPct}%)    ｜    👫 雙人 2S 合照：${twoShotCnt} 張 (${twoShotPct}%)`, pad + 34, botY + 32);
+
+      ctx.fillStyle = '#2563EB';
+      ctx.font = '900 28px "Zen Maru Gothic", sans-serif';
+      ctx.fillText('📍 最常參戰場地 Top 3：', pad + 34, botY + 96);
+
+      topLocs.forEach(([lName, lCnt], idx) => {
+        ctx.fillStyle = '#272228';
+        ctx.font = '700 26px "Zen Maru Gothic", sans-serif';
+        ctx.fillText(`${idx + 1}. ${lName} （${lCnt} 張 Cheki）`, pad + 44, botY + 148 + idx * 52);
+      });
+
+      const nick = (typeof userOshiProfile !== 'undefined' && userOshiProfile.nickname)
+        ? userOshiProfile.nickname
+        : '✨ 香港のトミー (Tommy) ✨';
+      ctx.fillStyle = '#52525B';
+      ctx.font = '900 26px "Zen Maru Gothic", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${nick}  ·  📸 ChekiPocket Oshikatsu Report`, canvasW / 2, canvasH - 52);
+      ctx.textAlign = 'left';
+
+      statsWrappedDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      if (preview) preview.src = statsWrappedDataUrl;
+      if (hint) hint.classList.add('hidden');
+    };
+
+    window.downloadStatsWrappedImg = function() {
+      if (!statsWrappedDataUrl) return;
+      const a = document.createElement('a');
+      a.href = statsWrappedDataUrl;
+      a.download = `ChekiPocket_統計報告_${getStatsTimeFilterLabel()}_${new Date().toISOString().slice(0, 10)}.jpg`;
+      a.click();
+    };
+
+    window.shareStatsWrappedImg = async function() {
+      if (!statsWrappedDataUrl) return;
+      try {
+        const res = await fetch(statsWrappedDataUrl);
+        const blob = await res.blob();
+        const file = new File([blob], `ChekiPocket_Report_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ title: 'ChekiPocket 應援數據總結報告', files: [file] });
+          return;
+        }
+      } catch (_) {}
+      window.downloadStatsWrappedImg();
+    };
+
+    // 5. 掛載並自動接管 renderStats（支援時間篩選 + 縮圖代理加速）
+    function initUltimateStatsUpgradePlugin() {
+      const origRenderStats = window.renderStats;
+      if (typeof origRenderStats === 'function' && !origRenderStats._wrappedUltimateStats) {
+        window.renderStats = function() {
+          renderStatsTopFilterBar();
+          const fullBackupCards = cards;
+          try {
+            // 暫時將 cards 切換為目前所選「年份/月份」的子集，讓全頁所有圖表與子分頁自動同步！
+            cards = getStatsTimeFilteredCards();
+            if (typeof runWithThumbnailProxy === 'function') {
+              runWithThumbnailProxy(() => {
+                origRenderStats.apply(this, arguments);
+                renderUpgradedIdolLeaderboard();
+                renderUpgradedMonthlyList();
+              }, this, arguments);
+            } else {
+              origRenderStats.apply(this, arguments);
+              renderUpgradedIdolLeaderboard();
+              renderUpgradedMonthlyList();
+            }
+          } finally {
+            cards = fullBackupCards;
+          }
+        };
+        window.renderStats._wrappedUltimateStats = true;
+      }
+
+      if (currentTab === 'stats') {
+        window.renderStats();
+      }
+    }
+
+    setTimeout(initUltimateStatsUpgradePlugin, 620);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
