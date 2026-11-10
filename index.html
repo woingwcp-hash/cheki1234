@@ -12845,6 +12845,757 @@ function switchCheerModalTab(mode) {
     }
 
     setTimeout(initFlipVideoAndLuckyGachaPlugin, 650);
+// =========================================================================
+    // ☁️ Google Drive API 雲端增量備份與跨機還原引擎 (Incremental Cloud Sync)
+    // =========================================================================
+    const GDRIVE_FOLDER_NAME = 'ChekiPocket_Cloud_Backup';
+    const GDRIVE_MANIFEST_NAME = 'cheki_manifest.json';
+    const GDRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+
+    let gdriveAccessToken = sessionStorage.getItem('cheki_gdrive_token') || '';
+    let gdriveTokenExp = Number(sessionStorage.getItem('cheki_gdrive_exp') || 0);
+    let gdriveIsSyncing = false;
+    let gisScriptLoadingPromise = null;
+
+    function getSavedGoogleClientId() {
+      return (localStorage.getItem('cheki_google_client_id') || '').trim();
+    }
+
+    // 計算相片內容快速指紋（FNV-1a 抽樣雜湊 + 長度），偵測裁切、漂白或換圖變動
+    function getCloudCardImageSig(imgStr) {
+      if (!imgStr || typeof imgStr !== 'string') return '';
+      const len = imgStr.length;
+      let h = 2166136261;
+      const step = Math.max(1, Math.floor(len / 512));
+      for (let i = 0; i < len; i += step) {
+        h ^= imgStr.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return `${len}_${(h >>> 0).toString(16)}`;
+    }
+
+    // 將 Base64 DataURL 轉為原生二進制 Blob，減少約 25%~33% 傳輸體積
+    function dataUrlToBinaryBlob(dataUrl) {
+      const commaIdx = dataUrl.indexOf(',');
+      if (commaIdx === -1) throw new Error('相片格式不正確');
+      const meta = dataUrl.slice(0, commaIdx);
+      const mimeMatch = meta.match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      const binStr = atob(dataUrl.slice(commaIdx + 1));
+      const len = binStr.length;
+      const u8 = new Uint8Array(len);
+      for (let i = 0; i < len; i++) u8[i] = binStr.charCodeAt(i);
+      return new Blob([u8], { type: mime });
+    }
+
+    function binaryBlobToDataUrl(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    // 動態載入 Google Identity Services (GIS) 官方認證 SDK
+    function loadGoogleGisSdk() {
+      if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+        return Promise.resolve();
+      }
+      if (gisScriptLoadingPromise) return gisScriptLoadingPromise;
+      gisScriptLoadingPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        script.onload = () => resolve();
+        script.onerror = () => {
+          gisScriptLoadingPromise = null;
+          reject(new Error('無法載入 Google 認證服務，請檢查網絡連線'));
+        };
+        document.head.appendChild(script);
+      });
+      return gisScriptLoadingPromise;
+    }
+
+    // 取得有效 Access Token（若未過期直接沿用，否則彈出 Google 授權視窗）
+    async function ensureGoogleDriveToken(forceConsent = false) {
+      const clientId = getSavedGoogleClientId();
+      if (!clientId || !clientId.includes('.apps.googleusercontent.com')) {
+        const cfgBox = document.getElementById('gdriveClientConfigBox');
+        if (cfgBox) cfgBox.classList.remove('hidden');
+        throw new Error('請先展開下方設定框，貼上你的 Google OAuth Client ID！');
+      }
+
+      if (!forceConsent && gdriveAccessToken && Date.now() < gdriveTokenExp - 240000) {
+        return gdriveAccessToken;
+      }
+
+      await loadGoogleGisSdk();
+
+      return new Promise((resolve, reject) => {
+        try {
+          const tokenClient = window.google.accounts.oauth2.initTokenClient({
+            client_id: clientId,
+            scope: GDRIVE_SCOPE,
+            callback: (resp) => {
+              if (resp.error) {
+                reject(new Error(`Google 授權失敗 (${resp.error})，請確認已將你的 Gmail 加入測試使用者及授權網址來源`));
+                return;
+              }
+              gdriveAccessToken = resp.access_token;
+              gdriveTokenExp = Date.now() + (Number(resp.expires_in || 3599) * 1000);
+              try {
+                sessionStorage.setItem('cheki_gdrive_token', gdriveAccessToken);
+                sessionStorage.setItem('cheki_gdrive_exp', String(gdriveTokenExp));
+              } catch (_) {}
+              updateCloudModalAuthBadge();
+              resolve(gdriveAccessToken);
+            },
+            error_callback: (err) => {
+              reject(new Error(`授權視窗中斷 (${err?.type || '未知原因'})，請確認瀏覽器未封鎖彈出視窗`));
+            }
+          });
+          tokenClient.requestAccessToken({ prompt: forceConsent ? 'consent' : '' });
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+
+    // Google Drive API 通用請求封裝
+    async function gdriveFetchJson(url, options = {}) {
+      const res = await fetch(url, {
+        ...options,
+        headers: {
+          'Authorization': `Bearer ${gdriveAccessToken}`,
+          ...(options.headers || {})
+        }
+      });
+      if (res.status === 401) {
+        gdriveAccessToken = '';
+        sessionStorage.removeItem('cheki_gdrive_token');
+        throw new Error('Google 登入授權已逾時，請再按一次重新授權');
+      }
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Drive API 錯誤 (${res.status}): ${txt.slice(0, 120)}`);
+      }
+      return res.json();
+    }
+
+    // Multipart 二進制上傳或更新單一檔案（自動處理 POST 新增與 PATCH 更新差異）
+    async function gdriveUploadMultipart({ fileId, name, folderId, contentBlob, mimeType, appProperties }) {
+      const boundary = 'chekipocket_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      const metadata = { name, mimeType };
+      if (!fileId && folderId) {
+        metadata.parents = [folderId]; // PATCH 更新時不可帶 parents 欄位
+      }
+      if (appProperties) {
+        metadata.appProperties = appProperties;
+      }
+
+      const part1 = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`;
+      const part2 = `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`;
+      const ending = `\r\n--${boundary}--`;
+      const bodyBlob = new Blob([part1, part2, contentBlob, ending], {
+        type: `multipart/related; boundary=${boundary}`
+      });
+
+      const url = fileId
+        ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=multipart&fields=id,name,appProperties`
+        : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,appProperties`;
+
+      return gdriveFetchJson(url, {
+        method: fileId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+        body: bodyBlob
+      });
+    }
+
+    // 尋找或建立專屬備份資料夾 ChekiPocket_Cloud_Backup
+    async function findOrCreateBackupFolder(createIfMissing = true) {
+      const q = encodeURIComponent(`name = '${GDRIVE_FOLDER_NAME}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
+      const data = await gdriveFetchJson(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&spaces=drive`);
+      if (data.files && data.files.length > 0) {
+        return data.files[0].id;
+      }
+      if (!createIfMissing) return null;
+
+      const created = await gdriveFetchJson('https://www.googleapis.com/drive/v3/files?fields=id,name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: GDRIVE_FOLDER_NAME,
+          mimeType: 'application/vnd.google-apps.folder'
+        })
+      });
+      return created.id;
+    }
+
+    // 完整列出雲端備份資料夾內所有檔案（支援分頁突破 100 張上限，輕鬆處理 1000+ 張相）
+    async function listAllBackupFilesInFolder(folderId) {
+      const allFiles = [];
+      let pageToken = '';
+      do {
+        const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
+        const tokenParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
+        const url = `https://www.googleapis.com/drive/v3/files?q=${q}&pageSize=1000&fields=nextPageToken,files(id,name,appProperties,modifiedTime)${tokenParam}&spaces=drive`;
+        const data = await gdriveFetchJson(url);
+        if (Array.isArray(data.files)) allFiles.push(...data.files);
+        pageToken = data.nextPageToken || '';
+      } while (pageToken);
+      return allFiles;
+    }
+
+    // 並行佇列控制器（限制同時 3 個請求，兼顧極速與防觸發流量限制）
+    async function runConcurrentTasks(items, concurrency, workerFn) {
+      let idx = 0;
+      const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+        while (idx < items.length) {
+          const currentIndex = idx++;
+          await workerFn(items[currentIndex], currentIndex);
+        }
+      });
+      await Promise.all(workers);
+    }
+
+    function setCloudProgressUI(visible, text = '', pct = 0) {
+      const wrap = document.getElementById('gdriveProgressWrap');
+      const txtEl = document.getElementById('gdriveProgressText');
+      const barEl = document.getElementById('gdriveProgressBar');
+      if (wrap) wrap.classList.toggle('hidden', !visible);
+      if (txtEl && text) txtEl.textContent = text;
+      if (barEl) barEl.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+    }
+
+    // ⬆️ 核心功能 1：雲端增量備份（只上傳新相或修圖後變動過的相片！）
+    window.startGoogleDriveIncrementalBackup = async function() {
+      if (gdriveIsSyncing) return;
+      gdriveIsSyncing = true;
+      try {
+        await ensureGoogleDriveToken(false);
+        setCloudProgressUI(true, '🔍 正在掃描雲端備份資料夾與比對差異...', 5);
+
+        const folderId = await findOrCreateBackupFolder(true);
+        const remoteFiles = await listAllBackupFilesInFolder(folderId);
+
+        let manifestFile = null;
+        const remotePhotoMap = new Map(); // cardId -> { fileId, sig }
+
+        remoteFiles.forEach(f => {
+          if (f.name === GDRIVE_MANIFEST_NAME) {
+            manifestFile = f;
+          } else if (f.name.startsWith('cheki_') && f.name.endsWith('.jpg')) {
+            const idFromName = f.name.slice(6, -4);
+            const cid = (f.appProperties && f.appProperties.cardId) || idFromName;
+            const sig = (f.appProperties && f.appProperties.sig) || '';
+            remotePhotoMap.set(String(cid), { fileId: f.id, sig });
+          }
+        });
+
+        // 比對本機 cards 找出需要「新增上傳」或「修圖更新」的相片
+        const uploadQueue = [];
+        const finalPhotoIndex = {};
+
+        cards.forEach(c => {
+          if (!c || !c.id || !c.image) return;
+          const cid = String(c.id);
+          const curSig = getCloudCardImageSig(c.image);
+          const remote = remotePhotoMap.get(cid);
+
+          if (!remote || remote.sig !== curSig) {
+            uploadQueue.push({ card: c, cid, curSig, existingFileId: remote ? remote.fileId : null });
+          } else {
+            finalPhotoIndex[cid] = { fileId: remote.fileId, sig: curSig };
+          }
+        });
+
+        const skippedCount = cards.length - uploadQueue.length;
+        let completedUploads = 0;
+
+        if (uploadQueue.length > 0) {
+          setCloudProgressUI(true, `⬆️ 偵測到 ${uploadQueue.length} 張新/改動相片（跳過 ${skippedCount} 張未變動），開始上傳...`, 12);
+
+          await runConcurrentTasks(uploadQueue, 3, async (task) => {
+            const imgBlob = dataUrlToBinaryBlob(task.card.image);
+            const uploaded = await gdriveUploadMultipart({
+              fileId: task.existingFileId,
+              name: `cheki_${task.cid}.jpg`,
+              folderId,
+              contentBlob: imgBlob,
+              mimeType: imgBlob.type || 'image/jpeg',
+              appProperties: { cardId: task.cid, sig: task.curSig }
+            });
+            finalPhotoIndex[task.cid] = { fileId: uploaded.id, sig: task.curSig };
+            completedUploads++;
+            const pct = 12 + Math.round((completedUploads / uploadQueue.length) * 76);
+            setCloudProgressUI(
+              true,
+              `⬆️ 正在增量上傳 (${completedUploads}/${uploadQueue.length})：${task.card.member || 'Cheki'}...`,
+              pct
+            );
+          });
+        }
+
+        // 若勾選「同步清理雲端已刪除相片」，將本機不存在的舊相移至 Drive 垃圾桶（30日內仍可救回）
+        const cleanDeleted = Boolean(document.getElementById('gdriveCleanOrphansCb')?.checked);
+        let trashedCount = 0;
+        if (cleanDeleted) {
+          const currentIdSet = new Set(cards.map(c => String(c.id)));
+          const orphans = [...remotePhotoMap.entries()].filter(([cid]) => !currentIdSet.has(cid));
+          if (orphans.length > 0) {
+            setCloudProgressUI(true, `🧹 正在將 ${orphans.length} 張已刪除舊相移至雲端垃圾桶...`, 90);
+            await runConcurrentTasks(orphans, 3, async ([, info]) => {
+              await gdriveFetchJson(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(info.fileId)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trashed: true })
+              });
+              trashedCount++;
+            });
+          }
+        }
+
+        // 建立輕量級 cheki_manifest.json（不含龐大 Base64 相片字串，秒速同步所有筆記、標籤與設定）
+        setCloudProgressUI(true, '📝 正在更新雲端索引檔 (筆記 / 相簿 / 標籤 / 行程)...', 94);
+
+        const cardsMeta = cards.map(c => {
+          const cid = String(c.id);
+          const pInfo = finalPhotoIndex[cid] || {};
+          return {
+            id: c.id,
+            createdAt: c.createdAt,
+            member: c.member,
+            date: c.date,
+            locationName: c.locationName,
+            lat: c.lat,
+            lng: c.lng,
+            note: c.note,
+            album: c.album,
+            albums: c.albums,
+            filterConfig: c.filterConfig,
+            isLandscape: c.isLandscape,
+            backColor: c.backColor,
+            fav: c.fav,
+            deskX: c.deskX,
+            deskY: c.deskY,
+            deskRot: c.deskRot,
+            deskScale: c.deskScale,
+            deskZ: c.deskZ,
+            deskFlipped: c.deskFlipped,
+            chekiTags: c.chekiTags,
+            isRemastered: c.isRemastered,
+            remasterMode: c.remasterMode,
+            imageSig: pInfo.sig || getCloudCardImageSig(c.image),
+            driveFileId: pInfo.fileId || ''
+          };
+        });
+
+        const manifestData = {
+          version: 2,
+          syncedAt: new Date().toISOString(),
+          totalCards: cards.length,
+          cardsMeta,
+          albums: albums || [],
+          deskBgConfig: deskBgConfig || {},
+          customChekiTags: typeof customChekiTags !== 'undefined' ? customChekiTags : [],
+          cheerEvents: typeof cheerEvents !== 'undefined' ? cheerEvents : [],
+          cheerTopics: typeof cheerTopics !== 'undefined' ? cheerTopics : [],
+          chekiSets: typeof chekiSets !== 'undefined' ? chekiSets : [],
+          userOshiProfile: typeof userOshiProfile !== 'undefined' ? userOshiProfile : null
+        };
+
+        const manifestBlob = new Blob([JSON.stringify(manifestData)], { type: 'application/json;charset=utf-8' });
+        await gdriveUploadMultipart({
+          fileId: manifestFile ? manifestFile.id : null,
+          name: GDRIVE_MANIFEST_NAME,
+          folderId,
+          contentBlob: manifestBlob,
+          mimeType: 'application/json'
+        });
+
+        const nowIso = new Date().toISOString();
+        try {
+          localStorage.setItem('cheki_last_cloud_sync', nowIso);
+          localStorage.setItem('cheki_last_backup_at', nowIso);
+          localStorage.setItem('cheki_last_cloud_count', String(cards.length));
+        } catch (_) {}
+
+        setCloudProgressUI(true, `✅ 增量備份完成！上傳 ${completedUploads} 張 · 跳過未改動 ${skippedCount} 張`, 100);
+        updateCloudSyncStatusSummary();
+        if (typeof updateStorageStatsInModal === 'function') updateStorageStatsInModal();
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast(`☁️ 雲端同步成功！上傳 ${completedUploads} 張，極速跳過 ${skippedCount} 張 ✨`, 3800);
+        }
+      } catch (err) {
+        setCloudProgressUI(false);
+        alert('❌ 雲端備份中斷：' + (err.message || err));
+      } finally {
+        gdriveIsSyncing = false;
+      }
+    };
+
+    // ⬇️ 核心功能 2：從 Google Drive 增量還原 / 跨機同步（本機已有的同畫質相片免重複下載！）
+    window.startGoogleDriveIncrementalRestore = async function() {
+      if (gdriveIsSyncing) return;
+      const mirrorOverwrite = Boolean(document.getElementById('gdriveMirrorRestoreCb')?.checked);
+      const confirmMsg = mirrorOverwrite
+        ? '確定要以「完整鏡像覆蓋模式」從 Google Drive 還原嗎？\n（本機將會完全跟足雲端清單，雲端沒有的本機相片會被移除）'
+        : '確定要從 Google Drive 執行「智能增量還原」嗎？\n（會自動下載本機缺少或已更新的相片並同步最新筆記與設定，本機已有的相同相片免重複下載！）';
+      if (!confirm(confirmMsg)) return;
+
+      gdriveIsSyncing = true;
+      try {
+        await ensureGoogleDriveToken(false);
+        setCloudProgressUI(true, '🔍 正在連線 Google Drive 讀取備份索引檔...', 8);
+
+        const folderId = await findOrCreateBackupFolder(false);
+        if (!folderId) {
+          throw new Error(`在你的 Google Drive 找不到「${GDRIVE_FOLDER_NAME}」備份資料夾，請先在原裝置執行一次雲端備份！`);
+        }
+
+        const remoteFiles = await listAllBackupFilesInFolder(folderId);
+        const manifestFile = remoteFiles.find(f => f.name === GDRIVE_MANIFEST_NAME);
+        if (!manifestFile) {
+          throw new Error('找不到雲端索引檔 cheki_manifest.json，請確認上次備份已完成！');
+        }
+
+        const remoteFileByCardId = new Map();
+        remoteFiles.forEach(f => {
+          if (f.name.startsWith('cheki_') && f.name.endsWith('.jpg')) {
+            const cid = (f.appProperties && f.appProperties.cardId) || f.name.slice(6, -4);
+            remoteFileByCardId.set(String(cid), f.id);
+          }
+        });
+
+        const mfRes = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(manifestFile.id)}?alt=media`, {
+          headers: { 'Authorization': `Bearer ${gdriveAccessToken}` }
+        });
+        if (!mfRes.ok) throw new Error('無法下載雲端索引檔');
+        const manifest = await mfRes.json();
+
+        // 1. 還原全域設定、相簿、自訂標籤、倒數行程、連拍套組與個人檔案
+        if (Array.isArray(manifest.albums)) {
+          manifest.albums.forEach(a => { if (a && !albums.includes(a)) albums.push(a); });
+          await saveAlbumsToDB();
+        }
+        if (manifest.deskBgConfig && typeof manifest.deskBgConfig === 'object') {
+          deskBgConfig = { ...deskBgConfig, ...manifest.deskBgConfig };
+          await saveDeskBgConfigToDB();
+        }
+        if (Array.isArray(manifest.customChekiTags) && typeof customChekiTags !== 'undefined') {
+          manifest.customChekiTags.forEach(t => {
+            if (t && t.id && !customChekiTags.some(x => x.id === t.id)) customChekiTags.push(t);
+          });
+          if (typeof saveCustomTagsToDB === 'function') saveCustomTagsToDB();
+        }
+        if (Array.isArray(manifest.cheerEvents) && manifest.cheerEvents.length > 0 && typeof cheerEvents !== 'undefined') {
+          cheerEvents = manifest.cheerEvents;
+        }
+        if (Array.isArray(manifest.cheerTopics) && typeof cheerTopics !== 'undefined') {
+          cheerTopics = manifest.cheerTopics;
+        }
+        if (typeof saveCheerDataToDB === 'function') saveCheerDataToDB();
+
+        if (Array.isArray(manifest.chekiSets) && typeof chekiSets !== 'undefined') {
+          chekiSets = manifest.chekiSets;
+          if (typeof saveChekiSetsToDB === 'function') saveChekiSetsToDB();
+        }
+        if (manifest.userOshiProfile && typeof userOshiProfile !== 'undefined') {
+          userOshiProfile = { ...userOshiProfile, ...manifest.userOshiProfile };
+          if (typeof saveUserOshiProfileToDB === 'function') saveUserOshiProfileToDB();
+        }
+
+        // 2. 比對本機現有相片，只下載「本機缺少」或「畫質指紋已更新」的相片
+        const localCardMap = new Map(cards.map(c => [String(c.id), c]));
+        const cardsMeta = Array.isArray(manifest.cardsMeta) ? manifest.cardsMeta : [];
+        const downloadTasks = [];
+        const readyCards = [];
+
+        cardsMeta.forEach(meta => {
+          const cid = String(meta.id);
+          const local = localCardMap.get(cid);
+          const localSig = local && local.image ? getCloudCardImageSig(local.image) : '';
+
+          if (local && local.image && meta.imageSig && localSig === meta.imageSig) {
+            // 本機已有完全一致的高清相片，免下載直接合併最新文字筆記與標籤！
+            const merged = { ...local, ...meta, image: local.image, baseImage: local.image };
+            delete merged.imageSig;
+            delete merged.driveFileId;
+            setCardAlbums(merged, meta.albums || [meta.album || '預設相簿']);
+            readyCards.push(merged);
+          } else {
+            const targetFileId = meta.driveFileId || remoteFileByCardId.get(cid);
+            if (targetFileId) {
+              downloadTasks.push({ meta, fileId: targetFileId });
+            }
+          }
+        });
+
+        let downloadedCount = 0;
+        if (downloadTasks.length > 0) {
+          setCloudProgressUI(true, `⬇️ 需要下載 ${downloadTasks.length} 張新增/更新相片（已重用本機 ${readyCards.length} 張）...`, 16);
+
+          await runConcurrentTasks(downloadTasks, 3, async (task) => {
+            const imgRes = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(task.fileId)}?alt=media`, {
+              headers: { 'Authorization': `Bearer ${gdriveAccessToken}` }
+            });
+            if (imgRes.ok) {
+              const blob = await imgRes.blob();
+              const dataUrl = await binaryBlobToDataUrl(blob);
+              const restored = { ...task.meta, image: dataUrl, baseImage: dataUrl };
+              delete restored.imageSig;
+              delete restored.driveFileId;
+              setCardAlbums(restored, task.meta.albums || [task.meta.album || '預設相簿']);
+              readyCards.push(restored);
+            }
+            downloadedCount++;
+            const pct = 16 + Math.round((downloadedCount / downloadTasks.length) * 76);
+            setCloudProgressUI(
+              true,
+              `⬇️ 正在下載相片 (${downloadedCount}/${downloadTasks.length})：${task.meta.member || 'Cheki'}...`,
+              pct
+            );
+          });
+        }
+
+        setCloudProgressUI(true, '💾 正在批次寫入本機資料庫...', 95);
+
+        // 若為完整鏡像模式，刪除不在雲端清單內的本機相片
+        if (mirrorOverwrite) {
+          const cloudIdSet = new Set(cardsMeta.map(m => String(m.id)));
+          for (const locCard of cards) {
+            if (!cloudIdSet.has(String(locCard.id))) {
+              await deleteCardFromDB(locCard.id);
+            }
+          }
+        }
+
+        if (typeof window.saveCardsBatchToDB === 'function') {
+          await window.saveCardsBatchToDB(readyCards);
+        } else {
+          for (const rc of readyCards) await saveCardToDB(rc);
+        }
+
+        await loadDataFromDB();
+        if (typeof syncFastCacheToLocalStorage === 'function') syncFastCacheToLocalStorage();
+        if (typeof updateCountdownDisplays === 'function') updateCountdownDisplays();
+
+        const nowIso = new Date().toISOString();
+        try {
+          localStorage.setItem('cheki_last_cloud_sync', nowIso);
+          localStorage.setItem('cheki_last_cloud_count', String(cards.length));
+        } catch (_) {}
+
+        setCloudProgressUI(true, `✅ 雲端還原完成！下載 ${downloadedCount} 張 · 本機免下載重用 ${readyCards.length - downloadedCount} 張`, 100);
+        updateCloudSyncStatusSummary();
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast(`☁️ 成功同步 ${readyCards.length} 張拍立得（新下載 ${downloadedCount} 張）！`, 4000);
+        }
+      } catch (err) {
+        setCloudProgressUI(false);
+        alert('❌ 雲端還原失敗：' + (err.message || err));
+      } finally {
+        gdriveIsSyncing = false;
+      }
+    };
+
+    // UI 與視窗管理
+    window.saveGoogleClientIdFromUI = function() {
+      const inp = document.getElementById('gdriveClientIdInput');
+      const val = (inp?.value || '').trim();
+      if (!val || !val.includes('.apps.googleusercontent.com')) {
+        alert('請輸入正確的 Google OAuth Client ID（結尾應為 .apps.googleusercontent.com）');
+        return;
+      }
+      localStorage.setItem('cheki_google_client_id', val);
+      gdriveAccessToken = '';
+      sessionStorage.removeItem('cheki_gdrive_token');
+      document.getElementById('gdriveClientConfigBox')?.classList.add('hidden');
+      updateCloudModalAuthBadge();
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast('🔑 已儲存 Client ID！現在可以點擊增量備份連線 Google Drive');
+      }
+    };
+
+    window.copyCurrentVercelOrigin = async function() {
+      const origin = window.location.origin;
+      try {
+        await navigator.clipboard.writeText(origin);
+      } catch (_) {}
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast(`📋 已複製網址來源：${origin}`);
+      }
+    };
+
+    function updateCloudModalAuthBadge() {
+      const badge = document.getElementById('gdriveAuthStateBadge');
+      if (!badge) return;
+      const cid = getSavedGoogleClientId();
+      if (!cid) {
+        badge.className = 'px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-400 text-[10px] font-black cursor-pointer';
+        badge.textContent = '⚙️ 尚未設定 Client ID';
+      } else if (gdriveAccessToken && Date.now() < gdriveTokenExp - 60000) {
+        badge.className = 'px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-400 text-[10px] font-black cursor-pointer';
+        badge.textContent = '🟢 Google Drive 已授權連線';
+      } else {
+        badge.className = 'px-2.5 py-0.5 rounded-full bg-sky-100 text-blue-800 border border-blue-300 text-[10px] font-black cursor-pointer';
+        badge.textContent = '☁️ 點擊備份時自動登入';
+      }
+    }
+
+    function updateCloudSyncStatusSummary() {
+      const sumEl = document.getElementById('gdriveLastSyncSummary');
+      if (!sumEl) return;
+      const lastSync = localStorage.getItem('cheki_last_cloud_sync');
+      const lastCnt = localStorage.getItem('cheki_last_cloud_count') || '0';
+      if (!lastSync) {
+        sumEl.textContent = `目前本機共有 ${cards.length} 張拍立得 · 尚未執行過雲端增量同步`;
+      } else {
+        const readable = lastSync.replace('T', ' ').slice(0, 16);
+        sumEl.textContent = `上次雲端同步：${readable}（雲端紀錄 ${lastCnt} 張 ｜ 本機現有 ${cards.length} 張）`;
+      }
+    }
+
+    function ensureCloudSyncModalExists() {
+      if (document.getElementById('cloudSyncModal')) return;
+      const div = document.createElement('div');
+      div.innerHTML = `
+        <div id="cloudSyncModal" class="hidden fixed inset-0 z-[118] bg-black/80 flex items-center justify-center p-3 overflow-y-auto">
+          <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-4 space-y-3 max-h-[92vh] overflow-y-auto text-zinc-900">
+            <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xl">☁️</span>
+                <div>
+                  <h3 class="font-black text-base leading-tight">Google Drive 雲端增量備份</h3>
+                  <p class="text-[10px] text-zinc-500 font-bold">只傳新增或改動相片 · 換機跨裝置秒速同步 ✨</p>
+                </div>
+              </div>
+              <button type="button" onclick="closeCloudSyncModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm shrink-0">✕</button>
+            </div>
+
+            <!-- 狀態卡 -->
+            <div class="rounded-2xl border-2 border-cheki-dark bg-gradient-to-br from-sky-50 via-white to-pink-50 p-3 space-y-2">
+              <div class="flex items-center justify-between gap-1 flex-wrap">
+                <span class="text-xs font-black text-zinc-800">📁 雲端位置：${GDRIVE_FOLDER_NAME}</span>
+                <span id="gdriveAuthStateBadge" onclick="document.getElementById('gdriveClientConfigBox').classList.toggle('hidden')" class="px-2.5 py-0.5 rounded-full bg-sky-100 text-blue-800 border border-blue-300 text-[10px] font-black cursor-pointer">檢查中...</span>
+              </div>
+              <p id="gdriveLastSyncSummary" class="text-[11px] font-bold text-zinc-600"></p>
+
+              <!-- 同步進度條 -->
+              <div id="gdriveProgressWrap" class="hidden pt-1 space-y-1">
+                <p id="gdriveProgressText" class="text-[11px] font-black text-blue-700">準備中...</p>
+                <div class="w-full h-2.5 rounded-full bg-zinc-200 border border-cheki-dark overflow-hidden">
+                  <div id="gdriveProgressBar" class="h-full bg-gradient-to-r from-blue-500 to-pink-500 transition-all duration-200" style="width: 0%"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 兩大核心按鈕 -->
+            <div class="space-y-2">
+              <button type="button" onclick="startGoogleDriveIncrementalBackup()" class="w-full py-3 px-3 rounded-2xl bg-gradient-to-r from-blue-500 to-sky-500 text-white neo-btn font-black text-xs flex items-center justify-center gap-1.5 active:scale-95">
+                ⬆️ 增量備份至 Google Drive（只傳新相與改動）
+              </button>
+
+              <button type="button" onclick="startGoogleDriveIncrementalRestore()" class="w-full py-3 px-3 rounded-2xl bg-emerald-300 text-zinc-900 neo-btn font-black text-xs flex items-center justify-center gap-1.5 active:scale-95">
+                ⬇️ 從 Google Drive 增量還原 / 跨機同步
+              </button>
+            </div>
+
+            <!-- 進階同步選項 -->
+            <div class="rounded-2xl border-2 border-zinc-200 bg-white p-2.5 space-y-1.5 text-[11px] font-bold text-zinc-700">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input id="gdriveCleanOrphansCb" type="checkbox" checked class="w-4 h-4 accent-blue-500 rounded">
+                <span>備份時同步將本機已刪除嘅舊相移至 Drive 垃圾桶</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input id="gdriveMirrorRestoreCb" type="checkbox" class="w-4 h-4 accent-pink-500 rounded">
+                <span>還原時使用「完整鏡像覆蓋」（移除雲端沒有嘅本機相片）</span>
+              </label>
+            </div>
+
+            <!-- 摺疊式 OAuth Client ID 設定框 -->
+            <div class="rounded-2xl border-2 border-cheki-dark bg-amber-50/70 p-3 space-y-2">
+              <div onclick="document.getElementById('gdriveClientConfigBox').classList.toggle('hidden')" class="flex items-center justify-between cursor-pointer">
+                <span class="text-xs font-black text-zinc-800">🔑 Google API Client ID 設定（首次必填）</span>
+                <span class="text-[10px] font-black text-blue-700 underline">展開 / 收起</span>
+              </div>
+
+              <div id="gdriveClientConfigBox" class="hidden space-y-2 pt-1 border-t border-amber-200">
+                <div class="flex items-center justify-between gap-1 bg-white px-2.5 py-1.5 rounded-xl border border-zinc-300">
+                  <span class="text-[10px] font-bold text-zinc-600 truncate">目前網址來源：<strong id="gdriveOriginDisplay" class="text-zinc-900"></strong></span>
+                  <button type="button" onclick="copyCurrentVercelOrigin()" class="px-2 py-0.5 rounded-lg bg-blue-100 border border-cheki-dark text-[10px] font-black text-blue-900 shrink-0">複製網址</button>
+                </div>
+                <input id="gdriveClientIdInput" type="text" placeholder="貼上 xxxx.apps.googleusercontent.com" class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark text-xs font-bold bg-white">
+                <div class="flex gap-1.5">
+                  <button type="button" onclick="saveGoogleClientIdFromUI()" class="flex-1 py-2 rounded-xl bg-cheki-accent text-white neo-btn text-xs font-black">💾 儲存 Client ID</button>
+                  <button type="button" onclick="ensureGoogleDriveToken(true).catch(e=>alert(e.message))" class="px-3 py-2 rounded-xl bg-white neo-btn text-xs font-black">🔄 重新授權</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(div);
+    }
+
+    window.openCloudSyncModal = function() {
+      ensureCloudSyncModalExists();
+      closeBackupModal();
+      const originEl = document.getElementById('gdriveOriginDisplay');
+      if (originEl) originEl.textContent = window.location.origin;
+
+      const savedCid = getSavedGoogleClientId();
+      const cidInp = document.getElementById('gdriveClientIdInput');
+      if (cidInp) cidInp.value = savedCid;
+
+      const cfgBox = document.getElementById('gdriveClientConfigBox');
+      if (cfgBox) cfgBox.classList.toggle('hidden', Boolean(savedCid));
+
+      updateCloudModalAuthBadge();
+      updateCloudSyncStatusSummary();
+      document.getElementById('cloudSyncModal').classList.remove('hidden');
+    };
+
+    window.closeCloudSyncModal = function() {
+      document.getElementById('cloudSyncModal')?.classList.add('hidden');
+    };
+
+    // 將「☁️ Google Drive 雲端增量備份」入口按鈕自動掛載於「📦 備份視窗」最上方
+    function injectCloudEntryIntoBackupModal() {
+      const backupModal = document.getElementById('backupModal');
+      if (!backupModal) return;
+      const exportBtn = backupModal.querySelector('button[onclick="exportAllData()"]');
+      if (exportBtn && exportBtn.parentElement && !document.getElementById('openGdriveSyncEntryBtn')) {
+        const cloudBtn = document.createElement('button');
+        cloudBtn.type = 'button';
+        cloudBtn.id = 'openGdriveSyncEntryBtn';
+        cloudBtn.onclick = window.openCloudSyncModal;
+        cloudBtn.className = 'w-full py-3 rounded-2xl bg-gradient-to-r from-sky-400 via-blue-500 to-indigo-500 text-white neo-btn font-black text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition';
+        cloudBtn.innerHTML = '☁️ Google Drive 雲端增量備份（只傳新相・跨機同步）';
+        exportBtn.parentElement.insertBefore(cloudBtn, exportBtn);
+      }
+    }
+
+    function initGoogleDriveCloudSyncPlugin() {
+      ensureCloudSyncModalExists();
+      injectCloudEntryIntoBackupModal();
+
+      ['openBackupModal', 'switchBackupModalTab'].forEach(fnName => {
+        const orig = window[fnName];
+        if (typeof orig === 'function' && !orig._wrappedCloudSyncEntry) {
+          window[fnName] = function() {
+            const res = orig.apply(this, arguments);
+            injectCloudEntryIntoBackupModal();
+            return res;
+          };
+          window[fnName]._wrappedCloudSyncEntry = true;
+        }
+      });
+    }
+
+    setTimeout(initGoogleDriveCloudSyncPlugin, 680);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
