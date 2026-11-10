@@ -12023,120 +12023,405 @@ function switchCheerModalTab(mode) {
       return _prevExportAll.apply(this, arguments);
     };
 
-    window.importAllData = function(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      if (typeof window.showChekiToast === 'function') {
-        window.showChekiToast('⏳ 正在讀取並高速還原備份檔...', 3500);
-      }
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        try {
-          const parsed = JSON.parse(ev.target.result);
-          const importedCards = Array.isArray(parsed) ? parsed : (parsed.cards || parsed.chekis || []);
-          const importedAlbums = Array.isArray(parsed.albums) ? parsed.albums : [];
+    // 📦 分段串流備份匯入引擎（每次讀取 4MB 區塊，支援數百 MB 大型 .json 備份檔穩定還原）
+    function normalizeStreamedCard(raw, idx) {
+      if (!raw || typeof raw !== 'object') return null;
+      const imgStr = raw.image || raw.img || raw.dataUrl || raw.baseImage || '';
+      if (!imgStr || typeof imgStr !== 'string') return null;
 
-          if (parsed.deskBgConfig && typeof parsed.deskBgConfig === 'object') {
-            deskBgConfig = { ...deskBgConfig, ...parsed.deskBgConfig };
-            await saveDeskBgConfigToDB();
+      const defaultAlb = (typeof albums !== 'undefined' && Array.isArray(albums) && albums[0]) ? albums[0] : '預設相簿';
+      const rawAlbs = Array.isArray(raw.albums) && raw.albums.length > 0
+        ? raw.albums.filter(Boolean)
+        : [raw.album || defaultAlb];
+
+      const rawTags = Array.isArray(raw.chekiTags)
+        ? raw.chekiTags
+        : (Array.isArray(raw.tags) ? raw.tags : []);
+
+      const normalized = {
+        ...raw,
+        id: raw.id ?? (Date.now() + idx + Math.floor(Math.random() * 100000)),
+        createdAt: raw.createdAt || Date.now(),
+        member: raw.member || raw.idol || raw.name || '遠藤まりん',
+        date: raw.date || new Date().toISOString().split('T')[0],
+        locationName: raw.locationName || raw.location || '',
+        lat: typeof raw.lat === 'number' ? raw.lat : null,
+        lng: typeof raw.lng === 'number' ? raw.lng : null,
+        note: raw.note || raw.memo || '',
+        album: rawAlbs[0] || '預設相簿',
+        albums: rawAlbs,
+        image: imgStr,
+        baseImage: imgStr,
+        filterConfig: raw.filterConfig || { sharpen: 0, deglare: 0, brightness: 100, contrast: 100 },
+        isLandscape: Boolean(raw.isLandscape),
+        backColor: raw.backColor || '#60A5FA',
+        fav: Boolean(raw.fav || raw.favorite),
+        deskX: typeof raw.deskX === 'number' ? raw.deskX : 45 + (idx * 35) % 150,
+        deskY: typeof raw.deskY === 'number' ? raw.deskY : 45 + (idx * 45) % 170,
+        deskRot: typeof raw.deskRot === 'number' ? raw.deskRot : (idx % 2 === 0 ? 5 : -5),
+        deskScale: raw.deskScale || 1,
+        deskZ: raw.deskZ || (idx + 1),
+        deskFlipped: Boolean(raw.deskFlipped),
+        chekiTags: rawTags
+      };
+      delete normalized.uncroppedImage;
+      delete normalized.preRemasterOriginal;
+
+      if (typeof setCardAlbums === 'function') {
+        try { setCardAlbums(normalized, rawAlbs); } catch (_) {}
+      }
+      return normalized;
+    }
+
+    function safePutMetaToDB(key, value) {
+      return new Promise((resolve) => {
+        if (!db) return resolve();
+        try {
+          const tx = db.transaction('meta', 'readwrite');
+          tx.objectStore('meta').put({ key, value });
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+        } catch (_) {
+          resolve();
+        }
+      });
+    }
+
+    function updateLocalImportProgressUI(visible, text = '', pct = 0) {
+      const modal = document.getElementById('backupModal');
+      if (!modal) return;
+      let box = document.getElementById('localImportProgressBox');
+      if (!box) {
+        const exportBtn = modal.querySelector('button[onclick="exportAllData()"]');
+        if (exportBtn && exportBtn.parentElement) {
+          box = document.createElement('div');
+          box.id = 'localImportProgressBox';
+          box.className = 'rounded-2xl border-2 border-cheki-dark bg-amber-50 p-2.5 space-y-1.5 hidden';
+          box.innerHTML = `
+            <p id="localImportProgressText" class="text-[11px] font-black text-zinc-800">⏳ 準備讀取備份檔...</p>
+            <div class="w-full h-2.5 rounded-full bg-white border border-cheki-dark overflow-hidden">
+              <div id="localImportProgressBar" class="h-full bg-gradient-to-r from-amber-400 to-pink-500 transition-all duration-150" style="width: 0%"></div>
+            </div>
+          `;
+          exportBtn.parentElement.prepend(box);
+        }
+      }
+      if (!box) return;
+      box.classList.toggle('hidden', !visible);
+      const tEl = document.getElementById('localImportProgressText');
+      const bEl = document.getElementById('localImportProgressBar');
+      if (tEl && text) tEl.textContent = text;
+      if (bEl) bEl.style.width = `${Math.min(100, Math.max(2, pct))}%`;
+    }
+
+    window.importAllData = async function(e) {
+      const inputEl = e?.target;
+      const file = inputEl?.files?.[0];
+      if (!file) return;
+
+      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      if (file.size === 0) {
+        alert('❌ 選取的檔案為 0 KB 空檔案，請確認備份檔已完整下載！');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+
+      updateLocalImportProgressUI(true, `⏳ 正在串流讀取備份檔 (${fileSizeMB} MB)...`, 3);
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast(`⏳ 開始分段匯入備份檔 (${fileSizeMB} MB)...`, 3500);
+      }
+
+      const CHUNK_SIZE = 4 * 1024 * 1024; // 每次只讀 4MB，避免爆手機記憶體
+      const decoder = new TextDecoder('utf-8');
+
+      let started = false;
+      let rootType = ''; // 'object' | 'array'
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      let expectingTopKey = false;
+      let capturingTopKey = false;
+      let topKeyBuf = '';
+      let activeTopKey = '';
+
+      let inCardsArray = false;
+      let cardsArrayDepth = 0;
+      let inSingleCard = false;
+
+      const metaParts = [];
+      let cardParts = [];
+      let pendingBatch = [];
+      const discoveredAlbums = new Set();
+      let importedCount = 0;
+
+      try {
+        let offset = 0;
+        while (offset < file.size) {
+          const sliceBuf = await file.slice(offset, offset + CHUNK_SIZE).arrayBuffer();
+          offset += CHUNK_SIZE;
+          const isEOF = offset >= file.size;
+          const chunkStr = decoder.decode(sliceBuf, { stream: !isEOF });
+          const len = chunkStr.length;
+
+          let metaCopyStart = (started && rootType === 'object' && !inCardsArray) ? 0 : -1;
+          let cardCopyStart = inSingleCard ? 0 : -1;
+
+          for (let i = 0; i < len; i++) {
+            const code = chunkStr.charCodeAt(i);
+
+            if (inString) {
+              if (escaped) {
+                escaped = false;
+                if (capturingTopKey && topKeyBuf.length < 40) topKeyBuf += chunkStr[i];
+                continue;
+              }
+              if (code === 92) { // '\'
+                escaped = true;
+                continue;
+              }
+              if (code === 34) { // '"'
+                inString = false;
+                if (capturingTopKey) capturingTopKey = false;
+                continue;
+              }
+              if (capturingTopKey && topKeyBuf.length < 40) {
+                topKeyBuf += chunkStr[i];
+              }
+              continue;
+            }
+
+            // 非字串區域
+            if (!started) {
+              if (code <= 32 || code === 0xFEFF) continue;
+              if (code === 123) { // '{'
+                started = true;
+                rootType = 'object';
+                depth = 1;
+                expectingTopKey = true;
+                metaCopyStart = i;
+                continue;
+              }
+              if (code === 91) { // '['
+                started = true;
+                rootType = 'array';
+                depth = 1;
+                inCardsArray = true;
+                cardsArrayDepth = 1;
+                continue;
+              }
+              throw new Error(`檔案開頭並非有效 JSON 格式（首字元：${chunkStr.slice(i, i + 12)}）`);
+            }
+
+            if (code === 34) { // '"'
+              inString = true;
+              if (rootType === 'object' && !inCardsArray && depth === 1 && expectingTopKey) {
+                capturingTopKey = true;
+                topKeyBuf = '';
+              }
+              continue;
+            }
+
+            if (rootType === 'object' && !inCardsArray && depth === 1) {
+              if (code === 58) { // ':'
+                expectingTopKey = false;
+                activeTopKey = topKeyBuf;
+                continue;
+              }
+              if (code === 44) { // ','
+                expectingTopKey = true;
+                activeTopKey = '';
+                continue;
+              }
+            }
+
+            // 開括號 '{' 或 '['
+            if (code === 123 || code === 91) {
+              if (rootType === 'object' && !inCardsArray && depth === 1 && code === 91 &&
+                  (activeTopKey === 'cards' || activeTopKey === 'chekis')) {
+                if (metaCopyStart !== -1) {
+                  metaParts.push(chunkStr.slice(metaCopyStart, i + 1));
+                  metaCopyStart = -1;
+                }
+                inCardsArray = true;
+                cardsArrayDepth = 2;
+                depth = 2;
+                continue;
+              }
+
+              if (inCardsArray && !inSingleCard && depth === cardsArrayDepth && code === 123) {
+                inSingleCard = true;
+                cardParts = [];
+                cardCopyStart = i;
+                depth++;
+                continue;
+              }
+
+              depth++;
+              continue;
+            }
+
+            // 閉括號 '}' 或 ']'
+            if (code === 125 || code === 93) {
+              if (inSingleCard) {
+                depth--;
+                if (depth === cardsArrayDepth && code === 125) {
+                  if (cardCopyStart !== -1) {
+                    cardParts.push(chunkStr.slice(cardCopyStart, i + 1));
+                  }
+                  const singleJson = cardParts.join('');
+                  inSingleCard = false;
+                  cardParts = [];
+                  cardCopyStart = -1;
+
+                  try {
+                    const rawCard = JSON.parse(singleJson);
+                    const norm = normalizeStreamedCard(rawCard, importedCount);
+                    if (norm) {
+                      (norm.albums || []).forEach(a => { if (a) discoveredAlbums.add(a); });
+                      pendingBatch.push(norm);
+                      importedCount++;
+                    }
+                  } catch (_) {}
+
+                  // 每滿 20 張即批次寫入 IndexedDB 並釋放記憶體
+                  if (pendingBatch.length >= 20) {
+                    await window.saveCardsBatchToDB(pendingBatch);
+                    pendingBatch = [];
+                    const pct = Math.min(92, Math.round((offset / file.size) * 90));
+                    updateLocalImportProgressUI(true, `⏳ 已串流匯入 ${importedCount} 張拍立得 (${pct}%)...`, pct);
+                  }
+                }
+                continue;
+              }
+
+              if (inCardsArray && depth === cardsArrayDepth && code === 93) {
+                depth--;
+                inCardsArray = false;
+                if (rootType === 'object') {
+                  metaCopyStart = i;
+                }
+                continue;
+              }
+
+              depth--;
+              continue;
+            }
           }
 
-          if (Array.isArray(parsed.customChekiTags) && typeof customChekiTags !== 'undefined') {
-            parsed.customChekiTags.forEach(tagObj => {
+          if (inSingleCard && cardCopyStart !== -1) {
+            cardParts.push(chunkStr.slice(cardCopyStart));
+          }
+          if (started && rootType === 'object' && !inCardsArray && metaCopyStart !== -1) {
+            metaParts.push(chunkStr.slice(metaCopyStart));
+          }
+
+          const pct = Math.min(92, Math.round((offset / file.size) * 90));
+          updateLocalImportProgressUI(true, `⏳ 正在解析備份區塊：已讀取 ${importedCount} 張 (${pct}%)...`, pct);
+        }
+
+        // 寫入最後一批剩餘相片
+        if (pendingBatch.length > 0) {
+          await window.saveCardsBatchToDB(pendingBatch);
+          pendingBatch = [];
+        }
+
+        // 解析輕量級周邊設定（相簿、桌布、標籤、倒數行程、連拍套組、個人檔案）
+        let parsedMeta = {};
+        if (rootType === 'object' && metaParts.length > 0) {
+          try {
+            parsedMeta = JSON.parse(metaParts.join('')) || {};
+          } catch (_) {
+            parsedMeta = {};
+          }
+        }
+
+        // 若誤選咗 Google Drive 雲端索引檔 (cheki_manifest.json)，給予明確提示
+        if (importedCount === 0 && Array.isArray(parsedMeta.cardsMeta)) {
+          updateLocalImportProgressUI(false);
+          alert('⚠️ 你選取的是 Google Drive 雲端索引檔 (cheki_manifest.json)，內含索引而不含相片本體。\n\n請改按上方藍色「☁️ Google Drive 雲端增量備份 ➔ 增量還原」按鈕來同步相片！');
+          if (inputEl) inputEl.value = '';
+          return;
+        }
+
+        updateLocalImportProgressUI(true, '📝 正在同步相簿、標籤、桌布與應援設定...', 96);
+
+        // 安全原地更新各個設定物件（避免對 const 變數直接重新賦值報錯）
+        try {
+          if (typeof albums !== 'undefined' && Array.isArray(albums)) {
+            const incomingAlbs = Array.isArray(parsedMeta.albums) ? parsedMeta.albums : [];
+            [...incomingAlbs, ...discoveredAlbums].forEach(a => {
+              if (a && !albums.includes(a)) albums.push(a);
+            });
+            if (typeof saveAlbumsToDB === 'function') await saveAlbumsToDB();
+            else await safePutMetaToDB('albums', albums);
+          }
+        } catch (_) {}
+
+        try {
+          if (parsedMeta.deskBgConfig && typeof parsedMeta.deskBgConfig === 'object') {
+            if (typeof deskBgConfig === 'object' && deskBgConfig) {
+              Object.assign(deskBgConfig, parsedMeta.deskBgConfig);
+            }
+            if (typeof saveDeskBgConfigToDB === 'function') await saveDeskBgConfigToDB();
+            else await safePutMetaToDB('deskBgConfig', parsedMeta.deskBgConfig);
+          }
+        } catch (_) {}
+
+        try {
+          if (Array.isArray(parsedMeta.customChekiTags) && typeof customChekiTags !== 'undefined' && Array.isArray(customChekiTags)) {
+            parsedMeta.customChekiTags.forEach(tagObj => {
               if (tagObj && tagObj.id && !customChekiTags.some(t => t.id === tagObj.id)) {
                 customChekiTags.push(tagObj);
               }
             });
             if (typeof saveCustomTagsToDB === 'function') saveCustomTagsToDB();
           }
+        } catch (_) {}
 
-          if (Array.isArray(parsed.cheerEvents) && parsed.cheerEvents.length > 0 && typeof cheerEvents !== 'undefined') {
-            cheerEvents = parsed.cheerEvents;
+        try {
+          if (Array.isArray(parsedMeta.cheerEvents) && parsedMeta.cheerEvents.length > 0 && typeof cheerEvents !== 'undefined' && Array.isArray(cheerEvents)) {
+            cheerEvents.splice(0, cheerEvents.length, ...parsedMeta.cheerEvents);
           }
-          if (Array.isArray(parsed.cheerTopics) && typeof cheerTopics !== 'undefined') {
-            cheerTopics = parsed.cheerTopics;
+          if (Array.isArray(parsedMeta.cheerTopics) && typeof cheerTopics !== 'undefined' && Array.isArray(cheerTopics)) {
+            cheerTopics.splice(0, cheerTopics.length, ...parsedMeta.cheerTopics);
           }
           if (typeof saveCheerDataToDB === 'function') saveCheerDataToDB();
           if (typeof updateCountdownDisplays === 'function') updateCountdownDisplays();
+        } catch (_) {}
 
-          // 補齊還原連拍套組 (chekiSets)
-          if (Array.isArray(parsed.chekiSets) && typeof chekiSets !== 'undefined') {
-            chekiSets = parsed.chekiSets;
+        try {
+          if (Array.isArray(parsedMeta.chekiSets) && typeof chekiSets !== 'undefined' && Array.isArray(chekiSets)) {
+            chekiSets.splice(0, chekiSets.length, ...parsedMeta.chekiSets);
             if (typeof saveChekiSetsToDB === 'function') saveChekiSetsToDB();
           }
+        } catch (_) {}
 
-          // 補齊還原個人應援檔案設定 (userOshiProfile)
-          if (parsed.userOshiProfile && typeof parsed.userOshiProfile === 'object' && typeof userOshiProfile !== 'undefined') {
-            userOshiProfile = { ...userOshiProfile, ...parsed.userOshiProfile };
+        try {
+          if (parsedMeta.userOshiProfile && typeof parsedMeta.userOshiProfile === 'object' && typeof userOshiProfile === 'object' && userOshiProfile) {
+            Object.assign(userOshiProfile, parsedMeta.userOshiProfile);
             if (typeof saveUserOshiProfileToDB === 'function') saveUserOshiProfileToDB();
           }
+        } catch (_) {}
 
-          for (const alb of importedAlbums) {
-            if (alb && !albums.includes(alb)) albums.push(alb);
-          }
+        await loadDataFromDB();
+        if (typeof syncFastCacheToLocalStorage === 'function') syncFastCacheToLocalStorage();
 
-          const batchToSave = [];
-          let count = 0;
-          for (const raw of importedCards) {
-            const rawAlbs = Array.isArray(raw.albums) && raw.albums.length > 0
-              ? raw.albums
-              : [raw.album || albums[0] || '預設相簿'];
-
-            const imgStr = raw.image || raw.img || raw.dataUrl || '';
-            if (!imgStr) continue;
-
-            const rawTags = Array.isArray(raw.chekiTags)
-              ? raw.chekiTags
-              : (Array.isArray(raw.tags) ? raw.tags : []);
-
-            const normalized = {
-              ...raw,
-              id: raw.id || (Date.now() + count + Math.floor(Math.random() * 100000)),
-              createdAt: raw.createdAt || Date.now(),
-              member: raw.member || raw.idol || raw.name || '遠藤まりん',
-              date: raw.date || new Date().toISOString().split('T')[0],
-              locationName: raw.locationName || raw.location || '',
-              lat: typeof raw.lat === 'number' ? raw.lat : null,
-              lng: typeof raw.lng === 'number' ? raw.lng : null,
-              note: raw.note || raw.memo || '',
-              image: imgStr,
-              baseImage: imgStr, // 統一使用主圖，避免重複底圖佔用 3 倍空間
-              filterConfig: raw.filterConfig || { sharpen: 0, deglare: 0, brightness: 100, contrast: 100 },
-              isLandscape: Boolean(raw.isLandscape),
-              backColor: raw.backColor || '#60A5FA',
-              fav: Boolean(raw.fav || raw.favorite),
-              deskX: typeof raw.deskX === 'number' ? raw.deskX : 45 + (count * 35) % 150,
-              deskY: typeof raw.deskY === 'number' ? raw.deskY : 45 + (count * 45) % 170,
-              deskRot: typeof raw.deskRot === 'number' ? raw.deskRot : (count % 2 === 0 ? 5 : -5),
-              deskScale: raw.deskScale || 1,
-              deskZ: raw.deskZ || (count + 1),
-              deskFlipped: Boolean(raw.deskFlipped),
-              chekiTags: rawTags
-            };
-            delete normalized.uncroppedImage;
-            delete normalized.preRemasterOriginal;
-
-            setCardAlbums(normalized, rawAlbs);
-            getCardAlbums(normalized).forEach(a => {
-              if (a && !albums.includes(a)) albums.push(a);
-            });
-
-            batchToSave.push(normalized);
-            count++;
-          }
-
-          await window.saveCardsBatchToDB(batchToSave);
-          await saveAlbumsToDB();
-          await loadDataFromDB();
-          if (typeof syncFastCacheToLocalStorage === 'function') syncFastCacheToLocalStorage();
+        updateLocalImportProgressUI(true, `✅ 成功還原 ${importedCount} 張拍立得！`, 100);
+        setTimeout(() => {
+          updateLocalImportProgressUI(false);
           closeBackupModal();
-          e.target.value = '';
-          alert(`✅ 成功高速還原 ${count} 張拍立得（含連拍套組、標籤、相簿與設定）！`);
-        } catch (err) {
-          alert('❌ 備份檔案格式不正確，請確認選取的是 .json 備份檔！');
+        }, 500);
+
+        if (inputEl) inputEl.value = '';
+        alert(`✅ 成功分段還原 ${importedCount} 張拍立得（含相簿、標籤、行程與設定）！`);
+      } catch (err) {
+        if (pendingBatch.length > 0) {
+          try { await window.saveCardsBatchToDB(pendingBatch); } catch (_) {}
         }
-      };
-      reader.readAsText(file);
+        updateLocalImportProgressUI(false);
+        if (inputEl) inputEl.value = '';
+        alert(`❌ 匯入中斷（已搶救 ${importedCount} 張）：${err.message || err}`);
+      }
     };
 
     // 8. 儲存單張相片後自動釋放暫存複本記憶體，保持長開流暢
