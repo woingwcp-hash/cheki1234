@@ -13881,6 +13881,1069 @@ function switchCheerModalTab(mode) {
     }
 
     setTimeout(initGoogleDriveCloudSyncPlugin, 680);
+// =========================================================================
+    // 💰 應援開支統計帳本模組 (Oshikatsu Expense & Cheki Cost Ledger)
+    // =========================================================================
+    let oshiBudgetState = {
+      displayCurrency: 'HKD',        // 'HKD' | 'JPY'
+      jpyPer100ToHkd: 5.10,          // 每 100 日圓兌港幣匯率 (例: 5.10)
+      privacyMasked: false,          // 一鍵隱藏金額開關
+      autoEstimateUnpriced: true,    // 未填金額相片自動套用預設單價規則
+      monthlyBudgetHkd: 3000,        // 每月預算參考線 (0 為不顯示)
+      defaultSignedPrice: 2000,
+      defaultSignedCurrency: 'JPY',
+      defaultUnsignedPrice: 1500,
+      defaultUnsignedCurrency: 'JPY',
+      memberRules: {},               // { [memberName]: { signed, unsigned, currency } }
+      cardPrices: {},                // { [cardId]: { amount, currency } }
+      extraExpenses: []              // [{ id, date, category, title, member, amount, currency }]
+    };
+
+    let currentLedgerTab = 'overview'; // 'overview' | 'expenses' | 'settings'
+    let currentLedgerScope = 'ALL';    // 'ALL' | 'THIS_YEAR' | 'THIS_MONTH'
+    let currentLedgerGroupMode = 'event'; // 'event' (按參戰場次) | 'month' (按月份)
+
+    const EXPENSE_CATEGORIES = [
+      { id: 'ticket', label: '🎫 門票/入場' },
+      { id: 'cd',     label: '💿 CD/通販運費' },
+      { id: 'goods',  label: '🛍️ 周邊/生寫' },
+      { id: 'travel', label: '✈️ 遠征交通住宿' },
+      { id: 'other',  label: '💎 直播/其他' }
+    ];
+
+    function escLedgerHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function getJpyToHkdRate() {
+      const r = Number(oshiBudgetState.jpyPer100ToHkd);
+      return (r > 0 ? r : 5.10) / 100;
+    }
+
+    function convertToHkd(amount, currency) {
+      const val = Number(amount) || 0;
+      return currency === 'HKD' ? val : val * getJpyToHkdRate();
+    }
+
+    function formatPrimaryMoney(amountHkd, ignoreMask = false) {
+      if (oshiBudgetState.privacyMasked && !ignoreMask) {
+        return oshiBudgetState.displayCurrency === 'HKD' ? 'HK$ ••••' : '¥ •••••';
+      }
+      if (oshiBudgetState.displayCurrency === 'HKD') {
+        return `HK$ ${Math.round(amountHkd).toLocaleString('en-US')}`;
+      }
+      const jpy = Math.round(amountHkd / getJpyToHkdRate());
+      return `¥ ${jpy.toLocaleString('en-US')}`;
+    }
+
+    function formatSecondaryMoney(amountHkd) {
+      if (oshiBudgetState.privacyMasked) return '≈ ••••';
+      if (oshiBudgetState.displayCurrency === 'HKD') {
+        const jpy = Math.round(amountHkd / getJpyToHkdRate());
+        return `≈ ¥${jpy.toLocaleString('en-US')}`;
+      }
+      return `≈ HK$${Math.round(amountHkd).toLocaleString('en-US')}`;
+    }
+
+    // 計算單張 Cheki 實際或估算成本
+    function getCardCostDetail(card) {
+      if (!card) return { amount: 0, currency: 'JPY', hkd: 0, isEstimated: false };
+      const cid = String(card.id);
+      const savedEntry = oshiBudgetState.cardPrices && oshiBudgetState.cardPrices[cid];
+
+      let explicitAmt = null;
+      let explicitCur = 'JPY';
+
+      if (typeof card.priceAmount === 'number' && !Number.isNaN(card.priceAmount)) {
+        explicitAmt = card.priceAmount;
+        explicitCur = card.priceCurrency || 'JPY';
+      } else if (savedEntry && typeof savedEntry.amount === 'number' && !Number.isNaN(savedEntry.amount)) {
+        explicitAmt = savedEntry.amount;
+        explicitCur = savedEntry.currency || 'JPY';
+      }
+
+      if (explicitAmt !== null) {
+        return {
+          amount: explicitAmt,
+          currency: explicitCur,
+          hkd: convertToHkd(explicitAmt, explicitCur),
+          isEstimated: false
+        };
+      }
+
+      if (!oshiBudgetState.autoEstimateUnpriced) {
+        return { amount: 0, currency: 'JPY', hkd: 0, isEstimated: false };
+      }
+
+      const tags = Array.isArray(card.chekiTags) ? card.chekiTags : [];
+      const isSigned = tags.includes('signed');
+      const memberName = (card.member || '').trim();
+      const mRule = oshiBudgetState.memberRules && oshiBudgetState.memberRules[memberName];
+
+      if (mRule) {
+        const amt = Number(isSigned ? mRule.signed : mRule.unsigned) || 0;
+        const cur = mRule.currency || 'JPY';
+        return { amount: amt, currency: cur, hkd: convertToHkd(amt, cur), isEstimated: true };
+      }
+
+      const amt = Number(isSigned ? oshiBudgetState.defaultSignedPrice : oshiBudgetState.defaultUnsignedPrice) || 0;
+      const cur = isSigned ? (oshiBudgetState.defaultSignedCurrency || 'JPY') : (oshiBudgetState.defaultUnsignedCurrency || 'JPY');
+      return { amount: amt, currency: cur, hkd: convertToHkd(amt, cur), isEstimated: true };
+    }
+
+    // 載入與儲存帳本狀態（自動同步至 IndexedDB 與雲端備份設定）
+    function loadOshiBudgetState() {
+      try {
+        const raw = JSON.parse(localStorage.getItem('cheki_oshi_budget_v1') || 'null');
+        if (raw && typeof raw === 'object') {
+          oshiBudgetState = { ...oshiBudgetState, ...raw };
+        }
+      } catch (_) {}
+
+      if (typeof userOshiProfile !== 'undefined' && userOshiProfile && userOshiProfile.oshiLedger) {
+        oshiBudgetState = { ...oshiBudgetState, ...userOshiProfile.oshiLedger };
+      }
+
+      if (db) {
+        try {
+          const tx = db.transaction('meta', 'readonly');
+          const req = tx.objectStore('meta').get('oshiBudgetData');
+          tx.oncomplete = () => {
+            if (req.result && req.result.value && typeof req.result.value === 'object') {
+              oshiBudgetState = { ...oshiBudgetState, ...req.result.value };
+            }
+            syncCardPricesWithMemory();
+            try { localStorage.setItem('cheki_oshi_budget_v1', JSON.stringify(oshiBudgetState)); } catch (_) {}
+            if (currentTab === 'stats') renderStatsBudgetSummaryCard();
+          };
+        } catch (_) {}
+      }
+      syncCardPricesWithMemory();
+    }
+
+    function syncCardPricesWithMemory() {
+      if (!oshiBudgetState.cardPrices) oshiBudgetState.cardPrices = {};
+      if (!Array.isArray(cards)) return;
+      cards.forEach(c => {
+        if (!c || !c.id) return;
+        const cid = String(c.id);
+        if (typeof c.priceAmount === 'number' && !Number.isNaN(c.priceAmount)) {
+          oshiBudgetState.cardPrices[cid] = { amount: c.priceAmount, currency: c.priceCurrency || 'JPY' };
+        } else if (oshiBudgetState.cardPrices[cid] && typeof oshiBudgetState.cardPrices[cid].amount === 'number') {
+          c.priceAmount = oshiBudgetState.cardPrices[cid].amount;
+          c.priceCurrency = oshiBudgetState.cardPrices[cid].currency || 'JPY';
+        }
+      });
+    }
+
+    function saveOshiBudgetState() {
+      try { localStorage.setItem('cheki_oshi_budget_v1', JSON.stringify(oshiBudgetState)); } catch (_) {}
+      if (db) {
+        try {
+          const tx = db.transaction('meta', 'readwrite');
+          tx.objectStore('meta').put({ key: 'oshiBudgetData', value: oshiBudgetState });
+        } catch (_) {}
+      }
+      if (typeof userOshiProfile !== 'undefined' && userOshiProfile) {
+        userOshiProfile.oshiLedger = oshiBudgetState;
+        if (typeof saveUserOshiProfileToDB === 'function') saveUserOshiProfileToDB();
+      }
+    }
+
+    window.toggleOshiBudgetPrivacy = function() {
+      oshiBudgetState.privacyMasked = !oshiBudgetState.privacyMasked;
+      saveOshiBudgetState();
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(8);
+      renderStatsBudgetSummaryCard();
+      if (!document.getElementById('oshiLedgerModal')?.classList.contains('hidden')) {
+        renderOshiLedgerModalBody();
+      }
+    };
+
+    window.toggleOshiDisplayCurrency = function() {
+      oshiBudgetState.displayCurrency = oshiBudgetState.displayCurrency === 'HKD' ? 'JPY' : 'HKD';
+      saveOshiBudgetState();
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(8);
+      renderStatsBudgetSummaryCard();
+      if (!document.getElementById('oshiLedgerModal')?.classList.contains('hidden')) {
+        renderOshiLedgerModalBody();
+      }
+    };
+
+    // -------------------------------------------------------------------------
+    // 🏷️ 新增 / 編輯拍立得視窗：注入「💰 特典券單價（選填）」快捷輸入列
+    // -------------------------------------------------------------------------
+    function injectCardPriceInputInEditModal() {
+      const noteInput = document.getElementById('cardNoteInput');
+      const container = noteInput?.parentElement;
+      if (!container || document.getElementById('chekiPriceEditBox')) return;
+
+      const box = document.createElement('div');
+      box.id = 'chekiPriceEditBox';
+      box.className = 'rounded-2xl border-2 border-cheki-dark bg-amber-50/60 p-2.5 mb-2.5 space-y-1.5';
+      box.innerHTML = `
+        <div class="flex items-center justify-between gap-1">
+          <label class="text-[11px] font-black text-zinc-800">💰 特典券金額（留空自動估算・填 0 為免費/抽選）</label>
+          <button type="button" onclick="clearCardPriceInput()" class="px-2 py-0.5 rounded-lg bg-white border border-zinc-300 text-[10px] font-black text-zinc-600">↺ 跟預設</button>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <select id="cardPriceCurrencySelect" class="px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-white text-xs font-black text-zinc-900 shrink-0">
+            <option value="JPY">¥ 日圓 (JPY)</option>
+            <option value="HKD">HK$ 港幣</option>
+          </select>
+          <input id="cardPriceAmountInput" type="number" min="0" step="1" placeholder="留空按預設單價估算" class="flex-1 min-w-0 px-3 py-1.5 rounded-xl border-2 border-cheki-dark bg-white text-xs font-black text-zinc-900">
+        </div>
+        <div class="flex items-center gap-1 overflow-x-auto no-scrollbar pt-0.5">
+          <button type="button" onclick="setQuickCardPrice(0, 'JPY')" class="px-2 py-0.5 rounded-full bg-emerald-100 border border-cheki-dark text-[10px] font-black text-emerald-900 shrink-0">🎁 免費 0</button>
+          <button type="button" onclick="setQuickCardPrice(1000, 'JPY')" class="px-2 py-0.5 rounded-full bg-white border border-cheki-dark text-[10px] font-black text-zinc-800 shrink-0">¥1,000</button>
+          <button type="button" onclick="setQuickCardPrice(1500, 'JPY')" class="px-2 py-0.5 rounded-full bg-white border border-cheki-dark text-[10px] font-black text-zinc-800 shrink-0">¥1,500</button>
+          <button type="button" onclick="setQuickCardPrice(2000, 'JPY')" class="px-2 py-0.5 rounded-full bg-sky-100 border border-cheki-dark text-[10px] font-black text-blue-900 shrink-0">¥2,000</button>
+          <button type="button" onclick="setQuickCardPrice(2500, 'JPY')" class="px-2 py-0.5 rounded-full bg-white border border-cheki-dark text-[10px] font-black text-zinc-800 shrink-0">¥2,500</button>
+          <button type="button" onclick="setQuickCardPrice(3000, 'JPY')" class="px-2 py-0.5 rounded-full bg-pink-100 border border-cheki-dark text-[10px] font-black text-pink-900 shrink-0">¥3,000</button>
+          <button type="button" onclick="setQuickCardPrice(100, 'HKD')" class="px-2 py-0.5 rounded-full bg-amber-100 border border-cheki-dark text-[10px] font-black text-amber-900 shrink-0">HK$100</button>
+        </div>
+      `;
+      container.parentElement.insertBefore(box, container);
+    }
+
+    window.setQuickCardPrice = function(amount, currency) {
+      const amtEl = document.getElementById('cardPriceAmountInput');
+      const curEl = document.getElementById('cardPriceCurrencySelect');
+      if (curEl) curEl.value = currency;
+      if (amtEl) amtEl.value = String(amount);
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(8);
+    };
+
+    window.clearCardPriceInput = function() {
+      const amtEl = document.getElementById('cardPriceAmountInput');
+      if (amtEl) amtEl.value = '';
+    };
+
+    function populateCardPriceInputForEdit(cardId) {
+      injectCardPriceInputInEditModal();
+      const amtEl = document.getElementById('cardPriceAmountInput');
+      const curEl = document.getElementById('cardPriceCurrencySelect');
+      if (!amtEl || !curEl) return;
+
+      if (!cardId) {
+        amtEl.value = '';
+        curEl.value = oshiBudgetState.defaultSignedCurrency || 'JPY';
+        return;
+      }
+
+      const card = cards.find(c => String(c.id) === String(cardId));
+      const saved = oshiBudgetState.cardPrices[String(cardId)];
+      if (card && typeof card.priceAmount === 'number' && !Number.isNaN(card.priceAmount)) {
+        amtEl.value = String(card.priceAmount);
+        curEl.value = card.priceCurrency || 'JPY';
+      } else if (saved && typeof saved.amount === 'number' && !Number.isNaN(saved.amount)) {
+        amtEl.value = String(saved.amount);
+        curEl.value = saved.currency || 'JPY';
+      } else {
+        amtEl.value = '';
+        curEl.value = 'JPY';
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 📊 統計頁 (#tab-stats) 內嵌「💰 應援開支摘要卡」（支援年份/月份篩選連動）
+    // -------------------------------------------------------------------------
+    function filterExtraExpensesByTimeCode(filterCode) {
+      const list = Array.isArray(oshiBudgetState.extraExpenses) ? oshiBudgetState.extraExpenses : [];
+      if (!filterCode || filterCode === 'ALL') return list;
+      if (filterCode.startsWith('YEAR:')) {
+        const yr = filterCode.slice(5);
+        return list.filter(e => (e.date || '').startsWith(yr + '-'));
+      }
+      if (filterCode.startsWith('MONTH:')) {
+        const ym = filterCode.slice(6);
+        return list.filter(e => (e.date || '').startsWith(ym));
+      }
+      return list;
+    }
+
+    function computeLedgerMetrics(scopedCards, scopedExtras) {
+      let chekiHkd = 0;
+      let estimatedCount = 0;
+      const memberSpendMap = {};
+      const eventGroupMap = {};
+      const monthGroupMap = {};
+
+      scopedCards.forEach(c => {
+        const cost = getCardCostDetail(c);
+        chekiHkd += cost.hkd;
+        if (cost.isEstimated) estimatedCount++;
+
+        const mName = (c.member || '未命名').trim();
+        if (!memberSpendMap[mName]) memberSpendMap[mName] = { member: mName, chekiCount: 0, chekiHkd: 0, extraHkd: 0, totalHkd: 0 };
+        memberSpendMap[mName].chekiCount++;
+        memberSpendMap[mName].chekiHkd += cost.hkd;
+        memberSpendMap[mName].totalHkd += cost.hkd;
+
+        const dStr = c.date || '未知日期';
+        const locStr = (c.locationName || '').trim();
+        const evKey = `${dStr}__${locStr}`;
+        if (!eventGroupMap[evKey]) {
+          eventGroupMap[evKey] = { date: dStr, location: locStr, chekiCount: 0, extraCount: 0, totalHkd: 0 };
+        }
+        eventGroupMap[evKey].chekiCount++;
+        eventGroupMap[evKey].totalHkd += cost.hkd;
+
+        const ym = dStr.slice(0, 7) || '未知月份';
+        if (!monthGroupMap[ym]) monthGroupMap[ym] = { ym, chekiCount: 0, extraCount: 0, totalHkd: 0 };
+        monthGroupMap[ym].chekiCount++;
+        monthGroupMap[ym].totalHkd += cost.hkd;
+      });
+
+      let extraHkd = 0;
+      scopedExtras.forEach(ex => {
+        const hkd = convertToHkd(ex.amount, ex.currency || 'JPY');
+        extraHkd += hkd;
+
+        const mName = (ex.member || '').trim();
+        if (mName) {
+          if (!memberSpendMap[mName]) memberSpendMap[mName] = { member: mName, chekiCount: 0, chekiHkd: 0, extraHkd: 0, totalHkd: 0 };
+          memberSpendMap[mName].extraHkd += hkd;
+          memberSpendMap[mName].totalHkd += hkd;
+        }
+
+        const dStr = ex.date || '未知日期';
+        const evKey = `${dStr}__`;
+        // 若當日已有拍立得場次，優先歸入同日首個場次方便計算單日參戰總消費
+        const matchingDayKey = Object.keys(eventGroupMap).find(k => k.startsWith(dStr + '__')) || evKey;
+        if (!eventGroupMap[matchingDayKey]) {
+          eventGroupMap[matchingDayKey] = { date: dStr, location: ex.title || '其他應援消費', chekiCount: 0, extraCount: 0, totalHkd: 0 };
+        }
+        eventGroupMap[matchingDayKey].extraCount++;
+        eventGroupMap[matchingDayKey].totalHkd += hkd;
+
+        const ym = dStr.slice(0, 7) || '未知月份';
+        if (!monthGroupMap[ym]) monthGroupMap[ym] = { ym, chekiCount: 0, extraCount: 0, totalHkd: 0 };
+        monthGroupMap[ym].extraCount++;
+        monthGroupMap[ym].totalHkd += hkd;
+      });
+
+      const totalHkd = chekiHkd + extraHkd;
+      const avgCardHkd = scopedCards.length > 0 ? (chekiHkd / scopedCards.length) : 0;
+      const memberList = Object.values(memberSpendMap).sort((a, b) => b.totalHkd - a.totalHkd);
+      const eventList = Object.values(eventGroupMap).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const monthList = Object.values(monthGroupMap).sort((a, b) => (b.ym || '').localeCompare(a.ym || ''));
+
+      return { totalHkd, chekiHkd, extraHkd, avgCardHkd, estimatedCount, memberList, eventList, monthList };
+    }
+
+    function renderStatsBudgetSummaryCard() {
+      const statsSec = document.getElementById('tab-stats');
+      if (!statsSec) return;
+
+      let cardEl = document.getElementById('statsBudgetOverviewCard');
+      if (!cardEl) {
+        cardEl = document.createElement('div');
+        cardEl.id = 'statsBudgetOverviewCard';
+        cardEl.className = 'neo-box bg-gradient-to-br from-amber-50 via-white to-sky-50 rounded-2xl p-3.5 space-y-2.5';
+        const topFilterBar = document.getElementById('statsTopTimeFilterBar');
+        if (topFilterBar && topFilterBar.nextSibling) {
+          statsSec.insertBefore(cardEl, topFilterBar.nextSibling);
+        } else {
+          statsSec.prepend(cardEl);
+        }
+      }
+
+      const activeFilter = typeof statsTimeFilter !== 'undefined' ? statsTimeFilter : 'ALL';
+      const scopedCards = typeof getStatsTimeFilteredCards === 'function' ? getStatsTimeFilteredCards() : cards;
+      const scopedExtras = filterExtraExpensesByTimeCode(activeFilter);
+      const m = computeLedgerMetrics(scopedCards, scopedExtras);
+
+      const curMonth = new Date().toISOString().slice(0, 7);
+      const thisMonthCards = cards.filter(c => (c.date || '').startsWith(curMonth));
+      const thisMonthExtras = filterExtraExpensesByTimeCode('MONTH:' + curMonth);
+      const thisMonthTotalHkd = computeLedgerMetrics(thisMonthCards, thisMonthExtras).totalHkd;
+      const budgetLimit = Number(oshiBudgetState.monthlyBudgetHkd) || 0;
+      const budgetPct = budgetLimit > 0 ? Math.min(100, Math.round((thisMonthTotalHkd / budgetLimit) * 100)) : 0;
+
+      cardEl.innerHTML = `
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-1.5">
+            <span class="text-lg">💰</span>
+            <div>
+              <h3 class="font-black text-sm text-zinc-900 leading-tight">應援開支統計帳本</h3>
+              <p class="text-[10px] font-bold text-zinc-500">匯率：每 ¥100 = HK$${Number(oshiBudgetState.jpyPer100ToHkd || 5.1).toFixed(2)}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1">
+            <button type="button" onclick="toggleOshiDisplayCurrency()" class="px-2 py-1 rounded-xl bg-white border-2 border-cheki-dark text-[10px] font-black text-zinc-800 active:scale-95">
+              💱 ${oshiBudgetState.displayCurrency === 'HKD' ? 'HK$ 港幣' : '¥ 日圓'}
+            </button>
+            <button type="button" onclick="toggleOshiBudgetPrivacy()" class="px-2 py-1 rounded-xl bg-white border-2 border-cheki-dark text-[10px] font-black text-zinc-800 active:scale-95" title="一鍵隱藏/顯示金額">
+              ${oshiBudgetState.privacyMasked ? '🙈 已隱藏' : '👁️ 顯示中'}
+            </button>
+            <button type="button" onclick="openOshiLedgerModal('overview')" class="px-2.5 py-1 rounded-xl bg-cheki-accent text-white neo-btn text-[11px] font-black active:scale-95">
+              📖 打開帳本
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2 pt-0.5">
+          <div class="rounded-xl border-2 border-cheki-dark bg-white p-2">
+            <span class="text-[10px] font-bold text-zinc-400 block">時段總應援開支</span>
+            <p class="font-black text-sm text-cheki-accent truncate mt-0.5">${formatPrimaryMoney(m.totalHkd)}</p>
+            <span class="text-[9px] font-bold text-zinc-500 block truncate">${formatSecondaryMoney(m.totalHkd)}</span>
+          </div>
+          <div class="rounded-xl border-2 border-cheki-dark bg-white p-2">
+            <span class="text-[10px] font-bold text-zinc-400 block">📸 Cheki 特典券</span>
+            <p class="font-black text-sm text-blue-600 truncate mt-0.5">${formatPrimaryMoney(m.chekiHkd)}</p>
+            <span class="text-[9px] font-bold text-zinc-500 block truncate">均價 ${formatPrimaryMoney(m.avgCardHkd)}/張</span>
+          </div>
+          <div class="rounded-xl border-2 border-cheki-dark bg-white p-2">
+            <span class="text-[10px] font-bold text-zinc-400 block">🎫 門票/周邊/遠征</span>
+            <p class="font-black text-sm text-amber-600 truncate mt-0.5">${formatPrimaryMoney(m.extraHkd)}</p>
+            <span class="text-[9px] font-bold text-zinc-500 block truncate">共 ${scopedExtras.length} 筆記帳</span>
+          </div>
+        </div>
+
+        ${budgetLimit > 0 ? `
+          <div class="space-y-1 pt-0.5">
+            <div class="flex justify-between text-[10px] font-black text-zinc-600">
+              <span>📅 本月 (${curMonth}) 預算進度</span>
+              <span class="${budgetPct >= 100 ? 'text-rose-600' : 'text-emerald-700'}">${formatPrimaryMoney(thisMonthTotalHkd)} / ${formatPrimaryMoney(budgetLimit)} (${budgetPct}%)</span>
+            </div>
+            <div class="w-full h-2 rounded-full bg-white border border-cheki-dark overflow-hidden">
+              <div class="h-full transition-all ${budgetPct >= 100 ? 'bg-rose-500' : budgetPct >= 80 ? 'bg-amber-400' : 'bg-emerald-400'}" style="width:${budgetPct}%"></div>
+            </div>
+          </div>
+        ` : ''}
+      `;
+    }
+
+    // -------------------------------------------------------------------------
+    // 📖 完整應援開支帳本彈窗 (#oshiLedgerModal)
+    // -------------------------------------------------------------------------
+    function ensureOshiLedgerModalExists() {
+      if (document.getElementById('oshiLedgerModal')) return;
+      const div = document.createElement('div');
+      div.innerHTML = `
+        <div id="oshiLedgerModal" class="hidden fixed inset-0 z-[119] bg-black/80 flex items-center justify-center p-3 overflow-y-auto">
+          <div id="oshiLedgerModalInner" class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-4 space-y-3 max-h-[92vh] overflow-y-auto text-zinc-900"></div>
+        </div>
+      `;
+      document.body.appendChild(div);
+    }
+
+    window.openOshiLedgerModal = function(tab) {
+      ensureOshiLedgerModalExists();
+      if (tab) currentLedgerTab = tab;
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(10);
+      renderOshiLedgerModalBody();
+      document.getElementById('oshiLedgerModal').classList.remove('hidden');
+    };
+
+    window.closeOshiLedgerModal = function() {
+      document.getElementById('oshiLedgerModal')?.classList.add('hidden');
+    };
+
+    window.switchOshiLedgerTab = function(tab) {
+      currentLedgerTab = tab;
+      renderOshiLedgerModalBody();
+    };
+
+    window.setOshiLedgerScope = function(scope) {
+      currentLedgerScope = scope;
+      renderOshiLedgerModalBody();
+    };
+
+    window.setOshiLedgerGroupMode = function(mode) {
+      currentLedgerGroupMode = mode;
+      renderOshiLedgerModalBody();
+    };
+
+    function getModalScopedData() {
+      const nowIso = new Date().toISOString();
+      const curYear = nowIso.slice(0, 4);
+      const curMonth = nowIso.slice(0, 7);
+
+      if (currentLedgerScope === 'THIS_YEAR') {
+        return {
+          label: `${curYear} 年度`,
+          scopedCards: cards.filter(c => (c.date || '').startsWith(curYear + '-')),
+          scopedExtras: filterExtraExpensesByTimeCode('YEAR:' + curYear)
+        };
+      }
+      if (currentLedgerScope === 'THIS_MONTH') {
+        return {
+          label: `本月 (${curMonth})`,
+          scopedCards: cards.filter(c => (c.date || '').startsWith(curMonth)),
+          scopedExtras: filterExtraExpensesByTimeCode('MONTH:' + curMonth)
+        };
+      }
+      return {
+        label: '全部時間',
+        scopedCards: cards,
+        scopedExtras: Array.isArray(oshiBudgetState.extraExpenses) ? oshiBudgetState.extraExpenses : []
+      };
+    }
+
+    window.addExtraOshiExpense = function() {
+      const cat = document.getElementById('exCatSelect')?.value || 'ticket';
+      const date = document.getElementById('exDateInput')?.value || new Date().toISOString().slice(0, 10);
+      const member = (document.getElementById('exMemberInput')?.value || '').trim();
+      const title = (document.getElementById('exTitleInput')?.value || '').trim();
+      const cur = document.getElementById('exCurrencySelect')?.value || 'JPY';
+      const amt = Number(document.getElementById('exAmountInput')?.value);
+
+      if (!amt || amt <= 0) {
+        alert('請輸入大於 0 的消費金額！');
+        return;
+      }
+
+      const catObj = EXPENSE_CATEGORIES.find(c => c.id === cat) || EXPENSE_CATEGORIES[0];
+      if (!Array.isArray(oshiBudgetState.extraExpenses)) oshiBudgetState.extraExpenses = [];
+      oshiBudgetState.extraExpenses.unshift({
+        id: 'ex_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        date,
+        category: cat,
+        title: title || catObj.label.slice(2).trim(),
+        member,
+        amount: amt,
+        currency: cur
+      });
+
+      saveOshiBudgetState();
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(12);
+      if (typeof window.showChekiToast === 'function') window.showChekiToast('🧾 已新增一筆應援開支紀錄！');
+      renderOshiLedgerModalBody();
+      renderStatsBudgetSummaryCard();
+    };
+
+    window.deleteExtraOshiExpense = function(exId) {
+      if (!confirm('確定要刪除呢筆額外開支紀錄嗎？')) return;
+      oshiBudgetState.extraExpenses = (oshiBudgetState.extraExpenses || []).filter(e => e.id !== exId);
+      saveOshiBudgetState();
+      renderOshiLedgerModalBody();
+      renderStatsBudgetSummaryCard();
+    };
+
+    window.saveOshiLedgerSettings = function() {
+      const rateVal = Number(document.getElementById('setJpyRateInput')?.value);
+      const budgetVal = Number(document.getElementById('setMonthlyBudgetInput')?.value);
+      const dispCur = document.getElementById('setDisplayCurrencySelect')?.value || 'HKD';
+      const autoEst = Boolean(document.getElementById('setAutoEstCb')?.checked);
+      const defSignAmt = Number(document.getElementById('setDefSignedAmt')?.value);
+      const defSignCur = document.getElementById('setDefSignedCur')?.value || 'JPY';
+      const defUnsignAmt = Number(document.getElementById('setDefUnsignedAmt')?.value);
+      const defUnsignCur = document.getElementById('setDefUnsignedCur')?.value || 'JPY';
+
+      if (rateVal > 0) oshiBudgetState.jpyPer100ToHkd = rateVal;
+      oshiBudgetState.monthlyBudgetHkd = budgetVal >= 0 ? budgetVal : 0;
+      oshiBudgetState.displayCurrency = dispCur;
+      oshiBudgetState.autoEstimateUnpriced = autoEst;
+      if (defSignAmt >= 0) oshiBudgetState.defaultSignedPrice = defSignAmt;
+      oshiBudgetState.defaultSignedCurrency = defSignCur;
+      if (defUnsignAmt >= 0) oshiBudgetState.defaultUnsignedPrice = defUnsignAmt;
+      oshiBudgetState.defaultUnsignedCurrency = defUnsignCur;
+
+      saveOshiBudgetState();
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(12);
+      if (typeof window.showChekiToast === 'function') window.showChekiToast('⚙️ 已儲存匯率與特典券單價設定！');
+      renderOshiLedgerModalBody();
+      renderStatsBudgetSummaryCard();
+    };
+
+    window.addMemberPriceRuleFromUI = function() {
+      const name = (document.getElementById('ruleMemberNameInput')?.value || '').trim();
+      const signed = Number(document.getElementById('ruleSignedInput')?.value);
+      const unsigned = Number(document.getElementById('ruleUnsignedInput')?.value);
+      const currency = document.getElementById('ruleCurrencySelect')?.value || 'JPY';
+
+      if (!name) {
+        alert('請輸入或選擇成員名稱！');
+        return;
+      }
+      if (!oshiBudgetState.memberRules) oshiBudgetState.memberRules = {};
+      oshiBudgetState.memberRules[name] = {
+        signed: Number.isNaN(signed) ? 2000 : signed,
+        unsigned: Number.isNaN(unsigned) ? 1500 : unsigned,
+        currency
+      };
+      saveOshiBudgetState();
+      renderOshiLedgerModalBody();
+      renderStatsBudgetSummaryCard();
+    };
+
+    window.removeMemberPriceRule = function(name) {
+      if (oshiBudgetState.memberRules && oshiBudgetState.memberRules[name]) {
+        delete oshiBudgetState.memberRules[name];
+        saveOshiBudgetState();
+        renderOshiLedgerModalBody();
+        renderStatsBudgetSummaryCard();
+      }
+    };
+
+    function renderOshiLedgerModalBody() {
+      const box = document.getElementById('oshiLedgerModalInner');
+      if (!box) return;
+
+      const uniqueMembers = [...new Set(cards.map(c => (c.member || '').trim()).filter(Boolean))];
+      const memberDatalistHtml = `
+        <datalist id="ledgerMemberSuggestions">
+          ${uniqueMembers.map(m => `<option value="${escLedgerHtml(m)}"></option>`).join('')}
+        </datalist>
+      `;
+
+      let tabBodyHtml = '';
+
+      if (currentLedgerTab === 'overview') {
+        const { scopedCards, scopedExtras } = getModalScopedData();
+        const m = computeLedgerMetrics(scopedCards, scopedExtras);
+        const chekiRatio = m.totalHkd > 0 ? Math.round((m.chekiHkd / m.totalHkd) * 100) : 0;
+
+        tabBodyHtml = `
+          <!-- 時段與幣別切換列 -->
+          <div class="flex items-center justify-between gap-1.5 flex-wrap">
+            <div class="flex items-center gap-1">
+              <button type="button" onclick="setOshiLedgerScope('ALL')" class="px-2.5 py-1 rounded-full border-2 border-cheki-dark text-[10px] font-black ${currentLedgerScope === 'ALL' ? 'bg-cheki-accent text-white' : 'bg-white text-zinc-700'}">全部</button>
+              <button type="button" onclick="setOshiLedgerScope('THIS_YEAR')" class="px-2.5 py-1 rounded-full border-2 border-cheki-dark text-[10px] font-black ${currentLedgerScope === 'THIS_YEAR' ? 'bg-cheki-accent text-white' : 'bg-white text-zinc-700'}">今年</button>
+              <button type="button" onclick="setOshiLedgerScope('THIS_MONTH')" class="px-2.5 py-1 rounded-full border-2 border-cheki-dark text-[10px] font-black ${currentLedgerScope === 'THIS_MONTH' ? 'bg-cheki-accent text-white' : 'bg-white text-zinc-700'}">本月</button>
+            </div>
+            <div class="flex items-center gap-1">
+              <button type="button" onclick="toggleOshiDisplayCurrency()" class="px-2.5 py-1 rounded-xl bg-amber-100 border-2 border-cheki-dark text-[10px] font-black">💱 切換 ${oshiBudgetState.displayCurrency === 'HKD' ? '¥ 日圓' : 'HK$ 港幣'}</button>
+              <button type="button" onclick="toggleOshiBudgetPrivacy()" class="px-2 py-1 rounded-xl bg-white border-2 border-cheki-dark text-[10px] font-black">${oshiBudgetState.privacyMasked ? '🙈' : '👁️'}</button>
+            </div>
+          </div>
+
+          <!-- 總額主卡 -->
+          <div class="rounded-2xl border-2 border-cheki-dark bg-gradient-to-br from-sky-100 via-white to-pink-50 p-3.5 space-y-2">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="text-[11px] font-black text-zinc-500">💎 累積應援總投入 (${scopedCards.length} 張 Cheki + ${scopedExtras.length} 筆周邊/門票)</span>
+                <p class="font-black text-2xl text-zinc-900 leading-tight mt-0.5">${formatPrimaryMoney(m.totalHkd)}</p>
+                <span class="text-xs font-bold text-blue-700">${formatSecondaryMoney(m.totalHkd)}</span>
+              </div>
+            </div>
+
+            <div class="w-full h-2.5 rounded-full bg-amber-200 border border-cheki-dark overflow-hidden flex">
+              <div class="h-full bg-blue-500" style="width:${chekiRatio}%"></div>
+            </div>
+            <div class="flex justify-between text-[10px] font-black text-zinc-700">
+              <span>📸 特典券：${formatPrimaryMoney(m.chekiHkd)} (${chekiRatio}%)</span>
+              <span>🎫 門票/周邊/遠征：${formatPrimaryMoney(m.extraHkd)} (${m.totalHkd > 0 ? 100 - chekiRatio : 0}%)</span>
+            </div>
+            ${m.estimatedCount > 0 ? `<p class="text-[10px] font-bold text-zinc-500">💡 當中 ${m.estimatedCount} 張未填單價拍立得已按預設規則自動估算（可於設定關閉）</p>` : ''}
+          </div>
+
+          <!-- 偶像課金排行榜 -->
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-3 space-y-2">
+            <h4 class="font-black text-xs text-zinc-800">👑 各成員應援投入排行</h4>
+            ${m.memberList.length === 0 ? `<p class="text-xs font-bold text-zinc-400 text-center py-3">尚無紀錄</p>` : `
+              <div class="space-y-2 max-h-48 overflow-y-auto no-scrollbar pr-0.5">
+                ${m.memberList.map((it, idx) => {
+                  const pct = m.totalHkd > 0 ? Math.round((it.totalHkd / m.totalHkd) * 100) : 0;
+                  return `
+                    <div class="space-y-1">
+                      <div class="flex justify-between items-center text-xs font-black">
+                        <span class="truncate">${idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`} ${escLedgerHtml(it.member)} <span class="text-[10px] text-zinc-400 font-bold">(${it.chekiCount}張)</span></span>
+                        <span class="text-cheki-accent shrink-0">${formatPrimaryMoney(it.totalHkd)}</span>
+                      </div>
+                      <div class="w-full h-1.5 rounded-full bg-zinc-100 overflow-hidden">
+                        <div class="h-full ${idx === 0 ? 'bg-cheki-accent' : 'bg-blue-400'}" style="width:${Math.max(5, pct)}%"></div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+
+          <!-- 單場參戰 / 月份消費明細 -->
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <h4 class="font-black text-xs text-zinc-800">🗓️ 參戰消費帳單明細</h4>
+              <div class="flex bg-zinc-100 p-0.5 rounded-lg border border-cheki-dark text-[10px] font-black">
+                <button type="button" onclick="setOshiLedgerGroupMode('event')" class="px-2 py-0.5 rounded ${currentLedgerGroupMode === 'event' ? 'bg-blue-500 text-white' : 'text-zinc-600'}">按場次</button>
+                <button type="button" onclick="setOshiLedgerGroupMode('month')" class="px-2 py-0.5 rounded ${currentLedgerGroupMode === 'month' ? 'bg-blue-500 text-white' : 'text-zinc-600'}">按月份</button>
+              </div>
+            </div>
+
+            <div class="space-y-1.5 max-h-52 overflow-y-auto no-scrollbar">
+              ${currentLedgerGroupMode === 'event' ? (
+                m.eventList.length === 0 ? `<p class="text-xs text-zinc-400 font-bold text-center py-3">尚無場次紀錄</p>` :
+                m.eventList.slice(0, 30).map(ev => `
+                  <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs">
+                    <div class="min-w-0">
+                      <p class="font-black text-zinc-800 truncate">📅 ${escLedgerHtml(ev.date)} ${ev.location ? `· 📍 ${escLedgerHtml(ev.location)}` : ''}</p>
+                      <p class="text-[10px] font-bold text-zinc-500">📸 ${ev.chekiCount} 張 Cheki ${ev.extraCount > 0 ? `+ 🧾 ${ev.extraCount} 筆周邊/門票` : ''}</p>
+                    </div>
+                    <span class="font-black text-blue-700 shrink-0">${formatPrimaryMoney(ev.totalHkd)}</span>
+                  </div>
+                `).join('')
+              ) : (
+                m.monthList.length === 0 ? `<p class="text-xs text-zinc-400 font-bold text-center py-3">尚無月份紀錄</p>` :
+                m.monthList.map(mo => `
+                  <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs">
+                    <div>
+                      <p class="font-black text-zinc-800">🗓️ ${escLedgerHtml(mo.ym)}</p>
+                      <p class="text-[10px] font-bold text-zinc-500">📸 ${mo.chekiCount} 張 Cheki ${mo.extraCount > 0 ? `+ 🧾 ${mo.extraCount} 筆額外開支` : ''}</p>
+                    </div>
+                    <span class="font-black text-blue-700 shrink-0">${formatPrimaryMoney(mo.totalHkd)}</span>
+                  </div>
+                `).join('')
+              )}
+            </div>
+          </div>
+        `;
+      } else if (currentLedgerTab === 'expenses') {
+        const extras = Array.isArray(oshiBudgetState.extraExpenses) ? oshiBudgetState.extraExpenses : [];
+        const todayStr = new Date().toISOString().slice(0, 10);
+
+        tabBodyHtml = `
+          ${memberDatalistHtml}
+          <div class="rounded-2xl border-2 border-cheki-dark bg-amber-50/70 p-3 space-y-2">
+            <h4 class="font-black text-xs text-zinc-900">➕ 新增門票 / CD通販 / 周邊 / 遠征開支</h4>
+            <div class="grid grid-cols-2 gap-1.5">
+              <select id="exCatSelect" class="px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-white text-xs font-black">
+                ${EXPENSE_CATEGORIES.map(c => `<option value="${c.id}">${c.label}</option>`).join('')}
+              </select>
+              <input id="exDateInput" type="date" value="${todayStr}" class="px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-white text-xs font-black">
+            </div>
+            <div class="grid grid-cols-2 gap-1.5">
+              <input id="exMemberInput" list="ledgerMemberSuggestions" type="text" placeholder="關聯偶像（選填，如遠藤まりん）" class="px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-white text-xs font-bold">
+              <input id="exTitleInput" type="text" placeholder="項目備註（例：福岡門票/CD運費）" class="px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-white text-xs font-bold">
+            </div>
+            <div class="flex items-center gap-1.5">
+              <select id="exCurrencySelect" class="px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-white text-xs font-black shrink-0">
+                <option value="JPY">¥ 日圓 (JPY)</option>
+                <option value="HKD">HK$ 港幣</option>
+              </select>
+              <input id="exAmountInput" type="number" min="1" step="1" placeholder="輸入金額" class="flex-1 min-w-0 px-3 py-1.5 rounded-xl border-2 border-cheki-dark bg-white text-xs font-black">
+              <button type="button" onclick="addExtraOshiExpense()" class="px-3.5 py-1.5 rounded-xl bg-cheki-accent text-white neo-btn text-xs font-black shrink-0">＋ 記一筆</button>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-3 space-y-2">
+            <h4 class="font-black text-xs text-zinc-800">🧾 已記錄的額外應援開支 (${extras.length} 筆)</h4>
+            ${extras.length === 0 ? `<p class="text-xs font-bold text-zinc-400 text-center py-5">尚無額外開支紀錄，門票、CD 通販或機票都可記喺呢度 ✨</p>` : `
+              <div class="space-y-1.5 max-h-64 overflow-y-auto no-scrollbar">
+                ${extras.map(ex => {
+                  const catLabel = (EXPENSE_CATEGORIES.find(c => c.id === ex.category)?.label || '💎 其他').split(' ')[0];
+                  const rawDisp = oshiBudgetState.privacyMasked
+                    ? '••••'
+                    : (ex.currency === 'HKD' ? `HK$${Number(ex.amount).toLocaleString()}` : `¥${Number(ex.amount).toLocaleString()}`);
+                  return `
+                    <div class="flex items-center justify-between gap-2 p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs">
+                      <div class="min-w-0">
+                        <p class="font-black text-zinc-900 truncate">${catLabel} ${escLedgerHtml(ex.title)} ${ex.member ? `<span class="text-cheki-accent">(${escLedgerHtml(ex.member)})</span>` : ''}</p>
+                        <p class="text-[10px] font-bold text-zinc-500">📅 ${escLedgerHtml(ex.date)}</p>
+                      </div>
+                      <div class="flex items-center gap-1.5 shrink-0">
+                        <span class="font-black text-zinc-900">${rawDisp}</span>
+                        <button type="button" onclick="deleteExtraOshiExpense('${escLedgerHtml(ex.id)}')" class="w-6 h-6 rounded-full bg-rose-100 text-rose-700 font-black text-[10px]">✕</button>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+        `;
+      } else {
+        const ruleEntries = Object.entries(oshiBudgetState.memberRules || {});
+        tabBodyHtml = `
+          ${memberDatalistHtml}
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-3 space-y-2.5">
+            <h4 class="font-black text-xs text-zinc-900">💱 匯率、主貨幣與月度預算</h4>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[10px] font-black text-zinc-600 block mb-1">主顯示貨幣</label>
+                <select id="setDisplayCurrencySelect" class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-zinc-50 text-xs font-black">
+                  <option value="HKD" ${oshiBudgetState.displayCurrency === 'HKD' ? 'selected' : ''}>HK$ 港幣為主</option>
+                  <option value="JPY" ${oshiBudgetState.displayCurrency === 'JPY' ? 'selected' : ''}>¥ 日圓為主</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-[10px] font-black text-zinc-600 block mb-1">每 ¥100 日圓兌 HK$</label>
+                <input id="setJpyRateInput" type="number" step="0.01" min="1" value="${Number(oshiBudgetState.jpyPer100ToHkd || 5.10)}" class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-zinc-50 text-xs font-black">
+              </div>
+            </div>
+
+            <div>
+              <label class="text-[10px] font-black text-zinc-600 block mb-1">📅 每月應援預算提醒線（HK$，填 0 則隱藏進度條）</label>
+              <input id="setMonthlyBudgetInput" type="number" step="100" min="0" value="${Number(oshiBudgetState.monthlyBudgetHkd ?? 3000)}" class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-zinc-50 text-xs font-black">
+            </div>
+
+            <div class="border-t border-zinc-200 pt-2 space-y-2">
+              <label class="flex items-center gap-2 cursor-pointer text-xs font-black text-zinc-800">
+                <input id="setAutoEstCb" type="checkbox" ${oshiBudgetState.autoEstimateUnpriced ? 'checked' : ''} class="w-4 h-4 accent-pink-500 rounded">
+                <span>⚡ 未單獨填價的舊 Cheki 自動按下方預設價估算</span>
+              </label>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-[10px] font-black text-zinc-600 block mb-1">✍️ 有簽名預設價</label>
+                  <div class="flex gap-1">
+                    <select id="setDefSignedCur" class="px-1.5 py-1 rounded-lg border border-cheki-dark text-[11px] font-black bg-white">
+                      <option value="JPY" ${oshiBudgetState.defaultSignedCurrency === 'JPY' ? 'selected' : ''}>¥</option>
+                      <option value="HKD" ${oshiBudgetState.defaultSignedCurrency === 'HKD' ? 'selected' : ''}>HK$</option>
+                    </select>
+                    <input id="setDefSignedAmt" type="number" min="0" value="${Number(oshiBudgetState.defaultSignedPrice ?? 2000)}" class="w-full px-2 py-1 rounded-lg border border-cheki-dark text-xs font-black">
+                  </div>
+                </div>
+                <div>
+                  <label class="text-[10px] font-black text-zinc-600 block mb-1">📸 無簽名預設價</label>
+                  <div class="flex gap-1">
+                    <select id="setDefUnsignedCur" class="px-1.5 py-1 rounded-lg border border-cheki-dark text-[11px] font-black bg-white">
+                      <option value="JPY" ${oshiBudgetState.defaultUnsignedCurrency === 'JPY' ? 'selected' : ''}>¥</option>
+                      <option value="HKD" ${oshiBudgetState.defaultUnsignedCurrency === 'HKD' ? 'selected' : ''}>HK$</option>
+                    </select>
+                    <input id="setDefUnsignedAmt" type="number" min="0" value="${Number(oshiBudgetState.defaultUnsignedPrice ?? 1500)}" class="w-full px-2 py-1 rounded-lg border border-cheki-dark text-xs font-black">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button type="button" onclick="saveOshiLedgerSettings()" class="w-full py-2.5 rounded-xl bg-cheki-accent text-white neo-btn text-xs font-black">💾 儲存匯率與預設單價</button>
+          </div>
+
+          <!-- 特定偶像專屬單價規則 -->
+          <div class="rounded-2xl border-2 border-cheki-dark bg-sky-50/70 p-3 space-y-2">
+            <h4 class="font-black text-xs text-zinc-900">👑 特定偶像專屬特典券單價（如不同團體定價不同）</h4>
+            <div class="grid grid-cols-2 gap-1.5">
+              <input id="ruleMemberNameInput" list="ledgerMemberSuggestions" type="text" placeholder="成員名稱（例：櫻井優衣）" class="px-2.5 py-1.5 rounded-xl border border-cheki-dark bg-white text-xs font-bold">
+              <select id="ruleCurrencySelect" class="px-2.5 py-1.5 rounded-xl border border-cheki-dark bg-white text-xs font-black">
+                <option value="JPY">¥ 日圓 (JPY)</option>
+                <option value="HKD">HK$ 港幣</option>
+              </select>
+            </div>
+            <div class="grid grid-cols-3 gap-1.5">
+              <input id="ruleSignedInput" type="number" min="0" placeholder="有簽價 (例3000)" class="px-2 py-1.5 rounded-xl border border-cheki-dark bg-white text-xs font-black">
+              <input id="ruleUnsignedInput" type="number" min="0" placeholder="無簽價 (例2000)" class="px-2 py-1.5 rounded-xl border border-cheki-dark bg-white text-xs font-black">
+              <button type="button" onclick="addMemberPriceRuleFromUI()" class="rounded-xl bg-blue-500 text-white neo-btn text-xs font-black">＋ 設定規則</button>
+            </div>
+
+            ${ruleEntries.length > 0 ? `
+              <div class="space-y-1 pt-1">
+                ${ruleEntries.map(([mName, r]) => {
+                  const sym = r.currency === 'HKD' ? 'HK$' : '¥';
+                  return `
+                    <div class="flex items-center justify-between px-2.5 py-1 rounded-xl bg-white border border-zinc-200 text-[11px] font-black">
+                      <span class="truncate">👑 ${escLedgerHtml(mName)}：有簽 ${sym}${r.signed} / 無簽 ${sym}${r.unsigned}</span>
+                      <button type="button" onclick="removeMemberPriceRule('${escLedgerHtml(mName)}')" class="text-rose-600 px-1.5">✕</button>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }
+
+      box.innerHTML = `
+        <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xl">💰</span>
+            <div>
+              <h3 class="font-black text-base leading-tight">應援開支統計帳本</h3>
+              <p class="text-[10px] text-zinc-500 font-bold">特典券 × 門票周邊 × 遠征雙幣記帳本 ✨</p>
+            </div>
+          </div>
+          <button type="button" onclick="closeOshiLedgerModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm shrink-0">✕</button>
+        </div>
+
+        <div class="grid grid-cols-3 gap-1 bg-zinc-100 p-1 rounded-2xl border-2 border-cheki-dark">
+          <button type="button" onclick="switchOshiLedgerTab('overview')" class="py-1.5 rounded-xl text-xs font-black transition ${currentLedgerTab === 'overview' ? 'bg-cheki-accent text-white neo-btn' : 'text-zinc-600'}">📊 開支總覽</button>
+          <button type="button" onclick="switchOshiLedgerTab('expenses')" class="py-1.5 rounded-xl text-xs font-black transition ${currentLedgerTab === 'expenses' ? 'bg-amber-300 text-zinc-900 neo-btn' : 'text-zinc-600'}">🧾 額外記帳</button>
+          <button type="button" onclick="switchOshiLedgerTab('settings')" class="py-1.5 rounded-xl text-xs font-black transition ${currentLedgerTab === 'settings' ? 'bg-blue-500 text-white neo-btn' : 'text-zinc-600'}">⚙️ 單價匯率</button>
+        </div>
+
+        ${tabBodyHtml}
+      `;
+    }
+
+    // -------------------------------------------------------------------------
+    // 🚀 掛載初始化與備份/儲存攔截器
+    // -------------------------------------------------------------------------
+    function initOshiExpenseLedgerPlugin() {
+      loadOshiBudgetState();
+      ensureOshiLedgerModalExists();
+      injectCardPriceInputInEditModal();
+
+      // 1. 頂部導覽列加入「💰」快速開啟帳本按鈕
+      const topGachaBtn = document.getElementById('topLuckyGachaBtn') || document.getElementById('topOshiThemeBtn');
+      if (topGachaBtn && topGachaBtn.parentElement && !document.getElementById('topOshiLedgerBtn')) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'topOshiLedgerBtn';
+        btn.onclick = () => window.openOshiLedgerModal('overview');
+        btn.className = 'w-9 h-9 rounded-2xl bg-amber-200 neo-btn flex items-center justify-center text-base shrink-0';
+        btn.title = '應援開支統計帳本';
+        btn.textContent = '💰';
+        topGachaBtn.parentElement.insertBefore(btn, topGachaBtn);
+      }
+
+      // 2. 攔截新增 / 編輯視窗開啟，自動帶入單張金額
+      ['openAddModal', 'openEditFromInspect', 'openEditModal'].forEach(fnName => {
+        const origFn = window[fnName];
+        if (typeof origFn === 'function' && !origFn._wrappedPriceInput) {
+          window[fnName] = function(argId) {
+            const res = origFn.apply(this, arguments);
+            const targetId = fnName === 'openAddModal' ? null : (editingCardId || argId || inspectingCardId);
+            populateCardPriceInputForEdit(targetId);
+            return res;
+          };
+          window[fnName]._wrappedPriceInput = true;
+        }
+      });
+
+      // 3. 攔截 saveCard 儲存單張特典券實際金額
+      const origSave = window.saveCard;
+      if (typeof origSave === 'function' && !origSave._wrappedLedgerSave) {
+        window.saveCard = async function() {
+          const targetEditId = editingCardId;
+          const rawPriceStr = (document.getElementById('cardPriceAmountInput')?.value ?? '').trim();
+          const rawCurrency = document.getElementById('cardPriceCurrencySelect')?.value || 'JPY';
+
+          await origSave.apply(this, arguments);
+
+          const savedCard = targetEditId ? cards.find(c => c.id === targetEditId) : cards[0];
+          if (savedCard && savedCard.id) {
+            const cid = String(savedCard.id);
+            if (rawPriceStr !== '' && !Number.isNaN(Number(rawPriceStr)) && Number(rawPriceStr) >= 0) {
+              const numAmt = Number(rawPriceStr);
+              savedCard.priceAmount = numAmt;
+              savedCard.priceCurrency = rawCurrency;
+              oshiBudgetState.cardPrices[cid] = { amount: numAmt, currency: rawCurrency };
+            } else {
+              delete savedCard.priceAmount;
+              delete savedCard.priceCurrency;
+              delete oshiBudgetState.cardPrices[cid];
+            }
+            await saveCardToDB(savedCard);
+            saveOshiBudgetState();
+          }
+        };
+        window.saveCard._wrappedLedgerSave = true;
+      }
+
+      // 4. 攔截 renderStats 同步刷新統計頁內的帳本摘要卡
+      const origStats = window.renderStats;
+      if (typeof origStats === 'function' && !origStats._wrappedLedgerStats) {
+        window.renderStats = function() {
+          const res = origStats.apply(this, arguments);
+          renderStatsBudgetSummaryCard();
+          return res;
+        };
+        window.renderStats._wrappedLedgerStats = true;
+      }
+
+      // 5. 攔截 loadDataFromDB（確保本機匯入或雲端還原後即時同步單價與帳本）
+      const origLoad = window.loadDataFromDB;
+      if (typeof origLoad === 'function' && !origLoad._wrappedLedgerLoad) {
+        window.loadDataFromDB = async function() {
+          await origLoad.apply(this, arguments);
+          loadOshiBudgetState();
+        };
+        window.loadDataFromDB._wrappedLedgerLoad = true;
+      }
+
+      // 6. 升級本機 .json 備份匯出，確保單張金額與完整應援帳本一併打包
+      window.exportAllData = function() {
+        try {
+          localStorage.setItem('cheki_last_backup_at', new Date().toISOString());
+          saveOshiBudgetState();
+        } catch (_) {}
+
+        const exportBtns = document.querySelectorAll('button[onclick="exportAllData()"]');
+        exportBtns.forEach(b => {
+          b._origHtml = b.innerHTML;
+          b.innerHTML = `⏳ 正在打包 ${cards.length} 張相片與帳本...`;
+          b.disabled = true;
+        });
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast(`⏳ 正在打包 ${cards.length} 張拍立得與應援帳本...`, 4000);
+        }
+
+        setTimeout(() => {
+          try {
+            const chunks = ['{"cards":['];
+            for (let i = 0; i < cards.length; i++) {
+              const c = cards[i];
+              if (i > 0) chunks.push(',');
+              chunks.push(JSON.stringify({
+                id: c.id,
+                createdAt: c.createdAt,
+                member: c.member,
+                date: c.date,
+                locationName: c.locationName,
+                lat: c.lat,
+                lng: c.lng,
+                note: c.note,
+                album: c.album,
+                albums: c.albums,
+                image: c.image,
+                filterConfig: c.filterConfig,
+                isLandscape: c.isLandscape,
+                backColor: c.backColor,
+                fav: c.fav,
+                deskX: c.deskX,
+                deskY: c.deskY,
+                deskRot: c.deskRot,
+                deskScale: c.deskScale,
+                deskZ: c.deskZ,
+                deskFlipped: c.deskFlipped,
+                chekiTags: c.chekiTags,
+                isRemastered: c.isRemastered,
+                remasterMode: c.remasterMode,
+                priceAmount: c.priceAmount,
+                priceCurrency: c.priceCurrency
+              }));
+            }
+            chunks.push('],"albums":', JSON.stringify(albums || []));
+            chunks.push(',"deskBgConfig":', JSON.stringify(deskBgConfig || {}));
+            chunks.push(',"customChekiTags":', JSON.stringify(typeof customChekiTags !== 'undefined' ? customChekiTags : []));
+            chunks.push(',"cheerEvents":', JSON.stringify(typeof cheerEvents !== 'undefined' ? cheerEvents : []));
+            chunks.push(',"cheerTopics":', JSON.stringify(typeof cheerTopics !== 'undefined' ? cheerTopics : []));
+            chunks.push(',"chekiSets":', JSON.stringify(typeof chekiSets !== 'undefined' ? chekiSets : []));
+            chunks.push(',"userOshiProfile":', JSON.stringify(typeof userOshiProfile !== 'undefined' ? userOshiProfile : {}));
+            chunks.push(',"exportedAt":', JSON.stringify(new Date().toISOString()), '}');
+
+            const blob = new Blob(chunks, { type: 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `ChekiPocket_Backup_${cards.length}cards_${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+
+            setTimeout(() => {
+              a.remove();
+              URL.revokeObjectURL(url);
+            }, 60000);
+
+            const sizeMB = (blob.size / (1024 * 1024)).toFixed(1);
+            if (typeof window.showChekiToast === 'function') {
+              window.showChekiToast(`✅ 備份檔已開始下載（共 ${cards.length} 張 · 約 ${sizeMB} MB）！`, 4000);
+            }
+          } catch (err) {
+            alert('❌ 匯出備份失敗：' + (err.message || err));
+          } finally {
+            exportBtns.forEach(b => {
+              if (b._origHtml) b.innerHTML = b._origHtml;
+              b.disabled = false;
+            });
+          }
+        }, 60);
+      };
+
+      if (currentTab === 'stats') {
+        renderStatsBudgetSummaryCard();
+      }
+    }
+
+    setTimeout(initOshiExpenseLedgerPlugin, 720);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
