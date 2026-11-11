@@ -15017,6 +15017,20 @@ function switchCheerModalTab(mode) {
       renderBinderMultiSelectTopBar();
     }
 
+    // 一鍵清空目前已勾選相片，並維持多選模式讓你直接揀選下一批
+    window.batchResetAndReselect = function() {
+      if (binderSelectedIdSet.size === 0) return;
+      binderSelectedIdSet.clear();
+      lastTappedBinderCardId = null;
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(10);
+      syncAllBinderSlotsSelectionVisual();
+      renderBinderMultiSelectTopBar();
+      renderBinderBatchFloatingDock();
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast('↺ 已取消選取，可直接勾選新一批拍立得！', 2200);
+      }
+    };
+
     function renderBinderMultiSelectTopBar() {
       const bar = document.getElementById('binderMultiSelectTopBar');
       if (!bar) return;
@@ -15038,13 +15052,17 @@ function switchCheerModalTab(mode) {
 
       bar.innerHTML = `
         <div class="neo-box bg-gradient-to-r from-amber-50 via-white to-sky-50 rounded-2xl p-2.5 space-y-2">
-          <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center justify-between gap-1.5">
             <div class="flex items-center gap-1.5">
               <span class="px-2.5 py-0.5 rounded-full bg-cheki-accent text-white text-xs font-black">☑️ 已選 ${selCount} 張</span>
-              <span class="text-[11px] font-bold text-zinc-500">點選卡片打勾</span>
+              ${selCount > 0 ? `
+                <button type="button" onclick="batchResetAndReselect()" class="px-2.5 py-0.5 rounded-full bg-rose-100 hover:bg-rose-200 border-2 border-cheki-dark text-[11px] font-black text-rose-800 active:scale-95 transition">
+                  ↺ 一鍵取消重選
+                </button>
+              ` : `<span class="text-[11px] font-bold text-zinc-500">點選卡片打勾</span>`}
             </div>
-            <button type="button" onclick="toggleBinderMultiSelectMode(false)" class="px-2.5 py-1 rounded-xl bg-zinc-200 hover:bg-zinc-300 border border-cheki-dark text-[11px] font-black text-zinc-800 active:scale-95">
-              ✕ 完成退出
+            <button type="button" onclick="toggleBinderMultiSelectMode(false)" class="px-2.5 py-1 rounded-xl bg-zinc-200 hover:bg-zinc-300 border border-cheki-dark text-[11px] font-black text-zinc-800 shrink-0 active:scale-95">
+              ✕ 退出
             </button>
           </div>
 
@@ -15064,17 +15082,12 @@ function switchCheerModalTab(mode) {
             <button type="button" onclick="batchSelectUnpriced()" class="px-2.5 py-1 rounded-full bg-emerald-100 border-2 border-cheki-dark text-[10px] font-black text-emerald-900 shrink-0 active:scale-95">
               💰 選未單獨標價
             </button>
-            ${selCount > 0 ? `
-              <button type="button" onclick="batchClearSelection()" class="px-2.5 py-1 rounded-full bg-zinc-100 border border-zinc-400 text-[10px] font-black text-zinc-600 shrink-0 active:scale-95">
-                ↺ 清空
-              </button>
-            ` : ''}
           </div>
         </div>
       `;
     }
 
-    // 2. 注入底部懸浮批次操作列 (#binderBatchFloatingDock)
+    // 2. 注入底部懸浮批次操作列 (#binderBatchFloatingDock) — 內置隨手可按「↺ 一鍵取消重選」
     function ensureBinderBatchFloatingDock() {
       if (document.getElementById('binderBatchFloatingDock')) return;
       const dock = document.createElement('div');
@@ -15097,32 +15110,67 @@ function switchCheerModalTab(mode) {
       if (!shouldShow) return;
 
       const cnt = binderSelectedIdSet.size;
-      const disabledCls = cnt === 0 ? 'opacity-45 pointer-events-none' : '';
+      const disabledCls = cnt === 0 ? 'opacity-40 pointer-events-none' : '';
 
       dock.innerHTML = `
         <div class="neo-box bg-zinc-900/95 backdrop-blur-md text-white rounded-3xl p-2.5 shadow-2xl border-2 border-white/30 space-y-2">
+          <!-- 隨手控制列：唔使滑返上頂，直接一鍵取消重選 / 區間連選 / 退出 -->
+          <div class="flex items-center justify-between gap-1.5 px-1 pb-1.5 border-b border-white/15">
+            <span class="text-xs font-black text-white shrink-0">☑️ 已選 <strong class="text-amber-300">${cnt}</strong> 張</span>
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="batchResetAndReselect()" class="px-2.5 py-1 rounded-full bg-rose-500 hover:bg-rose-400 text-white border border-white/40 text-[11px] font-black whitespace-nowrap active:scale-95 transition ${disabledCls}">
+                ↺ 一鍵取消重選
+              </button>
+              <button type="button" onclick="batchSelectRangeBetween()" class="px-2 py-1 rounded-full bg-white/15 hover:bg-white/25 text-sky-200 border border-white/25 text-[11px] font-black whitespace-nowrap active:scale-95 transition">
+                ↔️ 連選
+              </button>
+              <button type="button" onclick="toggleBinderMultiSelectMode(false)" class="px-2 py-1 rounded-full bg-zinc-700 hover:bg-zinc-600 text-zinc-200 border border-white/20 text-[11px] font-black whitespace-nowrap active:scale-95 transition">
+                ✕ 退出
+              </button>
+            </div>
+          </div>
+
           <div class="grid grid-cols-2 gap-1.5 ${disabledCls}">
-            <button type="button" onclick="openBatchEditModal('price')" class="py-2.5 px-2.5 rounded-2xl bg-amber-300 text-zinc-950 neo-btn font-black text-xs flex items-center justify-center gap-1 active:scale-95">
+            <button type="button" onclick="openBatchEditModal('price')" class="py-2.5 px-2.5 rounded-2xl bg-amber-300 text-zinc-950 neo-btn font-black text-xs whitespace-nowrap flex items-center justify-center gap-1 active:scale-95">
               💰 批次標價 (${cnt})
             </button>
-            <button type="button" onclick="openBatchEditModal('venue')" class="py-2.5 px-2.5 rounded-2xl bg-sky-400 text-zinc-950 neo-btn font-black text-xs flex items-center justify-center gap-1 active:scale-95">
+            <button type="button" onclick="openBatchEditModal('venue')" class="py-2.5 px-2.5 rounded-2xl bg-sky-400 text-zinc-950 neo-btn font-black text-xs whitespace-nowrap flex items-center justify-center gap-1 active:scale-95">
               📍 改場地 / 日期 (${cnt})
             </button>
           </div>
           <div class="grid grid-cols-3 gap-1.5 ${disabledCls}">
-            <button type="button" onclick="openBatchEditModal('more')" class="py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-[11px] font-black text-white flex items-center justify-center gap-1 active:scale-95">
-              🎨 成員/顏色/相簿
+            <button type="button" onclick="openBatchEditModal('more')" class="py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-[11px] font-black text-white whitespace-nowrap flex items-center justify-center gap-1 active:scale-95">
+              🎨 成員·顏色
             </button>
-            <button type="button" onclick="triggerBatchPosterFromSelection()" class="py-1.5 px-2 rounded-xl bg-pink-500/90 hover:bg-pink-500 border border-white/30 text-[11px] font-black text-white flex items-center justify-center gap-1 active:scale-95">
+            <button type="button" onclick="triggerBatchPosterFromSelection()" class="py-1.5 px-2 rounded-xl bg-pink-500/90 hover:bg-pink-500 border border-white/30 text-[11px] font-black text-white whitespace-nowrap flex items-center justify-center gap-1 active:scale-95">
               🖼️ 出海報
             </button>
-            <button type="button" onclick="triggerBatchDeleteSelected()" class="py-1.5 px-2 rounded-xl bg-rose-600/90 hover:bg-rose-600 border border-white/30 text-[11px] font-black text-white flex items-center justify-center gap-1 active:scale-95">
+            <button type="button" onclick="triggerBatchDeleteSelected()" class="py-1.5 px-2 rounded-xl bg-rose-600/90 hover:bg-rose-600 border border-white/30 text-[11px] font-black text-white whitespace-nowrap flex items-center justify-center gap-1 active:scale-95">
               🗑️ 批次刪除
             </button>
           </div>
         </div>
       `;
     }
+
+    // 儲存完批次修改後，自動清空剛剛剔過嘅舊相，方便直接勾選下一批
+    setTimeout(() => {
+      const origApply = window.applyBatchEditToSelectedCards;
+      if (typeof origApply === 'function' && !origApply._wrappedAutoClearAfterSave) {
+        window.applyBatchEditToSelectedCards = async function() {
+          await origApply.apply(this, arguments);
+          const modalHidden = document.getElementById('batchEditCardsModal')?.classList.contains('hidden');
+          if (modalHidden && binderSelectedIdSet.size > 0) {
+            binderSelectedIdSet.clear();
+            lastTappedBinderCardId = null;
+            syncAllBinderSlotsSelectionVisual();
+            renderBinderMultiSelectTopBar();
+            renderBinderBatchFloatingDock();
+          }
+        };
+        window.applyBatchEditToSelectedCards._wrappedAutoClearAfterSave = true;
+      }
+    }, 800);
 
     // 3. 在每張卡冊格仔上渲染打勾徽章與目前單價小標籤
     function formatSlotMiniPriceTag(card) {
