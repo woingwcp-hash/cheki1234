@@ -16015,6 +16015,255 @@ function switchCheerModalTab(mode) {
     }
 
     setTimeout(initBinderMultiSelectBatchPlugin, 760);
+// =========================================================================
+    // 🧰 頂部導覽列減法收納模組 (Header Consolidation & More Tools Popover)
+    // 只保留「⏳ 倒數」與「🔍 搜尋」，將「📦 備份 / 💰 帳本 / 💫 抽卡 / 🎨 主題」收進選單
+    // =========================================================================
+    (function injectHeaderCleanCssImmediately() {
+      if (document.getElementById('chekiHeaderConsolidateStyle')) return;
+      const st = document.createElement('style');
+      st.id = 'chekiHeaderConsolidateStyle';
+      st.textContent = `
+        #topOshiLedgerBtn,
+        #topLuckyGachaBtn,
+        #topOshiThemeBtn,
+        header button[onclick*="openBackupModal"],
+        .cheki-folded-header-btn {
+          display: none !important;
+        }
+        @keyframes chekiPopoverIn {
+          from { opacity: 0; transform: translateY(-6px) scale(0.96); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .cheki-popover-anim {
+          animation: chekiPopoverIn 0.16s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+      `;
+      document.head.appendChild(st);
+    })();
+
+    function findFoldedHeaderButtons() {
+      const searchBtn = document.getElementById('topSearchBtn') ||
+        document.querySelector('header button[onclick*="Search"], header button[onclick*="search"]');
+      const headerEl = searchBtn?.closest('header') || document.querySelector('header');
+      const allHeaderBtns = headerEl ? [...headerEl.querySelectorAll('button')] : [];
+
+      const backupBtn = document.getElementById('topBackupBtn') ||
+        headerEl?.querySelector('button[onclick*="openBackupModal"]') ||
+        allHeaderBtns.find(b => (b.textContent || '').includes('📦'));
+
+      const ledgerBtn = document.getElementById('topOshiLedgerBtn') ||
+        allHeaderBtns.find(b => b.id !== 'topMoreToolsBtn' && (b.textContent || '').includes('💰'));
+
+      const gachaBtn = document.getElementById('topLuckyGachaBtn') ||
+        allHeaderBtns.find(b => b.id !== 'topMoreToolsBtn' && (b.textContent || '').includes('💫'));
+
+      const themeBtn = document.getElementById('topOshiThemeBtn') ||
+        headerEl?.querySelector('button[onclick*="Theme"], button[onclick*="theme"]') ||
+        allHeaderBtns.find(b => b.id !== 'topMoreToolsBtn' && (b.textContent || '').includes('🎨'));
+
+      return { headerEl, searchBtn, backupBtn, ledgerBtn, gachaBtn, themeBtn };
+    }
+
+    function ensureTopMoreToolsPopoverExists() {
+      if (document.getElementById('topMoreToolsModalWrap')) return;
+      const wrap = document.createElement('div');
+      wrap.id = 'topMoreToolsModalWrap';
+      wrap.className = 'hidden fixed inset-0 z-[125]';
+      wrap.innerHTML = `
+        <div onclick="closeTopMoreToolsMenu()" class="absolute inset-0 bg-black/20 backdrop-blur-[1px]"></div>
+        <div id="topMoreToolsCard" class="cheki-popover-anim fixed top-16 right-3 w-72 max-w-[calc(100vw-1.5rem)] bg-[#FFF9FB] text-zinc-900 rounded-3xl neo-box p-3 space-y-2.5 shadow-2xl">
+          <div class="flex items-center justify-between border-b-2 border-cheki-dark pb-1.5 px-0.5">
+            <span class="text-xs font-black text-zinc-800">🧰 更多應援工具與設定</span>
+            <button type="button" onclick="closeTopMoreToolsMenu()" class="w-6 h-6 rounded-full bg-pink-100 border border-cheki-dark text-[11px] font-black leading-none flex items-center justify-center">✕</button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" onclick="triggerHeaderFoldedTool('theme')" class="p-2.5 rounded-2xl bg-pink-100/90 hover:bg-pink-200/80 neo-btn text-left space-y-0.5 active:scale-95 transition">
+              <div class="text-lg leading-none">🎨</div>
+              <div class="font-black text-xs text-zinc-900 pt-0.5">應援主題色</div>
+              <div class="text-[10px] font-bold text-zinc-600 leading-tight">切換色系・深色模式</div>
+            </button>
+
+            <button type="button" onclick="triggerHeaderFoldedTool('gacha')" class="p-2.5 rounded-2xl bg-gradient-to-br from-amber-100 via-pink-100 to-sky-100 neo-btn text-left space-y-0.5 active:scale-95 transition">
+              <div class="text-lg leading-none">💫</div>
+              <div class="font-black text-xs text-zinc-900 pt-0.5">幸運抽卡機</div>
+              <div class="text-[10px] font-bold text-zinc-600 leading-tight">每日命定 Cheki 運勢</div>
+            </button>
+
+            <button type="button" onclick="triggerHeaderFoldedTool('ledger')" class="p-2.5 rounded-2xl bg-amber-100/90 hover:bg-amber-200/80 neo-btn text-left space-y-0.5 active:scale-95 transition">
+              <div class="text-lg leading-none">💰</div>
+              <div class="font-black text-xs text-zinc-900 pt-0.5">應援開支帳本</div>
+              <div class="text-[10px] font-bold text-zinc-600 leading-tight">特典券・門票雙幣記帳</div>
+            </button>
+
+            <button type="button" onclick="triggerHeaderFoldedTool('backup')" class="p-2.5 rounded-2xl bg-emerald-100/90 hover:bg-emerald-200/80 neo-btn text-left space-y-0.5 relative active:scale-95 transition">
+              <span id="menuBackupWarnBadge" class="hidden absolute top-2 right-2 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black">未備份</span>
+              <div class="text-lg leading-none">📦</div>
+              <div class="font-black text-xs text-zinc-900 pt-0.5">備份與設定</div>
+              <div class="text-[10px] font-bold text-zinc-600 leading-tight">本機保護・個人檔案</div>
+            </button>
+          </div>
+
+          <button type="button" id="menuQuickCloudSyncBtn" onclick="triggerHeaderFoldedTool('cloud')" class="w-full py-2 px-3 rounded-2xl bg-gradient-to-r from-sky-400 to-blue-500 text-white neo-btn font-black text-xs flex items-center justify-center gap-1.5 active:scale-95 transition">
+            ☁️ Google Drive 雲端增量備份
+          </button>
+        </div>
+      `;
+      document.body.appendChild(wrap);
+    }
+
+    function updateMoreToolsBadgeState() {
+      const hasBackup = Boolean(localStorage.getItem('cheki_last_backup_at') || localStorage.getItem('cheki_last_cloud_sync'));
+      const dot = document.getElementById('topMoreToolsBadgeDot');
+      if (dot) dot.classList.toggle('hidden', hasBackup || (typeof cards !== 'undefined' && cards.length === 0));
+
+      const menuWarn = document.getElementById('menuBackupWarnBadge');
+      if (menuWarn) menuWarn.classList.toggle('hidden', hasBackup || (typeof cards !== 'undefined' && cards.length === 0));
+
+      const cloudQuick = document.getElementById('menuQuickCloudSyncBtn');
+      if (cloudQuick) {
+        cloudQuick.classList.toggle('hidden', typeof window.openCloudSyncModal !== 'function');
+      }
+    }
+
+    window.toggleTopMoreToolsMenu = function(e) {
+      if (e) e.stopPropagation();
+      ensureTopMoreToolsPopoverExists();
+      const wrap = document.getElementById('topMoreToolsModalWrap');
+      if (!wrap) return;
+
+      const willOpen = wrap.classList.contains('hidden');
+      if (!willOpen) {
+        wrap.classList.add('hidden');
+        return;
+      }
+
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(8);
+      updateMoreToolsBadgeState();
+
+      // 自動對齊頂部導覽列下方高度
+      const moreBtn = document.getElementById('topMoreToolsBtn');
+      const card = document.getElementById('topMoreToolsCard');
+      if (moreBtn && card) {
+        const rect = moreBtn.getBoundingClientRect();
+        card.style.top = `${Math.max(52, Math.round(rect.bottom + 8))}px`;
+      }
+
+      wrap.classList.remove('hidden');
+    };
+
+    window.closeTopMoreToolsMenu = function() {
+      document.getElementById('topMoreToolsModalWrap')?.classList.add('hidden');
+    };
+
+    window.triggerHeaderFoldedTool = function(toolKey) {
+      window.closeTopMoreToolsMenu();
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(10);
+
+      const { backupBtn, ledgerBtn, gachaBtn, themeBtn } = findFoldedHeaderButtons();
+      const moreBtn = document.getElementById('topMoreToolsBtn');
+
+      // 若原按鈕彈窗依賴按鈕座標定位，將座標代理至「🧰」按鈕位置
+      [backupBtn, ledgerBtn, gachaBtn, themeBtn].forEach(b => {
+        if (b && moreBtn && !b._proxiedRect) {
+          b.getBoundingClientRect = () => moreBtn.getBoundingClientRect();
+          b._proxiedRect = true;
+        }
+      });
+
+      if (toolKey === 'backup') {
+        if (typeof window.openBackupModal === 'function') window.openBackupModal();
+        else if (backupBtn) backupBtn.click();
+      } else if (toolKey === 'ledger') {
+        if (typeof window.openOshiLedgerModal === 'function') window.openOshiLedgerModal('overview');
+        else if (ledgerBtn) ledgerBtn.click();
+      } else if (toolKey === 'gacha') {
+        if (typeof window.openLuckyGachaModal === 'function') window.openLuckyGachaModal(false);
+        else if (gachaBtn) gachaBtn.click();
+      } else if (toolKey === 'theme') {
+        if (themeBtn) themeBtn.click();
+        else if (typeof window.openOshiThemeModal === 'function') window.openOshiThemeModal();
+      } else if (toolKey === 'cloud') {
+        if (typeof window.openCloudSyncModal === 'function') window.openCloudSyncModal();
+        else if (typeof window.openBackupModal === 'function') window.openBackupModal();
+      }
+    };
+
+    function consolidateTopHeaderLayout() {
+      ensureTopMoreToolsPopoverExists();
+      const { headerEl, searchBtn, backupBtn, ledgerBtn, gachaBtn, themeBtn } = findFoldedHeaderButtons();
+      const rightContainer = searchBtn?.parentElement || backupBtn?.parentElement;
+      if (!rightContainer) return;
+
+      // 1. 標記並隱藏 4 粒收納按鈕（保留 DOM 節點供點擊事件連動）
+      [backupBtn, ledgerBtn, gachaBtn, themeBtn].forEach(btn => {
+        if (btn && btn.id !== 'topMoreToolsBtn') {
+          btn.classList.add('cheki-folded-header-btn');
+        }
+      });
+
+      // 2. 收緊右側按鈕組間距，將倒數膠囊略為緊湊化以釋放更多空間
+      rightContainer.classList.remove('gap-2', 'gap-2.5');
+      rightContainer.classList.add('gap-1.5', 'shrink-0');
+
+      [...rightContainer.children].forEach(el => {
+        if ((el.textContent || '').includes('⏳')) {
+          el.classList.remove('px-3', 'px-3.5');
+          el.classList.add('px-2.5', 'whitespace-nowrap');
+        }
+      });
+
+      // 3. 確保左上角標題與「總計 XXX 張」容器可自由伸展顯示完整字樣
+      const headerRow = rightContainer.parentElement;
+      const leftBrandBox = headerRow?.firstElementChild;
+      if (leftBrandBox && leftBrandBox !== rightContainer) {
+        leftBrandBox.classList.add('flex-1', 'min-w-0', 'pr-1');
+        leftBrandBox.querySelectorAll('[class*="max-w-"]').forEach(node => {
+          [...node.classList].forEach(cls => {
+            if (cls.startsWith('max-w-')) node.classList.remove(cls);
+          });
+        });
+      }
+
+      // 4. 在「🔍 搜尋」右側插入單一「🧰 更多工具」按鈕
+      if (!document.getElementById('topMoreToolsBtn')) {
+        const moreBtn = document.createElement('button');
+        moreBtn.type = 'button';
+        moreBtn.id = 'topMoreToolsBtn';
+        moreBtn.onclick = window.toggleTopMoreToolsMenu;
+        moreBtn.className = 'w-9 h-9 rounded-2xl bg-gradient-to-br from-amber-100 via-white to-sky-100 neo-btn flex items-center justify-center text-base shrink-0 relative active:scale-95 transition';
+        moreBtn.title = '更多工具（主題 / 抽卡 / 帳本 / 備份）';
+        moreBtn.innerHTML = `
+          <span>🧰</span>
+          <span id="topMoreToolsBadgeDot" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 border border-cheki-dark"></span>
+        `;
+        rightContainer.appendChild(moreBtn);
+      }
+
+      updateMoreToolsBadgeState();
+
+      // 監聽後續動態載入按鈕，確保新掛載元件亦維持整潔
+      if (!rightContainer._boundHeaderCleanObserver && 'MutationObserver' in window) {
+        rightContainer._boundHeaderCleanObserver = true;
+        const obs = new MutationObserver(() => {
+          const latest = findFoldedHeaderButtons();
+          [latest.backupBtn, latest.ledgerBtn, latest.gachaBtn, latest.themeBtn].forEach(b => {
+            if (b && !b.classList.contains('cheki-folded-header-btn')) {
+              b.classList.add('cheki-folded-header-btn');
+            }
+          });
+          updateMoreToolsBadgeState();
+        });
+        obs.observe(rightContainer, { childList: true });
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') window.closeTopMoreToolsMenu();
+    });
+
+    setTimeout(consolidateTopHeaderLayout, 800);
 </script>
 <!-- ========================================== -->
 <!-- 🎀 應援倒數計時器模組結束                   -->
