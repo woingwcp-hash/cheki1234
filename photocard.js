@@ -2648,3 +2648,441 @@ if (PCApp.state.mode === 'pc') PCApp.renderDex();
     }
   });
 })();
+// ============================================================================
+// [第 5 段]：60fps 順滑掃描引擎 (雙指縮放＋代理預覽) ＋ 正背面切換與自動翻面修正
+// ============================================================================
+(function applyPhotocardPart5Fixes() {
+  if (!window.PCApp) return;
+  const _origEnsurePart3 = PCApp.ensurePart3UI.bind(PCApp);
+  const _origOpenSlotP2 = PCApp.onAfterOpenSlotPart2.bind(PCApp);
+  const _origOpenScanner = PCApp.openCardScanner.bind(PCApp);
+
+  Object.assign(PCApp, {
+    _scanRaf: null,
+    _scanEnhanceTimer: null,
+    _autoFlipSlotOnce: -1,
+
+    ensurePart3UI() {
+      _origEnsurePart3();
+      if (document.getElementById('pcPart5Style')) return;
+
+      const st = document.createElement('style');
+      st.id = 'pcPart5Style';
+      st.textContent = `
+        .pc-3d-front { transform: rotateY(0deg) translateZ(1px); }
+        .pc-3d-back  { transform: rotateY(180deg) translateZ(1px); }
+      `;
+      document.head.appendChild(st);
+
+      // 在掃描視窗內注入「📸 存為正面真卡 / ✍️ 存為獨立背面」防誤存切換列
+      const titleEl = document.getElementById('pcScanTitle');
+      const headerRow = titleEl?.closest('.border-b-2');
+      if (headerRow && !document.getElementById('pcScanSideSwitchBar')) {
+        const bar = document.createElement('div');
+        bar.id = 'pcScanSideSwitchBar';
+        bar.className = 'grid grid-cols-2 gap-1.5';
+        bar.innerHTML = `
+          <button type="button" id="pcSideBtnFront" onclick="PCApp.setScanTargetSide('front')" class="py-1.5 rounded-xl border-2 border-cheki-dark font-black text-xs transition">📸 存為正面真卡</button>
+          <button type="button" id="pcSideBtnBack" onclick="PCApp.setScanTargetSide('back')" class="py-1.5 rounded-xl border-2 border-cheki-dark font-black text-xs transition">✍️ 存為獨立背面</button>
+        `;
+        headerRow.insertAdjacentElement('afterend', bar);
+      }
+
+      const saveBtn = document.querySelector('#pcScanModal button[onclick="PCApp.saveScannedCard()"]');
+      if (saveBtn) saveBtn.id = 'pcScanSaveSubmitBtn';
+
+      this.bindScanCanvasDragV2();
+    },
+
+    setScanTargetSide(side) {
+      if (this.scanner.targetSide === 'seriesBack') return;
+      this.scanner.targetSide = side;
+      this.updateScanSideSwitchUI();
+    },
+
+    updateScanSideSwitchUI() {
+      const side = this.scanner.targetSide;
+      const bar = document.getElementById('pcScanSideSwitchBar');
+      const bF = document.getElementById('pcSideBtnFront');
+      const bB = document.getElementById('pcSideBtnBack');
+      const titleEl = document.getElementById('pcScanTitle');
+      const saveBtn = document.getElementById('pcScanSaveSubmitBtn');
+
+      if (bar) bar.classList.toggle('hidden', side === 'seriesBack');
+      if (bF) bF.className = `py-1.5 rounded-xl border-2 border-cheki-dark font-black text-xs transition ${side === 'front' ? 'bg-emerald-400 text-zinc-950 shadow' : 'bg-zinc-100 text-zinc-500'}`;
+      if (bB) bB.className = `py-1.5 rounded-xl border-2 border-cheki-dark font-black text-xs transition ${side === 'back' ? 'bg-amber-300 text-zinc-950 shadow' : 'bg-zinc-100 text-zinc-500'}`;
+
+      if (titleEl) {
+        titleEl.textContent = side === 'seriesBack'
+          ? '🎴 拍攝 / 設定系列共用卡背'
+          : (side === 'back' ? '✍️ 掃描小卡獨立背面' : '📸 掃描高清實物正面真卡');
+      }
+      if (saveBtn) {
+        saveBtn.textContent = side === 'seriesBack'
+          ? '✨ 儲存為系列共用卡背'
+          : (side === 'back' ? '✨ 儲存至獨立背面（存後自動翻面）' : '✨ 儲存正面真卡並點亮圖鑑');
+      }
+    },
+
+    openCardScanner(slotIdx, side = 'front') {
+      _origOpenScanner(slotIdx, side);
+      this.scanner.previewImg = null;
+      this.scanner.hiResImg = null;
+      this.updateScanSideSwitchUI();
+      this.bindScanCanvasDragV2();
+    },
+
+    // 將高像素相片轉成雙層快取：680px 極速預覽圖（拖曳零卡頓）＋ 1600px 高清輸出圖
+    loadSourceImageToScanner(imgObj) {
+      const makeScaledCanvas = (src, maxEdge) => {
+        const s = Math.min(1, maxEdge / Math.max(src.width, src.height));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(src.width * s));
+        c.height = Math.max(1, Math.round(src.height * s));
+        c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+        return c;
+      };
+      this.scanner.hiResImg = makeScaledCanvas(imgObj, 1600);
+      this.scanner.previewImg = makeScaledCanvas(imgObj, 680);
+      this.scanner.img = this.scanner.hiResImg;
+      this.resetScanTransform();
+      this.scheduleScanRender(true);
+    },
+
+    // 改用 URL.createObjectURL 讀取原生相機/相簿相片，大幅降低手機記憶體崩潰與無反應風險
+    handleScanFile(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const cv = document.getElementById('pcScanCanvas');
+      if (cv) {
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#18181B';
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.fillStyle = '#38BDF8';
+        ctx.font = '900 15px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('⏳ 正在載入相片...', cv.width / 2, cv.height / 2);
+      }
+
+      const objUrl = URL.createObjectURL(file);
+      const im = new Image();
+      im.onload = () => {
+        try {
+          this.loadSourceImageToScanner(im);
+          if (typeof window.triggerHaptic === 'function') window.triggerHaptic(10);
+        } finally {
+          URL.revokeObjectURL(objUrl);
+        }
+      };
+      im.onerror = () => {
+        URL.revokeObjectURL(objUrl);
+        alert('❌ 無法讀取此相片格式，請再試一次或從相簿選取！');
+      };
+      im.src = objUrl;
+      e.target.value = '';
+    },
+
+    captureLiveCameraFrame() {
+      const vid = document.getElementById('pcLiveCamVideo');
+      if (!vid || !vid.videoWidth) return;
+      const vw = vid.videoWidth, vh = vid.videoHeight;
+      const targetRatio = 55 / 85;
+      const vRatio = vw / vh;
+      let sx = 0, sy = 0, sw = vw, sh = vh;
+      if (vRatio > targetRatio) { sw = vh * targetRatio; sx = (vw - sw) / 2; }
+      else { sh = vw / targetRatio; sy = (vh - sh) / 2; }
+
+      const snap = document.createElement('canvas');
+      snap.width = Math.min(1100, Math.round(sw));
+      snap.height = Math.round(snap.width * (85 / 55));
+      snap.getContext('2d').drawImage(vid, sx, sy, sw, sh, 0, 0, snap.width, snap.height);
+
+      this.stopLiveCamera();
+      this.loadSourceImageToScanner(snap);
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(14);
+    },
+
+    resetScanTransform() {
+      const sc = this.scanner;
+      sc.scale = 1; sc.ox = 0; sc.oy = 0;
+      const zEl = document.getElementById('pcScanZoom');
+      if (zEl) zEl.value = '100';
+      this.updateScanLabels();
+      this.scheduleScanRender(true);
+    },
+
+    rotateScanImg() {
+      this.scanner.rot = (this.scanner.rot + 90) % 360;
+      this.scanner.ox = 0; this.scanner.oy = 0;
+      this.scheduleScanRender(true);
+    },
+
+    onScanSlider() {
+      const sc = this.scanner;
+      sc.scale = Number(document.getElementById('pcScanZoom')?.value || 100) / 100;
+      sc.deglare = Number(document.getElementById('pcScanDeglare')?.value || 0);
+      sc.sharpen = Number(document.getElementById('pcScanSharpen')?.value || 0);
+      sc.bright = Number(document.getElementById('pcScanBright')?.value || 100);
+      sc.radiusPct = Number(document.getElementById('pcScanRadius')?.value || 6);
+      this.updateScanLabels();
+      this.scheduleScanRender(true);
+    },
+
+    // rAF 合幀渲染：操作時純硬體繪圖 (60fps)，停手 160ms 後再補畫去反光與銳化
+    scheduleScanRender(withDelayedEnhance = true) {
+      if (this._scanEnhanceTimer) {
+        clearTimeout(this._scanEnhanceTimer);
+        this._scanEnhanceTimer = null;
+      }
+      if (!this._scanRaf) {
+        this._scanRaf = requestAnimationFrame(() => {
+          this._scanRaf = null;
+          const cv = document.getElementById('pcScanCanvas');
+          if (cv && this.scanner.img) this.renderScanCanvasFast(cv, false, false);
+        });
+      }
+      if (withDelayedEnhance && (this.scanner.deglare > 0 || this.scanner.sharpen > 0)) {
+        this._scanEnhanceTimer = setTimeout(() => {
+          const cv = document.getElementById('pcScanCanvas');
+          if (cv && this.scanner.img) this.renderScanCanvasFast(cv, false, true);
+        }, 160);
+      }
+    },
+
+    renderScanCanvasFast(canvas, isExport = false, applyEnhance = false) {
+      const sc = this.scanner;
+      const srcImg = isExport ? (sc.hiResImg || sc.img) : (sc.previewImg || sc.img);
+      if (!canvas || !srcImg) return;
+      const w = canvas.width, h = canvas.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: applyEnhance });
+      const scaleFactor = isExport ? (w / 330) : 1;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.save();
+      this.pcRoundRectPath(ctx, 0, 0, w, h, w * (sc.radiusPct / 100));
+      ctx.clip();
+
+      ctx.fillStyle = '#111113';
+      ctx.fillRect(0, 0, w, h);
+
+      const rotRad = (sc.rot * Math.PI) / 180;
+      const isSwapped = sc.rot === 90 || sc.rot === 270;
+      const iw = isSwapped ? srcImg.height : srcImg.width;
+      const ih = isSwapped ? srcImg.width : srcImg.height;
+      const coverScale = Math.max(w / iw, h / ih) * sc.scale;
+
+      ctx.save();
+      if (sc.bright !== 100 || sc.contrast !== 100) {
+        ctx.filter = `brightness(${sc.bright}%) contrast(${sc.contrast}%)`;
+      }
+      ctx.translate(w / 2 + sc.ox * scaleFactor, h / 2 + sc.oy * scaleFactor);
+      ctx.rotate(rotRad);
+      ctx.scale(coverScale, coverScale);
+      ctx.drawImage(srcImg, -srcImg.width / 2, -srcImg.height / 2);
+      ctx.restore();
+
+      if (applyEnhance && (sc.deglare > 0 || sc.sharpen > 0)) {
+        this.applyCardPixelEnhance(ctx, w, h, sc.deglare, sc.sharpen);
+      }
+      ctx.restore();
+    },
+
+    renderScanCanvas(canvas, isExport = false) {
+      this.renderScanCanvasFast(canvas, isExport, isExport);
+    },
+
+    // 支援單指 60fps 拖曳 ＋ 雙指捏合縮放 (Pinch-to-Zoom)
+    bindScanCanvasDragV2() {
+      const oldCv = document.getElementById('pcScanCanvas');
+      if (!oldCv || oldCv._boundDragV2) return;
+      // 替換節點以移除舊版同步重繪監聽器，徹底解除卡頓
+      const cv = oldCv.cloneNode(true);
+      oldCv.parentNode.replaceChild(cv, oldCv);
+      cv._boundDragV2 = true;
+
+      const ptrs = new Map();
+      let lastCenter = null;
+      let lastDist = 0;
+
+      const getMetrics = () => {
+        const arr = [...ptrs.values()];
+        if (arr.length === 1) return { cx: arr[0].x, cy: arr[0].y, dist: 0 };
+        const cx = (arr[0].x + arr[1].x) / 2;
+        const cy = (arr[0].y + arr[1].y) / 2;
+        const dist = Math.hypot(arr[0].x - arr[1].x, arr[0].y - arr[1].y);
+        return { cx, cy, dist };
+      };
+
+      cv.addEventListener('pointerdown', (e) => {
+        if (!this.scanner.img) return;
+        cv.setPointerCapture?.(e.pointerId);
+        ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const m = getMetrics();
+        lastCenter = { x: m.cx, y: m.cy };
+        lastDist = m.dist;
+        e.preventDefault();
+      });
+
+      cv.addEventListener('pointermove', (e) => {
+        if (!ptrs.has(e.pointerId) || !this.scanner.img) return;
+        ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const m = getMetrics();
+        const rect = cv.getBoundingClientRect();
+        const ratio = cv.width / Math.max(1, rect.width);
+
+        if (lastCenter) {
+          this.scanner.ox += (m.cx - lastCenter.x) * ratio;
+          this.scanner.oy += (m.cy - lastCenter.y) * ratio;
+        }
+        if (ptrs.size >= 2 && lastDist > 10 && m.dist > 10) {
+          const factor = m.dist / lastDist;
+          this.scanner.scale = Math.max(0.5, Math.min(2.6, this.scanner.scale * factor));
+          const zEl = document.getElementById('pcScanZoom');
+          if (zEl) zEl.value = String(Math.round(this.scanner.scale * 100));
+          this.updateScanLabels();
+        }
+        lastCenter = { x: m.cx, y: m.cy };
+        lastDist = m.dist;
+        this.scheduleScanRender(true);
+        e.preventDefault();
+      });
+
+      const onUp = (e) => {
+        ptrs.delete(e.pointerId);
+        if (ptrs.size === 0) {
+          lastCenter = null;
+          lastDist = 0;
+        } else {
+          const m = getMetrics();
+          lastCenter = { x: m.cx, y: m.cy };
+          lastDist = m.dist;
+        }
+      };
+      cv.addEventListener('pointerup', onUp);
+      cv.addEventListener('pointercancel', onUp);
+    },
+
+    async saveScannedCard() {
+      const sc = this.scanner;
+      const s = this.getActiveSeries();
+      if (!s || !sc.img) {
+        alert('請先按「📷 鏡頭直拍」、「📱 系統相機」或「🖼️ 相簿選相」拍攝小卡！');
+        return;
+      }
+
+      const saveBtn = document.getElementById('pcScanSaveSubmitBtn');
+      const oldTxt = saveBtn?.textContent;
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ 正在合成高清真卡...'; }
+
+      await new Promise(r => setTimeout(r, 30));
+      try {
+        const outCanvas = document.createElement('canvas');
+        outCanvas.width = 550;
+        outCanvas.height = 850;
+        this.renderScanCanvasFast(outCanvas, true, true);
+        let dataUrl = outCanvas.toDataURL('image/webp', 0.88);
+        if (!dataUrl.startsWith('data:image/webp')) dataUrl = outCanvas.toDataURL('image/jpeg', 0.90);
+
+        if (sc.targetSide === 'seriesBack') {
+          s.backImage = dataUrl;
+          await this.saveSeries(s);
+          this.closeCardScanner();
+          this.renderDex();
+          if (typeof window.showChekiToast === 'function') window.showChekiToast('🎴 已儲存系列共用卡背！');
+          return;
+        }
+
+        const slot = s.slots.find(x => x.idx === sc.slotIdx);
+        if (!slot) return;
+        if (sc.targetSide === 'back') {
+          slot.realBackImg = dataUrl;
+          this._autoFlipSlotOnce = slot.idx; // 存背面後自動翻去背面俾用家即時確認
+        } else {
+          slot.realImg = dataUrl;
+          if ((slot.qty || 0) === 0) {
+            slot.qty = 1;
+            slot.wish = false;
+            this.state.justUnlockedIdx = slot.idx;
+            if (typeof window.fireCheerConfetti === 'function') window.fireCheerConfetti();
+          }
+        }
+        await this.saveSeries(s);
+        this.closeCardScanner();
+        this.onSlotClick(slot.idx);
+        this.renderDex();
+        if (typeof window.triggerHaptic === 'function') window.triggerHaptic(16);
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast(
+            sc.targetSide === 'back' ? '✍️ 已儲存小卡獨立背面（已自動翻面展示）！' : `✨ #${String(slot.idx).padStart(3, '0')} 高清正面真卡已點亮！`,
+            3200
+          );
+        }
+      } finally {
+        if (saveBtn) { saveBtn.disabled = false; if (oldTxt) saveBtn.textContent = oldTxt; }
+      }
+    },
+
+    // 一鍵將誤存於背面的真卡移去正面並點亮圖鑑
+    async moveBackImgToFront(slotIdx) {
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === slotIdx);
+      if (!s || !slot || !slot.realBackImg) return;
+      const oldFront = slot.realImg || '';
+      slot.realImg = slot.realBackImg;
+      slot.realBackImg = oldFront;
+      if ((slot.qty || 0) === 0) {
+        slot.qty = 1;
+        slot.wish = false;
+        this.state.justUnlockedIdx = slot.idx;
+        if (typeof window.fireCheerConfetti === 'function') window.fireCheerConfetti();
+      }
+      await this.saveSeries(s);
+      this.onSlotClick(slotIdx);
+      this.renderDex();
+      if (typeof window.showChekiToast === 'function') window.showChekiToast('✨ 已將該相片移至正面真卡並點亮圖鑑！');
+    },
+
+    onAfterOpenSlotPart2(s, slot) {
+      _origOpenSlotP2(s, slot);
+
+      // 補齊 3D 正背面圖層標記，避免部分手機 Chrome 翻面穿透
+      const cardInner = document.getElementById('pc3DCardInner');
+      if (cardInner) {
+        const faces = cardInner.querySelectorAll('.pc-3d-face');
+        if (faces[0]) faces[0].classList.add('pc-3d-front');
+        const flipBtn = document.getElementById('pc3DFlipBtn');
+        if (flipBtn) {
+          const origClick = flipBtn.onclick;
+          let isBackVisible = false;
+          flipBtn.onclick = () => {
+            isBackVisible = !isBackVisible;
+            if (origClick) origClick();
+            setTimeout(() => {
+              if (faces[0]) faces[0].style.opacity = isBackVisible ? '0' : '1';
+              if (faces[1]) faces[1].style.opacity = isBackVisible ? '1' : '0';
+            }, 130);
+          };
+          if (faces[1]) faces[1].style.opacity = '0';
+
+          // 若剛剛儲存了獨立背面，自動 3D 翻去背面展示
+          if (this._autoFlipSlotOnce === slot.idx) {
+            this._autoFlipSlotOnce = -1;
+            setTimeout(() => flipBtn.click(), 180);
+          }
+        }
+      }
+
+      // 若正面未有真卡但背面已存圖，提供一鍵搬回正面補救按鈕
+      const actions = document.getElementById('pcSlotScannerActions');
+      if (actions && !slot.realImg && slot.realBackImg && !document.getElementById('pcMoveBackToFrontBtn')) {
+        const fixBtn = document.createElement('button');
+        fixBtn.type = 'button';
+        fixBtn.id = 'pcMoveBackToFrontBtn';
+        fixBtn.onclick = () => this.moveBackImgToFront(slot.idx);
+        fixBtn.className = 'w-full mt-1.5 py-2 rounded-xl bg-indigo-100 border-2 border-cheki-dark font-black text-[11px] text-indigo-900 active:scale-95';
+        fixBtn.textContent = '🔄 將剛拍的背面相片直接移作正面真卡';
+        actions.appendChild(fixBtn);
+      }
+    }
+  });
+})();
