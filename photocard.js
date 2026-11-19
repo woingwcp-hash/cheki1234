@@ -4504,3 +4504,158 @@ if (PCApp.state.mode === 'pc') PCApp.renderDex();
 
   if (PCApp.state.mode === 'pc') PCApp.renderDex();
 })();
+// ============================================================================
+// [第 8 段]：修正小卡頁向右撐爆、修復 63×88 卡格破版、按鈕對齊及釋放頂部標題空間
+// ============================================================================
+(function applyPhotocardPart8LayoutFix() {
+  if (!window.PCApp) return;
+
+  // 1. 注入防溢出與緊湊頂部 CSS（即時生效）
+  if (!document.getElementById('pcPart8LayoutFixStyle')) {
+    const st = document.createElement('style');
+    st.id = 'pcPart8LayoutFixStyle';
+    st.textContent = `
+      html, body {
+        max-width: 100vw;
+        overflow-x: hidden;
+      }
+      #pcDexRoot {
+        width: 100% !important;
+        max-width: min(100vw, 28rem) !important;
+        box-sizing: border-box !important;
+        overflow-x: hidden !important;
+        padding-left: 10px !important;
+        padding-right: 10px !important;
+      }
+      #pcDexRoot > *,
+      #pcDexRoot .neo-box {
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+      }
+      #pcDexRoot select {
+        width: 0 !important;
+        flex: 1 1 0% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        text-overflow: ellipsis;
+      }
+      /* 縮窄頂部右側按鈕尺寸與間距，釋放空間俾 ChekiPocket 標題完整顯示 */
+      @media (max-width: 480px) {
+        header button#topPcModeSwitchBtn {
+          height: 32px !important;
+          padding-left: 8px !important;
+          padding-right: 8px !important;
+          font-size: 11px !important;
+          border-radius: 12px !important;
+        }
+        header button#topSearchBtn,
+        header button#topMoreToolsBtn {
+          width: 32px !important;
+          height: 32px !important;
+          border-radius: 12px !important;
+          font-size: 14px !important;
+        }
+        header .shrink-0.gap-1\\.5 {
+          gap: 4px !important;
+        }
+      }
+    `;
+    document.head.appendChild(st);
+  }
+
+  const _origRenderDex = PCApp.renderDex.bind(PCApp);
+
+  Object.assign(PCApp, {
+    // 2. 重寫乾淨的卡格渲染函式（徹底修復第 6 段字串取代造成的 class 破版）
+    renderSlotCardHtml(sl) {
+      const unlocked = sl.qty > 0;
+      const imgSrc = sl.realImg || sl.sampleImg;
+      const numStr = '#' + String(sl.idx).padStart(3, '0');
+      const spec = typeof this.getSeriesRatioSpec === 'function'
+        ? this.getSeriesRatioSpec(this.getActiveSeries())
+        : { css: '63 / 88' };
+
+      const borderCls = unlocked
+        ? (sl.rarity === 'SIGN' ? 'pc-sign-border' : sl.rarity === 'HOLO' ? 'pc-holo-border' : 'bg-zinc-900 p-[2px]')
+        : 'bg-zinc-300 p-[2px]';
+      const animCls = this.state.justUnlockedIdx === sl.idx ? 'pc-unlock-anim' : '';
+
+      return `
+        <div onclick="PCApp.onSlotClick(${sl.idx})" class="min-w-0 rounded-xl ${borderCls} ${animCls} cursor-pointer active:scale-95 transition shadow-sm">
+          <div class="w-full rounded-[10px] bg-zinc-900 overflow-hidden relative flex flex-col items-center justify-center" style="aspect-ratio:${spec.css};">
+            ${imgSrc
+              ? `<img src="${imgSrc}" loading="lazy" class="w-full h-full object-cover ${unlocked ? '' : 'grayscale contrast-75 brightness-50 opacity-65'} pointer-events-none">`
+              : `<div class="text-center px-1 space-y-1 pointer-events-none">
+                   <span class="block text-sm opacity-75">${sl.wish ? '💖' : '🔒'}</span>
+                   <span class="block text-[11px] font-black text-zinc-300 leading-none">${numStr}</span>
+                   <span class="block text-[10px] font-bold text-zinc-500 leading-none">款式 ${this.esc(sl.variant)}</span>
+                 </div>`}
+            <span class="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-white text-[9px] font-black leading-none">${numStr}</span>
+            ${(imgSrc && !unlocked) ? `<span class="absolute inset-0 flex items-center justify-center text-lg pointer-events-none drop-shadow">${sl.wish ? '💖' : '🔒'}</span>` : ''}
+            ${sl.realImg ? `<span class="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-emerald-400/95 text-zinc-950 text-[8px] font-black leading-none">真卡</span>` : ''}
+            ${sl.qty > 1 ? `<span class="absolute top-1 right-1 px-1.5 py-0.5 rounded-full bg-amber-300 border border-zinc-900 text-zinc-950 text-[9px] font-black leading-none">×${sl.qty}</span>` : ''}
+            ${(sl.wish && !unlocked) ? `<span class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-pink-500 text-white text-[8px] font-black leading-none">求</span>` : ''}
+          </div>
+        </div>
+      `;
+    },
+
+    // 3. 重新整理工具列為工整 2＋3 滿版格線，並補齊篩選列與進度列防截斷
+    onAfterRenderDex(s) {
+      if (typeof this.ensurePart2UI === 'function') this.ensurePart2UI();
+      if (typeof this.ensurePart3UI === 'function') this.ensurePart3UI();
+
+      const bar = document.getElementById('pcToolbarExt');
+      if (bar) {
+        bar.className = 'w-full space-y-1.5';
+        bar.innerHTML = `
+          <div class="grid grid-cols-2 gap-1.5 w-full">
+            <button type="button" onclick="PCApp.openSlicerModal()" class="py-1.5 px-2 rounded-xl bg-sky-200 hover:bg-sky-300 neo-btn font-black text-[11px] text-zinc-900 truncate active:scale-95">✂️ 預覽圖切格墊底</button>
+            <button type="button" onclick="PCApp.triggerSeriesBackUpload()" class="py-1.5 px-2 rounded-xl ${s.backImage ? 'bg-emerald-200' : 'bg-amber-200'} neo-btn font-black text-[11px] text-zinc-900 truncate active:scale-95">${s.backImage ? '✅ 更換共用卡背' : '🎴 設定共用卡背'}</button>
+          </div>
+          <div class="grid grid-cols-3 gap-1.5 w-full">
+            <button type="button" onclick="PCApp.openDownloadCenter()" class="py-1.5 px-1.5 rounded-xl bg-indigo-200 hover:bg-indigo-300 neo-btn font-black text-[11px] text-zinc-900 truncate active:scale-95">⬇️ 下載圖鑑</button>
+            <button type="button" onclick="PCApp.openTradeSheetModal()" class="py-1.5 px-1.5 rounded-xl bg-pink-200 hover:bg-pink-300 neo-btn font-black text-[11px] text-zinc-900 truncate active:scale-95">🔁 譲/求換卡</button>
+            <button type="button" onclick="PCApp.openPcBackupModal()" class="py-1.5 px-1.5 rounded-xl bg-white hover:bg-zinc-100 neo-btn font-black text-[11px] text-zinc-900 truncate active:scale-95">💾 備份同步</button>
+          </div>
+        `;
+      }
+
+      // 修正頂部系列列與進度列，確保右側刪除掣與「👑 齊套」完整顯示於螢幕內
+      const root = document.getElementById('pcDexRoot');
+      if (!root) return;
+      const topCard = root.firstElementChild;
+      if (topCard) {
+        const selectRow = topCard.firstElementChild;
+        if (selectRow) {
+          selectRow.classList.add('w-full', 'min-w-0');
+        }
+        const progressRow = topCard.querySelector('.flex.justify-between');
+        if (progressRow) {
+          progressRow.className = 'flex items-center justify-between gap-1 text-[10.5px] font-black text-zinc-800';
+          [...progressRow.children].forEach((sp, i) => {
+            if (i === 0) sp.classList.add('truncate', 'min-w-0');
+            if (i === 1) sp.classList.add('shrink-0', 'whitespace-nowrap');
+          });
+        }
+      }
+    },
+
+    renderDex() {
+      _origRenderDex();
+      // 順手把頂部倒數膠囊壓緊一點，令 ChekiPocket 標題唔易出省略號
+      const headerBtns = document.querySelectorAll('header button');
+      headerBtns.forEach(b => {
+        if ((b.textContent || '').includes('⏳')) {
+          b.style.height = '32px';
+          b.style.paddingLeft = '7px';
+          b.style.paddingRight = '7px';
+          b.style.fontSize = '11px';
+        }
+      });
+    }
+  });
+
+  if (PCApp.state.mode === 'pc') PCApp.renderDex();
+})();
