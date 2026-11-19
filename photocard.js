@@ -1816,3 +1816,835 @@ Object.assign(PCApp, {
 });
 
 if (PCApp.state.mode === 'pc') PCApp.renderDex();
+// ============================================================================
+// [第 4 段]：手機即時鏡頭掃描 (55:85對位框) ＋ 智能防黏排切格 ＋ 手拉橙框精準網格
+// ============================================================================
+(function applyPhotocardPart4Upgrades() {
+  if (!window.PCApp) return;
+  const _origEnsurePart2UI = PCApp.ensurePart2UI.bind(PCApp);
+  const _origEnsurePart3UI = PCApp.ensurePart3UI.bind(PCApp);
+
+  Object.assign(PCApp, {
+    liveCamStream: null,
+    gridBox: { x0: 0.05, y0: 0.05, x1: 0.95, y1: 0.95 },
+    gridGapX: 1.5,
+    gridGapY: 1.5,
+    gridExcludedSet: new Set(),
+    slicerDrag: { handle: null, startX: 0, startY: 0, moved: false },
+
+    // -----------------------------------------------------------------------
+    // 1. 升級切格視窗 UI：加入手拉外框、格距微調與可還原剔除格
+    // -----------------------------------------------------------------------
+    ensurePart2UI() {
+      _origEnsurePart2UI();
+      if (document.getElementById('pcSliceGapXSlider')) return;
+      const modal = document.getElementById('pcSlicerModal');
+      if (!modal) return;
+
+      modal.innerHTML = `
+        <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-3.5 space-y-2.5 text-zinc-900 max-h-[94vh] overflow-y-auto">
+          <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+            <div>
+              <h3 class="font-black text-base leading-tight">✂️ 官方預覽圖精準切格墊底</h3>
+              <p class="text-[10px] font-bold text-zinc-500">自動防黏排拆格 · 網格模式可手拉橙框對齊並點擊剔除空白格</p>
+            </div>
+            <button type="button" onclick="PCApp.closeSlicerModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm shrink-0">✕</button>
+          </div>
+
+          <div class="bg-zinc-900 rounded-2xl p-2 border-2 border-cheki-dark flex flex-col items-center">
+            <div class="w-full max-h-[42vh] flex items-center justify-center overflow-hidden rounded-xl bg-zinc-950 relative">
+              <canvas id="pcSlicerCanvas" class="max-h-[42vh] max-w-full w-auto h-auto object-contain cursor-pointer" style="touch-action:none;"></canvas>
+              <div id="pcSlicerEmptyHint" class="py-10 text-center space-y-2">
+                <p class="text-xs font-black text-zinc-300">尚未載入官方一覽圖</p>
+                <button type="button" onclick="document.getElementById('pcSheetFileInput').click()" class="px-4 py-2 rounded-xl bg-sky-400 text-zinc-950 neo-btn text-xs font-black">🖼️ 選擇官方預覽圖</button>
+              </div>
+            </div>
+            <div class="w-full flex items-center justify-between mt-1.5 px-1 text-[11px] font-black gap-2">
+              <span id="pcSlicerCountText" class="text-emerald-400 truncate">待選擇圖片...</span>
+              <button type="button" onclick="document.getElementById('pcSheetFileInput').click()" class="text-sky-300 underline shrink-0">換另一張圖</button>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-2.5 space-y-2 text-xs">
+            <div class="grid grid-cols-2 gap-1.5">
+              <button type="button" id="pcSliceModeAuto" onclick="PCApp.setSlicerMode('auto')" class="py-1.5 rounded-xl border-2 border-cheki-dark font-black">✨ 智能防黏偵測</button>
+              <button type="button" id="pcSliceModeGrid" onclick="PCApp.setSlicerMode('grid')" class="py-1.5 rounded-xl border-2 border-cheki-dark font-black">📐 手拉橙框網格</button>
+            </div>
+
+            <!-- 智能模式參數 -->
+            <div id="pcSliceAutoInputs" class="space-y-1.5 pt-0.5">
+              <div class="flex items-center justify-between text-[11px] font-black">
+                <span>🎯 去白底/水印靈敏度</span>
+                <span id="pcSliceThreshVal" class="text-indigo-600">212</span>
+              </div>
+              <input id="pcSliceThreshSlider" type="range" min="170" max="242" value="212" oninput="PCApp.onSlicerParamChange()" class="w-full accent-indigo-600">
+            </div>
+
+            <!-- 手拉網格參數 -->
+            <div id="pcSliceGridInputs" class="hidden space-y-2 pt-0.5">
+              <div class="grid grid-cols-3 gap-1.5 items-end">
+                <label class="font-black text-[11px]">橫排 (Rows)
+                  <input id="pcSliceRowsInp" type="number" min="1" max="20" value="3" onchange="PCApp.buildGridBoxesFromRect()" class="mt-0.5 w-full px-2 py-1 rounded-lg border-2 border-cheki-dark bg-zinc-50 font-black">
+                </label>
+                <label class="font-black text-[11px]">直欄 (Cols)
+                  <input id="pcSliceColsInp" type="number" min="1" max="20" value="9" onchange="PCApp.buildGridBoxesFromRect()" class="mt-0.5 w-full px-2 py-1 rounded-lg border-2 border-cheki-dark bg-zinc-50 font-black">
+                </label>
+                <button type="button" onclick="PCApp.autoFitGridOuterBox()" class="py-1.5 rounded-lg bg-amber-100 border-2 border-cheki-dark font-black text-[10px]">🎯 自動套框</button>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="font-black text-[10px]">
+                  <div class="flex justify-between"><span>↔️ 左右格距</span><span id="pcSliceGapXVal" class="text-amber-600">1.5%</span></div>
+                  <input id="pcSliceGapXSlider" type="range" min="0" max="14" step="0.5" value="1.5" oninput="PCApp.onGridGapChange()" class="w-full accent-amber-500">
+                </label>
+                <label class="font-black text-[10px]">
+                  <div class="flex justify-between"><span>↕️ 上下格距</span><span id="pcSliceGapYVal" class="text-amber-600">1.5%</span></div>
+                  <input id="pcSliceGapYSlider" type="range" min="0" max="14" step="0.5" value="1.5" oninput="PCApp.onGridGapChange()" class="w-full accent-amber-500">
+                </label>
+              </div>
+              <p class="text-[10px] font-bold text-amber-700">💡 拖拉圖上「🟠 橙色邊點」框住全部小卡，點擊任何綠格可剔除/恢復空白位</p>
+            </div>
+
+            <div class="space-y-1 pt-0.5 border-t border-zinc-100">
+              <div class="flex items-center justify-between text-[11px] font-black">
+                <span>✂️ 四邊內縮修邊（去掉細白/藍邊）</span>
+                <span id="pcSliceTrimVal" class="text-pink-600">1%</span>
+              </div>
+              <input id="pcSliceTrimSlider" type="range" min="0" max="6" step="0.5" value="1" oninput="PCApp.onSlicerParamChange()" class="w-full accent-pink-500">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-1.5">
+            <button type="button" onclick="PCApp.resetSlicerCurrentMode()" class="py-2.5 rounded-2xl bg-zinc-100 neo-btn font-black text-xs">🔄 重測</button>
+            <button type="button" id="pcApplySliceBtn" onclick="PCApp.applySlicedSamplesToSeries()" class="col-span-2 py-2.5 rounded-2xl bg-cheki-accent text-white neo-btn font-black text-xs">✅ 裁切並填入圖鑑格</button>
+          </div>
+        </div>
+      `;
+      this.slicer.thresh = 212;
+      this.bindSlicerCanvasInteractions();
+      this.updateSlicerModeButtons();
+    },
+
+    updateSlicerModeButtons() {
+      const isAuto = this.slicer.mode === 'auto';
+      const bA = document.getElementById('pcSliceModeAuto');
+      const bG = document.getElementById('pcSliceModeGrid');
+      const aBox = document.getElementById('pcSliceAutoInputs');
+      const gBox = document.getElementById('pcSliceGridInputs');
+      if (bA) bA.className = `py-1.5 rounded-xl border-2 border-cheki-dark font-black ${isAuto ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-700'}`;
+      if (bG) bG.className = `py-1.5 rounded-xl border-2 border-cheki-dark font-black ${!isAuto ? 'bg-amber-400 text-zinc-950' : 'bg-zinc-100 text-zinc-700'}`;
+      if (aBox) aBox.classList.toggle('hidden', !isAuto);
+      if (gBox) gBox.classList.toggle('hidden', isAuto);
+    },
+
+    onGridGapChange() {
+      this.gridGapX = Number(document.getElementById('pcSliceGapXSlider')?.value || 1.5);
+      this.gridGapY = Number(document.getElementById('pcSliceGapYSlider')?.value || 1.5);
+      const vx = document.getElementById('pcSliceGapXVal');
+      const vy = document.getElementById('pcSliceGapYVal');
+      if (vx) vx.textContent = `${this.gridGapX}%`;
+      if (vy) vy.textContent = `${this.gridGapY}%`;
+      if (this.slicer.img) this.buildGridBoxesFromRect();
+    },
+
+    resetSlicerCurrentMode() {
+      this.gridExcludedSet.clear();
+      if (this.slicer.mode === 'grid') this.autoFitGridOuterBox();
+      else this.recomputeSlicerBoxes();
+    },
+
+    // 建立去白底與去中性淺灰 SAMPLE 水印的二值遮罩
+    computeSlicerMask(img, thresh) {
+      const maxDim = 680;
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const off = document.createElement('canvas');
+      off.width = w; off.height = h;
+      const ctx = off.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const data = ctx.getImageData(0, 0, w, h).data;
+
+      const satThresh = Math.max(16, Math.round((255 - thresh) * 0.55));
+      const mask = new Uint8Array(w * h);
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        const mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+        const mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+        const sat = mx - mn;
+        const lum = (r + g + b) / 3;
+        // 過濾純白底及中性淺灰 SAMPLE 浮水印（低飽和度且偏亮）
+        if (sat <= 14 && lum >= Math.min(thresh, 168)) continue;
+        if (lum < thresh || sat > satThresh) mask[p] = 1;
+      }
+      return { w, h, mask };
+    },
+
+    autoFitGridOuterBox() {
+      const img = this.slicer.img;
+      if (!img) return;
+      const { w, h, mask } = this.computeSlicerMask(img, this.slicer.thresh || 212);
+      const rowProj = new Float32Array(h);
+      const colProj = new Float32Array(w);
+      for (let y = 0; y < h; y++) {
+        let rc = 0, off = y * w;
+        for (let x = 0; x < w; x++) if (mask[off + x]) { rc++; colProj[x]++; }
+        rowProj[y] = rc / w;
+      }
+      for (let x = 0; x < w; x++) colProj[x] /= h;
+
+      let minY = 0, maxY = h - 1, minX = 0, maxX = w - 1;
+      while (minY < h - 1 && rowProj[minY] < 0.03) minY++;
+      while (maxY > minY && rowProj[maxY] < 0.03) maxY--;
+      while (minX < w - 1 && colProj[minX] < 0.03) minX++;
+      while (maxX > minX && colProj[maxX] < 0.03) maxX--;
+
+      if (maxX - minX < w * 0.1 || maxY - minY < h * 0.1) {
+        this.gridBox = { x0: 0.05, y0: 0.05, x1: 0.95, y1: 0.95 };
+      } else {
+        this.gridBox = { x0: minX / w, y0: minY / h, x1: (maxX + 1) / w, y1: (maxY + 1) / h };
+      }
+      this.buildGridBoxesFromRect(true);
+    },
+
+    buildGridBoxesFromRect(autoSkipEmpty = false) {
+      const img = this.slicer.img;
+      if (!img) return;
+      const rows = Math.max(1, Math.min(20, Number(document.getElementById('pcSliceRowsInp')?.value) || 3));
+      const cols = Math.max(1, Math.min(20, Number(document.getElementById('pcSliceColsInp')?.value) || 9));
+      const gb = this.gridBox;
+      const totalW = Math.max(0.05, gb.x1 - gb.x0);
+      const totalH = Math.max(0.05, gb.y1 - gb.y0);
+      const cellW = totalW / cols;
+      const cellH = totalH / rows;
+      const gx = cellW * (this.gridGapX / 100);
+      const gy = cellH * (this.gridGapY / 100);
+
+      let maskInfo = null;
+      if (autoSkipEmpty) {
+        maskInfo = this.computeSlicerMask(img, this.slicer.thresh || 212);
+        this.gridExcludedSet.clear();
+      }
+
+      const boxes = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const rx = gb.x0 + c * cellW + gx / 2;
+          const ry = gb.y0 + r * cellH + gy / 2;
+          const rw = Math.max(0.01, cellW - gx);
+          const rh = Math.max(0.01, cellH - gy);
+          const key = `${r}_${c}`;
+          if (autoSkipEmpty && maskInfo) {
+            const x0 = Math.max(0, Math.floor(rx * maskInfo.w));
+            const y0 = Math.max(0, Math.floor(ry * maskInfo.h));
+            const x1 = Math.min(maskInfo.w, Math.ceil((rx + rw) * maskInfo.w));
+            const y1 = Math.min(maskInfo.h, Math.ceil((ry + rh) * maskInfo.h));
+            let fg = 0, area = Math.max(1, (x1 - x0) * (y1 - y0));
+            for (let y = y0; y < y1; y++) {
+              const off = y * maskInfo.w;
+              for (let x = x0; x < x1; x++) if (maskInfo.mask[off + x]) fg++;
+            }
+            if (fg / area < 0.14) this.gridExcludedSet.add(key);
+          }
+          boxes.push({ rx, ry, rw, rh, gridKey: key, excluded: this.gridExcludedSet.has(key) });
+        }
+      }
+      this.slicer.boxes = boxes;
+      this.drawSlicerPreview();
+    },
+
+    // 升級智能偵測：低谷分排 ＋ 縱橫雙向防黏連自動拆格
+    recomputeSlicerBoxes() {
+      const img = this.slicer.img;
+      if (!img) return;
+      if (this.slicer.mode === 'grid') {
+        this.autoFitGridOuterBox();
+        return;
+      }
+
+      const { w, h, mask } = this.computeSlicerMask(img, this.slicer.thresh || 212);
+      const getDensity = (x0, y0, x1, y1) => {
+        let c = 0, tot = Math.max(1, (x1 - x0) * (y1 - y0));
+        for (let y = y0; y < y1; y++) {
+          const off = y * w;
+          for (let x = x0; x < x1; x++) if (mask[off + x]) c++;
+        }
+        return c / tot;
+      };
+
+      // 1. 水平投影 + 低谷閥值分排（1px 窄縫亦能分開）
+      const rowProj = new Float32Array(h);
+      let peakRow = 0;
+      for (let y = 0; y < h; y++) {
+        let cnt = 0, off = y * w;
+        for (let x = 0; x < w; x++) if (mask[off + x]) cnt++;
+        rowProj[y] = cnt / w;
+        if (rowProj[y] > peakRow) peakRow = rowProj[y];
+      }
+
+      const rowCut = Math.max(0.028, peakRow * 0.15);
+      const rawBands = [];
+      let inB = false, bStart = 0;
+      for (let y = 0; y < h; y++) {
+        if (rowProj[y] > rowCut) {
+          if (!inB) { inB = true; bStart = y; }
+        } else if (inB) {
+          if (y - bStart >= h * 0.05) rawBands.push([bStart, y]);
+          inB = false;
+        }
+      }
+      if (inB && h - bStart >= h * 0.05) rawBands.push([bStart, h]);
+
+      // 2. 防兩排黏連：若某排明顯高於基準排高 (>= 1.65倍)，在波谷位自動縱向拆分
+      const rowBands = [];
+      const minBandH = rawBands.length > 0 ? Math.min(...rawBands.map(b => b[1] - b[0])) : 0;
+      rawBands.forEach(([y0, y1]) => {
+        const bh = y1 - y0;
+        if (minBandH > 0 && bh > minBandH * 1.65) {
+          const nSplit = Math.max(2, Math.round(bh / minBandH));
+          const cuts = [y0];
+          for (let k = 1; k < nSplit; k++) {
+            const target = Math.round(y0 + (bh * k) / nSplit);
+            const win = Math.max(4, Math.round(bh * 0.08));
+            let bestY = target, bestVal = Infinity;
+            for (let yy = Math.max(y0 + 4, target - win); yy <= Math.min(y1 - 4, target + win); yy++) {
+              if (rowProj[yy] < bestVal) { bestVal = rowProj[yy]; bestY = yy; }
+            }
+            cuts.push(bestY);
+          }
+          cuts.push(y1);
+          for (let k = 0; k < cuts.length - 1; k++) {
+            if (cuts[k + 1] - cuts[k] >= h * 0.04) rowBands.push([cuts[k], cuts[k + 1]]);
+          }
+        } else {
+          rowBands.push([y0, y1]);
+        }
+      });
+
+      // 3. 每排內做垂直投影分欄 + 過寬自動拆分 + 過高(全圖黏排)保底拆分
+      const finalBoxes = [];
+      rowBands.forEach(([y0, y1]) => {
+        const bh = y1 - y0;
+        const colProj = new Float32Array(w);
+        let peakCol = 0;
+        for (let x = 0; x < w; x++) {
+          let cnt = 0;
+          for (let y = y0; y < y1; y++) if (mask[y * w + x]) cnt++;
+          colProj[x] = cnt / Math.max(1, bh);
+          if (colProj[x] > peakCol) peakCol = colProj[x];
+        }
+        const colCut = Math.max(0.08, peakCol * 0.14);
+        const segs = [];
+        let inS = false, sStart = 0;
+        for (let x = 0; x < w; x++) {
+          if (colProj[x] > colCut) {
+            if (!inS) { inS = true; sStart = x; }
+          } else if (inS) {
+            if (x - sStart >= Math.max(10, bh * 0.22)) segs.push([sStart, x]);
+            inS = false;
+          }
+        }
+        if (inS && w - sStart >= Math.max(10, bh * 0.22)) segs.push([sStart, w]);
+
+        const rowCells = [];
+        segs.forEach(([x0, x1]) => {
+          const sw = x1 - x0;
+          if (getDensity(x0, y0, x1, y1) < 0.18) return;
+          const whRatio = sw / bh;
+          // 若單一區段太高（代表無縫多排全黏埋），先縱向估計排數
+          const vSplits = (bh / sw > 2.25) ? Math.max(2, Math.round((bh / sw) / 1.54)) : 1;
+          const effBh = bh / vSplits;
+          const hSplits = (sw / effBh > 1.06) ? Math.max(2, Math.round((sw / effBh) / 0.65)) : 1;
+
+          for (let vr = 0; vr < vSplits; vr++) {
+            const sy0 = Math.round(y0 + vr * effBh);
+            const sy1 = Math.round(y0 + (vr + 1) * effBh);
+            const subW = sw / hSplits;
+            for (let hc = 0; hc < hSplits; hc++) {
+              let sx0 = Math.round(x0 + hc * subW);
+              let sx1 = Math.round(x0 + (hc + 1) * subW);
+              if (hSplits > 1 && hc > 0) {
+                const win = Math.max(2, Math.round(subW * 0.08));
+                let bestX = sx0, bestV = Infinity;
+                for (let xx = Math.max(x0, sx0 - win); xx <= Math.min(x1, sx0 + win); xx++) {
+                  if (colProj[xx] < bestV) { bestV = colProj[xx]; bestX = xx; }
+                }
+                sx0 = bestX;
+              }
+              if (getDensity(sx0, sy0, sx1, sy1) >= 0.16) {
+                rowCells.push({ vr, rx: sx0 / w, ry: sy0 / h, rw: (sx1 - sx0) / w, rh: (sy1 - sy0) / h, excluded: false });
+              }
+            }
+          }
+        });
+        // 確保多層拆分時由上至下、由左至右順序正確
+        rowCells.sort((a, b) => (a.vr - b.vr) || (a.rx - b.rx));
+        rowCells.forEach(c => finalBoxes.push(c));
+      });
+
+      this.slicer.boxes = finalBoxes;
+      this.drawSlicerPreview();
+    },
+
+    drawSlicerPreview() {
+      const img = this.slicer.img;
+      const canvas = document.getElementById('pcSlicerCanvas');
+      if (!img || !canvas) return;
+
+      const maxW = 720;
+      const scale = Math.min(1, maxW / img.width);
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const trim = this.slicer.trimPct / 100;
+      let activeNum = 0;
+
+      this.slicer.boxes.forEach((b) => {
+        const x = (b.rx + b.rw * trim) * canvas.width;
+        const y = (b.ry + b.rh * trim) * canvas.height;
+        const bw = b.rw * (1 - trim * 2) * canvas.width;
+        const bh = b.rh * (1 - trim * 2) * canvas.height;
+
+        if (b.excluded) {
+          ctx.fillStyle = 'rgba(244, 63, 94, 0.32)';
+          ctx.fillRect(x, y, bw, bh);
+          ctx.strokeStyle = '#F43F5E';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x, y, bw, bh);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = '900 16px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('✕', x + bw / 2, y + bh / 2);
+          ctx.textAlign = 'left';
+          return;
+        }
+
+        activeNum++;
+        ctx.strokeStyle = '#10B981';
+        ctx.lineWidth = Math.max(2, Math.round(canvas.width / 260));
+        ctx.strokeRect(x, y, bw, bh);
+
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.9)';
+        ctx.fillRect(x, y, 28, 17);
+        ctx.fillStyle = '#09090B';
+        ctx.font = '900 11px sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`#${activeNum}`, x + 3, y + 9);
+      });
+
+      // 手拉網格模式：繪製橙色可拖曳外框與 8 個控制圓點
+      if (this.slicer.mode === 'grid') {
+        const gb = this.gridBox;
+        const gx = gb.x0 * canvas.width, gy = gb.y0 * canvas.height;
+        const gw = (gb.x1 - gb.x0) * canvas.width, gh = (gb.y1 - gb.y0) * canvas.height;
+
+        ctx.save();
+        ctx.strokeStyle = '#F97316';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([8, 5]);
+        ctx.strokeRect(gx, gy, gw, gh);
+        ctx.setLineDash([]);
+
+        const pts = [
+          [gx, gy], [gx + gw, gy], [gx, gy + gh], [gx + gw, gy + gh],
+          [gx + gw / 2, gy], [gx + gw / 2, gy + gh], [gx, gy + gh / 2], [gx + gw, gy + gh / 2]
+        ];
+        pts.forEach(([px, py]) => {
+          ctx.beginPath();
+          ctx.arc(px, py, 8, 0, Math.PI * 2);
+          ctx.fillStyle = '#F97316';
+          ctx.fill();
+          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.stroke();
+        });
+        ctx.restore();
+      }
+
+      const cntEl = document.getElementById('pcSlicerCountText');
+      const applyBtn = document.getElementById('pcApplySliceBtn');
+      if (cntEl) cntEl.textContent = activeNum > 0
+        ? `✅ 已鎖定 ${activeNum} 張小卡（點格仔可剔除/恢復）`
+        : '⚠️ 尚未鎖定卡片，請切換「手拉橙框網格」或調高靈敏度';
+      if (applyBtn) applyBtn.textContent = `✅ 裁切並填入圖鑑 (${activeNum} 張)`;
+    },
+
+    bindSlicerCanvasInteractions() {
+      const cv = document.getElementById('pcSlicerCanvas');
+      if (!cv || cv._boundPart4) return;
+      cv._boundPart4 = true;
+
+      const getRel = (e) => {
+        const r = cv.getBoundingClientRect();
+        return {
+          rx: Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width))),
+          ry: Math.max(0, Math.min(1, (e.clientY - r.top) / Math.max(1, r.height)))
+        };
+      };
+
+      cv.addEventListener('pointerdown', (e) => {
+        if (!this.slicer.img) return;
+        const { rx, ry } = getRel(e);
+        this.slicerDrag = { handle: null, startX: e.clientX, startY: e.clientY, moved: false };
+
+        if (this.slicer.mode === 'grid') {
+          const gb = this.gridBox;
+          const mx = (gb.x0 + gb.x1) / 2, my = (gb.y0 + gb.y1) / 2;
+          const handles = [
+            ['tl', gb.x0, gb.y0], ['tr', gb.x1, gb.y0], ['bl', gb.x0, gb.y1], ['br', gb.x1, gb.y1],
+            ['t', mx, gb.y0], ['b', mx, gb.y1], ['l', gb.x0, my], ['r', gb.x1, my]
+          ];
+          let best = null, bestD = 0.068;
+          handles.forEach(([name, hx, hy]) => {
+            const d = Math.hypot(rx - hx, ry - hy);
+            if (d < bestD) { bestD = d; best = name; }
+          });
+          if (best) {
+            this.slicerDrag.handle = best;
+            cv.setPointerCapture?.(e.pointerId);
+            e.preventDefault();
+          }
+        }
+      });
+
+      cv.addEventListener('pointermove', (e) => {
+        if (!this.slicerDrag.handle) return;
+        if (Math.hypot(e.clientX - this.slicerDrag.startX, e.clientY - this.slicerDrag.startY) > 4) {
+          this.slicerDrag.moved = true;
+        }
+        const { rx, ry } = getRel(e);
+        const gb = this.gridBox;
+        const h = this.slicerDrag.handle;
+        const minSize = 0.08;
+        if (h.includes('l')) gb.x0 = Math.min(gb.x1 - minSize, rx);
+        if (h.includes('r')) gb.x1 = Math.max(gb.x0 + minSize, rx);
+        if (h.includes('t')) gb.y0 = Math.min(gb.y1 - minSize, ry);
+        if (h.includes('b')) gb.y1 = Math.max(gb.y0 + minSize, ry);
+        this.buildGridBoxesFromRect(false);
+        e.preventDefault();
+      });
+
+      cv.addEventListener('pointerup', (e) => {
+        const wasDragging = this.slicerDrag.handle && this.slicerDrag.moved;
+        this.slicerDrag.handle = null;
+        if (wasDragging || !this.slicer.img) return;
+
+        // 點擊格仔：切換剔除 / 恢復
+        const { rx, ry } = getRel(e);
+        const hit = this.slicer.boxes.find(b => rx >= b.rx && rx <= b.rx + b.rw && ry >= b.ry && ry <= b.ry + b.rh);
+        if (hit) {
+          hit.excluded = !hit.excluded;
+          if (hit.gridKey) {
+            if (hit.excluded) this.gridExcludedSet.add(hit.gridKey);
+            else this.gridExcludedSet.delete(hit.gridKey);
+          }
+          if (typeof window.triggerHaptic === 'function') window.triggerHaptic(8);
+          this.drawSlicerPreview();
+        }
+      });
+    },
+
+    async applySlicedSamplesToSeries() {
+      const s = this.getActiveSeries();
+      const img = this.slicer.img;
+      const activeBoxes = this.slicer.boxes.filter(b => !b.excluded);
+      if (!s || !img || activeBoxes.length === 0) return;
+
+      const trim = this.slicer.trimPct / 100;
+      const cols = s.groupCols || 3;
+      const variants = ['A', 'B', 'C', 'D', 'E', 'F'];
+      const cutCanvas = document.createElement('canvas');
+      const cutCtx = cutCanvas.getContext('2d');
+
+      activeBoxes.forEach((b, i) => {
+        const sx = Math.max(0, Math.round((b.rx + b.rw * trim) * img.width));
+        const sy = Math.max(0, Math.round((b.ry + b.rh * trim) * img.height));
+        const sw = Math.max(10, Math.round(b.rw * (1 - trim * 2) * img.width));
+        const sh = Math.max(10, Math.round(b.rh * (1 - trim * 2) * img.height));
+
+        const outW = Math.min(360, sw);
+        const outH = Math.round(outW * (sh / sw));
+        cutCanvas.width = outW;
+        cutCanvas.height = outH;
+        cutCtx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+        const dataUrl = cutCanvas.toDataURL('image/jpeg', 0.85);
+
+        if (!s.slots[i]) {
+          const gIdx = Math.floor(i / cols);
+          s.slots.push({
+            idx: i + 1, groupIdx: gIdx, member: `成員 ${gIdx + 1}`,
+            variant: variants[i % cols] || String((i % cols) + 1),
+            sampleImg: dataUrl, realImg: '', realBackImg: '', qty: 0, wish: false, rarity: 'N'
+          });
+        } else {
+          s.slots[i].sampleImg = dataUrl;
+        }
+      });
+
+      await this.saveSeries(s);
+      this.closeSlicerModal();
+      this.renderDex();
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(15);
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast(`✂️ 已精準切割並墊底 ${activeBoxes.length} 張預覽圖！`, 3500);
+      }
+    },
+
+    // -----------------------------------------------------------------------
+    // 2. 升級真卡掃描器：加入手機即時鏡頭取景 (55:85 綠框) ＋ 原生相機直開
+    // -----------------------------------------------------------------------
+    ensurePart3UI() {
+      _origEnsurePart3UI();
+      if (document.getElementById('pcScanCamInput')) return;
+
+      const camInp = document.createElement('input');
+      camInp.id = 'pcScanCamInput';
+      camInp.type = 'file';
+      camInp.accept = 'image/*';
+      camInp.setAttribute('capture', 'environment');
+      camInp.className = 'hidden';
+      camInp.onchange = (e) => this.handleScanFile(e);
+      document.body.appendChild(camInp);
+
+      const scanModal = document.getElementById('pcScanModal');
+      if (!scanModal) return;
+
+      scanModal.innerHTML = `
+        <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-3.5 space-y-2.5 text-zinc-900 max-h-[94vh] overflow-y-auto">
+          <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+            <div>
+              <h3 id="pcScanTitle" class="font-black text-base leading-tight">📸 掃描高清實物小卡</h3>
+              <p class="text-[10px] font-bold text-zinc-500">手機鏡頭直拍或選相 · 55:85 滿版對位、去反光與平滑圓角</p>
+            </div>
+            <button type="button" onclick="PCApp.closeCardScanner()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm shrink-0">✕</button>
+          </div>
+
+          <div class="bg-zinc-950 rounded-2xl p-2.5 border-2 border-cheki-dark flex flex-col items-center space-y-2">
+            <!-- 即時手機鏡頭取景器 -->
+            <div id="pcLiveCamWrap" class="hidden relative w-52 aspect-[55/85] rounded-xl overflow-hidden border-2 border-emerald-400 shadow-2xl bg-black">
+              <video id="pcLiveCamVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
+              <div class="absolute inset-1.5 border-2 border-dashed border-emerald-300/90 rounded-xl pointer-events-none"></div>
+              <span class="absolute top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-black/65 text-emerald-300 text-[10px] font-black whitespace-nowrap">將小卡貼齊綠框拍照</span>
+              <div class="absolute bottom-2 inset-x-0 flex items-center justify-center gap-2">
+                <button type="button" onclick="PCApp.captureLiveCameraFrame()" class="px-4 py-1.5 rounded-full bg-rose-500 text-white border-2 border-white font-black text-xs shadow-lg active:scale-95">🔴 拍攝</button>
+                <button type="button" onclick="PCApp.stopLiveCamera()" class="px-2.5 py-1.5 rounded-full bg-zinc-900/80 text-white border border-white/40 font-black text-[11px]">✕</button>
+              </div>
+            </div>
+
+            <!-- 靜態裁切預覽畫布 -->
+            <canvas id="pcScanCanvas" width="330" height="510" class="w-48 aspect-[55/85] rounded-xl border border-white/25 cursor-grab active:cursor-grabbing shadow-2xl" style="touch-action:none;"></canvas>
+
+            <!-- 拍照與相簿 3 選 1 工具列 -->
+            <div class="grid grid-cols-3 gap-1.5 w-full">
+              <button type="button" onclick="PCApp.startLiveCamera()" class="py-1.5 px-1.5 rounded-xl bg-emerald-400 text-zinc-950 font-black text-[11px] active:scale-95">📷 鏡頭直拍</button>
+              <button type="button" onclick="document.getElementById('pcScanCamInput').click()" class="py-1.5 px-1.5 rounded-xl bg-amber-300 text-zinc-950 font-black text-[11px] active:scale-95">📱 系統相機</button>
+              <button type="button" onclick="document.getElementById('pcScanFileInput').click()" class="py-1.5 px-1.5 rounded-xl bg-sky-400 text-zinc-950 font-black text-[11px] active:scale-95">🖼️ 相簿選相</button>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="PCApp.rotateScanImg()" class="px-2.5 py-1 rounded-xl bg-white/15 text-white font-black text-[11px]">🔄 旋轉 90°</button>
+              <button type="button" onclick="PCApp.resetScanTransform()" class="px-2.5 py-1 rounded-xl bg-white/15 text-white font-black text-[11px]">🎯 重置對位</button>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-2.5 space-y-1.5 text-[11px] font-black">
+            <label class="block">
+              <div class="flex justify-between"><span>🔎 縮放比例（拖曳畫面移位）</span><span id="pcScanZoomVal" class="text-indigo-600">100%</span></div>
+              <input id="pcScanZoom" type="range" min="50" max="260" value="100" oninput="PCApp.onScanSlider()" class="w-full accent-indigo-600">
+            </label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="block">
+                <div class="flex justify-between"><span>✨ 去反光</span><span id="pcScanDeglareVal" class="text-sky-600">15</span></div>
+                <input id="pcScanDeglare" type="range" min="0" max="100" value="15" oninput="PCApp.onScanSlider()" class="w-full accent-sky-500">
+              </label>
+              <label class="block">
+                <div class="flex justify-between"><span>🔪 清晰銳化</span><span id="pcScanSharpenVal" class="text-pink-600">20</span></div>
+                <input id="pcScanSharpen" type="range" min="0" max="100" value="20" oninput="PCApp.onScanSlider()" class="w-full accent-pink-500">
+              </label>
+              <label class="block">
+                <div class="flex justify-between"><span>☀️ 亮度</span><span id="pcScanBrightVal" class="text-amber-600">100%</span></div>
+                <input id="pcScanBright" type="range" min="75" max="130" value="100" oninput="PCApp.onScanSlider()" class="w-full accent-amber-500">
+              </label>
+              <label class="block">
+                <div class="flex justify-between"><span>⭕ 圓角弧度</span><span id="pcScanRadiusVal" class="text-emerald-600">6%</span></div>
+                <input id="pcScanRadius" type="range" min="0" max="12" step="1" value="6" oninput="PCApp.onScanSlider()" class="w-full accent-emerald-500">
+              </label>
+            </div>
+          </div>
+
+          <button type="button" onclick="PCApp.saveScannedCard()" class="w-full py-3 rounded-2xl bg-cheki-accent text-white neo-btn font-black text-xs">
+            ✨ 儲存高清真卡並套用
+          </button>
+        </div>
+      `;
+      this.bindScanCanvasDrag();
+    },
+
+    openCardScanner(slotIdx, side = 'front') {
+      this.ensurePart3UI();
+      this.stopLiveCamera();
+      const sc = this.scanner;
+      sc.slotIdx = slotIdx;
+      sc.targetSide = side;
+      sc.img = null;
+      sc.rot = 0; sc.scale = 1; sc.ox = 0; sc.oy = 0;
+      sc.deglare = 15; sc.sharpen = 20; sc.bright = 100; sc.radiusPct = 6;
+
+      const titleMap = {
+        front: '📸 掃描高清實物小卡',
+        back: '✍️ 掃描小卡獨立背面',
+        seriesBack: '🎴 拍攝 / 設定系列共用卡背'
+      };
+      const titleEl = document.getElementById('pcScanTitle');
+      if (titleEl) titleEl.textContent = titleMap[side] || titleMap.front;
+
+      document.getElementById('pcScanZoom').value = '100';
+      document.getElementById('pcScanDeglare').value = '15';
+      document.getElementById('pcScanSharpen').value = '20';
+      document.getElementById('pcScanBright').value = '100';
+      document.getElementById('pcScanRadius').value = '6';
+      this.updateScanLabels();
+
+      const cv = document.getElementById('pcScanCanvas');
+      if (cv) {
+        cv.classList.remove('hidden');
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#18181B';
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.fillStyle = '#A1A1AA';
+        ctx.font = '900 15px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('請按下方「📷 鏡頭直拍」', cv.width / 2, cv.height / 2 - 12);
+        ctx.fillText('或「🖼️ 相簿選相」開始', cv.width / 2, cv.height / 2 + 16);
+      }
+
+      document.getElementById('pcScanModal')?.classList.remove('hidden');
+    },
+
+    closeCardScanner() {
+      this.stopLiveCamera();
+      document.getElementById('pcScanModal')?.classList.add('hidden');
+    },
+
+    async startLiveCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        document.getElementById('pcScanCamInput')?.click();
+        return;
+      }
+      this.stopLiveCamera();
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false
+        });
+        this.liveCamStream = stream;
+        const vid = document.getElementById('pcLiveCamVideo');
+        const wrap = document.getElementById('pcLiveCamWrap');
+        const cv = document.getElementById('pcScanCanvas');
+        if (vid && wrap) {
+          vid.srcObject = stream;
+          await vid.play();
+          wrap.classList.remove('hidden');
+          if (cv) cv.classList.add('hidden');
+        }
+      } catch (_) {
+        // 若瀏覽器權限被拒或不支援，自動退回喚起系統原生相機
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast('📱 正在切換至系統原生相機拍照...');
+        }
+        document.getElementById('pcScanCamInput')?.click();
+      }
+    },
+
+    stopLiveCamera() {
+      if (this.liveCamStream) {
+        this.liveCamStream.getTracks().forEach(t => t.stop());
+        this.liveCamStream = null;
+      }
+      const vid = document.getElementById('pcLiveCamVideo');
+      if (vid) vid.srcObject = null;
+      document.getElementById('pcLiveCamWrap')?.classList.add('hidden');
+      document.getElementById('pcScanCanvas')?.classList.remove('hidden');
+    },
+
+    captureLiveCameraFrame() {
+      const vid = document.getElementById('pcLiveCamVideo');
+      if (!vid || !vid.videoWidth) return;
+      const vw = vid.videoWidth, vh = vid.videoHeight;
+      const targetRatio = 55 / 85;
+      const vRatio = vw / vh;
+      let sx = 0, sy = 0, sw = vw, sh = vh;
+      if (vRatio > targetRatio) {
+        sw = vh * targetRatio; sx = (vw - sw) / 2;
+      } else {
+        sh = vw / targetRatio; sy = (vh - sh) / 2;
+      }
+
+      const tmp = document.createElement('canvas');
+      tmp.width = Math.min(1100, Math.round(sw));
+      tmp.height = Math.round(tmp.width * (85 / 55));
+      tmp.getContext('2d').drawImage(vid, sx, sy, sw, sh, 0, 0, tmp.width, tmp.height);
+
+      const im = new Image();
+      im.onload = () => {
+        this.scanner.img = im;
+        this.stopLiveCamera();
+        this.resetScanTransform();
+        if (typeof window.triggerHaptic === 'function') window.triggerHaptic(14);
+      };
+      im.src = tmp.toDataURL('image/jpeg', 0.94);
+    },
+
+    triggerSeriesBackUpload() {
+      this.openCardScanner(-1, 'seriesBack');
+    },
+
+    async saveScannedCard() {
+      const sc = this.scanner;
+      const s = this.getActiveSeries();
+      if (!s || !sc.img) {
+        alert('請先按「📷 鏡頭直拍」、「📱 系統相機」或「🖼️ 相簿選相」拍攝小卡！');
+        return;
+      }
+
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = 550;
+      outCanvas.height = 850;
+      this.renderScanCanvas(outCanvas, true);
+      let dataUrl = outCanvas.toDataURL('image/webp', 0.88);
+      if (!dataUrl.startsWith('data:image/webp')) dataUrl = outCanvas.toDataURL('image/jpeg', 0.90);
+
+      if (sc.targetSide === 'seriesBack') {
+        s.backImage = dataUrl;
+        await this.saveSeries(s);
+        this.closeCardScanner();
+        this.renderDex();
+        if (typeof window.showChekiToast === 'function') window.showChekiToast('🎴 已成功拍攝並儲存系列共用卡背！');
+        return;
+      }
+
+      const slot = s.slots.find(x => x.idx === sc.slotIdx);
+      if (!slot) return;
+      if (sc.targetSide === 'back') {
+        slot.realBackImg = dataUrl;
+      } else {
+        slot.realImg = dataUrl;
+        if ((slot.qty || 0) === 0) {
+          slot.qty = 1;
+          slot.wish = false;
+          this.state.justUnlockedIdx = slot.idx;
+          if (typeof window.fireCheerConfetti === 'function') window.fireCheerConfetti();
+        }
+      }
+      await this.saveSeries(s);
+      this.closeCardScanner();
+      this.onSlotClick(slot.idx);
+      this.renderDex();
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(16);
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast(sc.targetSide === 'back' ? '✍️ 已儲存小卡獨立背面！' : `✨ #${String(slot.idx).padStart(3, '0')} 高清真卡點亮入庫！`, 3200);
+      }
+    }
+  });
+})();
