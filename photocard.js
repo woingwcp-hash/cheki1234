@@ -5548,3 +5548,262 @@ if (PCApp.state.mode === 'pc') PCApp.renderDex();
 
   if (PCApp.state.mode === 'pc') PCApp.renderDex();
 })();
+// ============================================================================
+// [第 11 段]：手機版 Gemini App (Ultra) 零費用高清化聯動模組（一鍵分享＋複製指令＋自動對齊匯入）
+// ============================================================================
+(function applyPhotocardPart11GeminiAppBridge() {
+  if (!window.PCApp) return;
+
+  const _origEnsurePart9 = PCApp.ensurePart9AIModal.bind(PCApp);
+  const _origOpenAiModal = PCApp.openAiRemasterModal.bind(PCApp);
+
+  const APP_PROMPTS = {
+    standard: [
+      '請將這張日本偶像實體小卡進行超高清修復與重製（Ultra-HD Remaster）。',
+      '【嚴格要求】：100% 忠實保留原本人物的五官、眼睛神韻、笑容表情、髮型、手指動作、服裝與背景構圖，絕對不可改變長相、妝容或變臉。',
+      '【修復重點】：徹底去除卡套反光、燈光白斑、灰塵、雜訊及印刷網點（網紋），恢復清晰銳利的眼神光、細緻髮絲與自然真實膚質（不要過度磨皮或塑膠感）。',
+      '【構圖輸出】：維持原本滿版邊到邊構圖與比例，不要加上任何拍立得白邊、邊框、文字或浮水印。'
+    ].join('\n'),
+    detail: [
+      '請將這張日本偶像實體小卡進行專業棚拍級超高清細節強化（Ultra-HD Detail Remaster）。',
+      '【嚴格要求】：100% 鎖定人物原本五官、神情、髮型、手勢、服飾與背景，不可變臉或改動構圖。',
+      '【強化重點】：清除所有表面反光、膠膜霧感、雜訊與印刷網點，重點強化眼神光澤、睫毛、髮絲層次、手指紋理以及舞台服裝的蕾絲、布料與星光亮片細節，同時保持自然紅潤膚色。',
+      '【構圖輸出】：維持完全滿版無邊框構圖與原比例，不要加上任何拍立得白邊或邊框。'
+    ].join('\n'),
+    bright: [
+      '請將這張日本偶像實體小卡進行超高清暗場提亮與色彩還原（Ultra-HD Lighting Restoration）。',
+      '【嚴格要求】：100% 保留原本五官、表情、髮型、姿勢、衣裝與背景，不可變臉或改動構圖。',
+      '【修復重點】：去除昏暗雜訊、偏黃／偏綠偏色、霧感與卡面反光，將白平衡校正為通透自然明亮的膚色與清晰光影層次。',
+      '【構圖輸出】：維持完全滿版無邊框構圖與原比例，不要加上任何拍立得白邊或邊框。'
+    ].join('\n')
+  };
+
+  Object.assign(PCApp, {
+    getCurrentAppPromptText() {
+      const presetKey = document.getElementById('pcAiPresetSelect')?.value || this.aiState?.preset || 'standard';
+      return APP_PROMPTS[presetKey] || APP_PROMPTS.standard;
+    },
+
+    async copyTextReliable(text) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch (_) {}
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand('copy');
+        ta.remove();
+        return ok;
+      } catch (_) {
+        return false;
+      }
+    },
+
+    async prepareCleanPngFileForShare(dataUrl, baseName) {
+      const im = await this.loadImgAsync(dataUrl);
+      if (!im) throw new Error('無法讀取目前小卡圖片');
+      const c = document.createElement('canvas');
+      c.width = im.width;
+      c.height = im.height;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(im, 0, 0);
+      const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.95));
+      if (!blob) throw new Error('圖片轉換失敗');
+      return { blob, file: new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' }) };
+    },
+
+    ensurePart9AIModal() {
+      _origEnsurePart9();
+      if (document.getElementById('pcGeminiAppBridgeBox')) return;
+
+      const modal = document.getElementById('pcAiRemasterModal');
+      const runBtn = document.getElementById('pcAiRunBtn');
+      const resultActions = document.getElementById('pcAiResultActions');
+      const modelSel = document.getElementById('pcAiModelSelect');
+      const keyDetails = document.getElementById('pcAiKeyDetails');
+      if (!modal || !runBtn || !resultActions) return;
+
+      // 1. 建立隱藏的「匯入 Gemini 完成圖」檔案輸入框
+      const impInp = document.createElement('input');
+      impInp.id = 'pcGeminiAppImportInput';
+      impInp.type = 'file';
+      impInp.accept = 'image/*';
+      impInp.className = 'hidden';
+      impInp.onchange = (e) => this.importFromGeminiAppFile(e);
+      document.body.appendChild(impInp);
+
+      // 2. 插入「📱 手機 Gemini App (Ultra) 零費用聯動專區」
+      const bridgeBox = document.createElement('div');
+      bridgeBox.id = 'pcGeminiAppBridgeBox';
+      bridgeBox.className = 'rounded-2xl border-2 border-cheki-dark bg-gradient-to-br from-indigo-50 via-white to-pink-50 p-3 space-y-2';
+      bridgeBox.innerHTML = `
+        <div class="flex items-center justify-between gap-1">
+          <span class="font-black text-xs text-indigo-950">📱 手機版 Gemini App 直連（用 Ultra・免 API 費）</span>
+          <span class="px-2 py-0.5 rounded-full bg-emerald-200 border border-cheki-dark text-[9px] font-black text-emerald-950 shrink-0">零額外費用</span>
+        </div>
+
+        <button type="button" onclick="PCApp.sendCardToGeminiApp()" class="w-full py-2.5 px-3 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white neo-btn font-black text-xs flex items-center justify-center gap-1.5 active:scale-95">
+          <span>🚀</span><span>步驟 1：複製保真指令 ＋ 傳圖至 Gemini App</span>
+        </button>
+
+        <div class="grid grid-cols-2 gap-1.5">
+          <button type="button" onclick="PCApp.copyPromptAndDownloadCard()" class="py-1.5 px-2 rounded-xl bg-white border-2 border-cheki-dark font-black text-[10.5px] text-zinc-800 active:scale-95">
+            📋 複製指令＋存圖
+          </button>
+          <button type="button" onclick="PCApp.openGeminiWebApp()" class="py-1.5 px-2 rounded-xl bg-sky-100 border-2 border-cheki-dark font-black text-[10.5px] text-blue-950 active:scale-95">
+            🌐 直接打開 Gemini
+          </button>
+        </div>
+
+        <button type="button" onclick="document.getElementById('pcGeminiAppImportInput').click()" class="w-full py-2.5 px-3 rounded-2xl bg-amber-300 hover:bg-amber-400 text-zinc-950 neo-btn font-black text-xs flex items-center justify-center gap-1.5 active:scale-95">
+          <span>📥</span><span>步驟 2：匯入 Gemini 完成的高清圖（自動對齊對比）</span>
+        </button>
+
+        <p class="text-[10px] font-bold text-zinc-500 leading-snug">
+          💡 按「步驟 1」後喺分享選單揀 <strong>Gemini</strong> 並貼上指令發送；存低結果後返嚟按「步驟 2」即可自動對齊比例與圓角！
+        </p>
+      `;
+
+      const actionWrap = runBtn.parentElement;
+      actionWrap.insertBefore(bridgeBox, runBtn);
+
+      // 3. 將原有 API Key 站內呼叫區塊摺疊收納為進階選項，畫面更清爽
+      const advDetails = document.createElement('details');
+      advDetails.id = 'pcAiApiAdvancedDetails';
+      advDetails.className = 'rounded-2xl border-2 border-zinc-300 bg-zinc-50 p-2.5 text-xs';
+      advDetails.innerHTML = `
+        <summary class="font-black text-[11px] text-zinc-600 cursor-pointer select-none flex items-center justify-between">
+          <span>⚙️ 進階：改用 Gemini API Key 站內自動生成（分開計費）</span>
+          <span class="text-[10px] underline">展開</span>
+        </summary>
+        <div id="pcAiApiAdvancedBody" class="pt-2.5 space-y-2"></div>
+      `;
+      actionWrap.appendChild(advDetails);
+
+      const advBody = advDetails.querySelector('#pcAiApiAdvancedBody');
+      if (modelSel && modelSel.parentElement) advBody.appendChild(modelSel.parentElement);
+      if (keyDetails) advBody.appendChild(keyDetails);
+      advBody.appendChild(runBtn);
+
+      // 確保「✅ 套用此高清真卡 / ⬇️ 直接下載」始終顯示於專區正下方
+      bridgeBox.insertAdjacentElement('afterend', resultActions);
+    },
+
+    openAiRemasterModal(slotIdx, side = 'front') {
+      _origOpenAiModal(slotIdx, side);
+      const adv = document.getElementById('pcAiApiAdvancedDetails');
+      if (adv) adv.open = false;
+    },
+
+    async sendCardToGeminiApp() {
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === this.aiState.slotIdx);
+      const src = this.aiState.beforeDataUrl;
+      if (!s || !src) {
+        alert('找不到可傳送的小卡原圖，請先掃描實體小卡！');
+        return;
+      }
+
+      const promptText = this.getCurrentAppPromptText();
+      await this.copyTextReliable(promptText);
+
+      const num = slot ? String(slot.idx).padStart(3, '0') : '000';
+      const baseName = `${this.safeFileName ? this.safeFileName(s.title) : 'Photocard'}_${num}`;
+
+      try {
+        const { blob, file } = await this.prepareCleanPngFileForShare(src, baseName);
+
+        if (navigator.share) {
+          // 優先嘗試連圖帶字一併分享至 Android / iOS 系統選單
+          if (navigator.canShare && navigator.canShare({ files: [file], text: promptText })) {
+            await navigator.share({ files: [file], text: promptText, title: 'Gemini 小卡超高清化' });
+            return;
+          }
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            if (typeof window.showChekiToast === 'function') {
+              window.showChekiToast('📋 指令已複製！請在選單點 Gemini 並貼上指令', 3800);
+            }
+            await navigator.share({ files: [file] });
+            return;
+          }
+        }
+
+        // 若裝置瀏覽器不支援直接分享圖片檔，自動改為下載原圖＋複製指令並提示打開 Gemini
+        if (typeof this.triggerBlobDownload === 'function') {
+          this.triggerBlobDownload(blob, `${baseName}_for_Gemini.jpg`);
+        }
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast('📋 已複製高清指令並下載小卡原圖！請打開 Gemini App 上傳並貼上指令', 4500);
+        }
+      } catch (err) {
+        if (err && err.name === 'AbortError') return; // 用家手動取消分享選單
+        alert('無法直接叫出分享選單，請改按下方「📋 複製指令＋存圖」再手動於 Gemini App 上傳！');
+      }
+    },
+
+    async copyPromptAndDownloadCard() {
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === this.aiState.slotIdx);
+      const src = this.aiState.beforeDataUrl;
+      if (!s || !src) return;
+
+      const promptText = this.getCurrentAppPromptText();
+      await this.copyTextReliable(promptText);
+      const num = slot ? String(slot.idx).padStart(3, '0') : '000';
+      const baseName = `${this.safeFileName ? this.safeFileName(s.title) : 'Photocard'}_${num}`;
+      const { blob } = await this.prepareCleanPngFileForShare(src, baseName);
+      if (typeof this.triggerBlobDownload === 'function') {
+        this.triggerBlobDownload(blob, `${baseName}_for_Gemini.jpg`);
+      }
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(12);
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast('✅ 已複製保真指令並下載原圖！打開 Gemini App 上傳貼上即可', 4000);
+      }
+    },
+
+    openGeminiWebApp() {
+      window.open('https://gemini.google.com/app', '_blank', 'noopener');
+    },
+
+    async importFromGeminiAppFile(e) {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+
+      const s = this.getActiveSeries();
+      if (!s) return;
+
+      const overlay = document.getElementById('pcAiLoadingOverlay');
+      const msgEl = document.getElementById('pcAiLoadingMsg');
+      if (overlay) overlay.classList.remove('hidden');
+      if (msgEl) msgEl.textContent = '✂️ 正在自動對齊小卡比例與平滑圓角...';
+
+      const objUrl = URL.createObjectURL(file);
+      try {
+        // 自動依系列設定的 63×88 / 55×85 / 89×127 比例與圓角標準化輸出
+        const normalized = await this.normalizeAiOutputToCard(objUrl, s);
+        this.aiState.afterDataUrl = normalized;
+        this.refreshAiModalPreviewState();
+        if (typeof window.triggerHaptic === 'function') window.triggerHaptic(16);
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast('✨ 已匯入並自動對齊！拉動中間滑桿對比滿意後按「套用」', 3800);
+        }
+      } catch (err) {
+        alert('❌ 匯入失敗：' + (err.message || err));
+      } finally {
+        URL.revokeObjectURL(objUrl);
+        if (overlay) overlay.classList.add('hidden');
+      }
+    }
+  });
+})();
