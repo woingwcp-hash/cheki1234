@@ -5211,3 +5211,340 @@ if (PCApp.state.mode === 'pc') PCApp.renderDex();
     }
   });
 })();
+// ============================================================================
+// [第 10 段]：全方位編輯系統（編輯已存小卡圖片 ＋ 編輯單卡資料筆記 ＋ 編輯系列與增減卡格）
+// ============================================================================
+(function applyPhotocardPart10Editor() {
+  if (!window.PCApp) return;
+
+  const _origAfterRenderDex = PCApp.onAfterRenderDex.bind(PCApp);
+  const _origOpenSlotP2 = PCApp.onAfterOpenSlotPart2.bind(PCApp);
+
+  Object.assign(PCApp, {
+    // -----------------------------------------------------------------------
+    // 1. 直接載入「已儲存圖片」進掃描器重新調光 / 旋轉 / 重裁，毋須重新選相
+    // -----------------------------------------------------------------------
+    async editSavedSlotImage(slotIdx, side = 'front') {
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === slotIdx);
+      if (!s || !slot) return;
+
+      const src = side === 'back' ? (slot.realBackImg || s.backImage) : (slot.realImg || slot.sampleImg);
+      if (!src) {
+        this.openCardScanner(slotIdx, side);
+        return;
+      }
+
+      const im = await this.loadImgAsync(src);
+      if (!im) {
+        alert('無法讀取已儲存的圖片，請重新選相！');
+        return;
+      }
+
+      this.openCardScanner(slotIdx, side);
+      this.loadSourceImageToScanner(im);
+
+      // 預設直接進入「🔎 拖曳縮放預覽」方便即時調光、銳化、微角度或旋轉（亦隨時可切回四角裁切）
+      this.scanner.cropMode = 'adjust';
+      if (typeof this.updateScanRatioAndModeUI === 'function') this.updateScanRatioAndModeUI();
+      if (typeof this.applyCanvasBoxForCurrentMode === 'function') this.applyCanvasBoxForCurrentMode();
+      if (typeof this.scheduleScanRender === 'function') this.scheduleScanRender(true);
+
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast('🎨 已載入現有圖片，可自由微調或切換四角重裁！', 2800);
+      }
+    },
+
+    // -----------------------------------------------------------------------
+    // 2. 儲存單張小卡資訊（成員名、款式名、入手日期、筆記備註）
+    // -----------------------------------------------------------------------
+    async saveSlotMetaEdit(slotIdx) {
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === slotIdx);
+      if (!s || !slot) return;
+
+      const memberVal = (document.getElementById('pcEditSlotMember')?.value || '').trim();
+      const variantVal = (document.getElementById('pcEditSlotVariant')?.value || '').trim();
+      const dateVal = (document.getElementById('pcEditSlotDate')?.value || '').trim();
+      const noteVal = (document.getElementById('pcEditSlotNote')?.value || '').trim();
+      const applyRow = Boolean(document.getElementById('pcEditSlotApplyRowCb')?.checked);
+
+      if (memberVal) {
+        if (applyRow) {
+          const gIdx = slot.groupIdx ?? Math.floor((slot.idx - 1) / (s.groupCols || 3));
+          s.slots.forEach(x => {
+            const xg = x.groupIdx ?? Math.floor((x.idx - 1) / (s.groupCols || 3));
+            if (xg === gIdx) x.member = memberVal;
+          });
+        } else {
+          slot.member = memberVal;
+        }
+      }
+      if (variantVal) slot.variant = variantVal;
+      slot.acquiredDate = dateVal;
+      slot.note = noteVal;
+
+      await this.saveSeries(s);
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(12);
+      if (typeof window.showChekiToast === 'function') window.showChekiToast('✅ 已更新小卡資料與筆記！');
+      this.onSlotClick(slotIdx);
+      this.renderDex();
+    },
+
+    // -----------------------------------------------------------------------
+    // 3. 編輯整套系列設定彈窗（名稱、比例、每排張數、成員名單、增減卡格）
+    // -----------------------------------------------------------------------
+    ensureEditSeriesModal() {
+      if (document.getElementById('pcEditSeriesModal')) return;
+      const wrap = document.createElement('div');
+      wrap.innerHTML = `
+        <div id="pcEditSeriesModal" class="hidden fixed inset-0 z-[139] bg-black/82 flex items-center justify-center p-3 overflow-y-auto">
+          <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-4 space-y-3 text-zinc-900 max-h-[92vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+              <div>
+                <h3 class="font-black text-base leading-tight">✏️ 編輯小卡系列設定</h3>
+                <p class="text-[10px] font-bold text-zinc-500">修改標題、卡片尺寸比例、成員名單或增減卡格</p>
+              </div>
+              <button type="button" onclick="PCApp.closeEditSeriesModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm shrink-0">✕</button>
+            </div>
+
+            <div class="space-y-2.5 text-xs">
+              <div>
+                <label class="font-black block mb-1">✨ 系列名稱</label>
+                <input id="pcEditSeriesTitle" type="text" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold bg-white">
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="font-black block mb-1">📏 小卡比例</label>
+                  <select id="pcEditSeriesRatio" class="w-full px-2.5 py-2 rounded-xl border-2 border-cheki-dark font-black bg-white">
+                    <option value="63x88">🃏 日系 63×88</option>
+                    <option value="55x85">💳 韓系 55×85</option>
+                    <option value="89x127">🖼️ 生寫 89×127</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="font-black block mb-1">🎴 每排款式數</label>
+                  <input id="pcEditSeriesCols" type="number" min="1" max="6" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-black bg-white">
+                </div>
+              </div>
+
+              <div>
+                <label class="font-black block mb-1">👑 各橫排成員名單（每行一位，儲存後自動套用）</label>
+                <textarea id="pcEditSeriesMembers" rows="5" class="w-full px-3 py-2 rounded-xl border-2 border-cheki-dark font-bold bg-white leading-relaxed"></textarea>
+              </div>
+
+              <div class="rounded-2xl border-2 border-cheki-dark bg-sky-50/70 p-2.5 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-black text-[11px]">🧩 增減卡格（目前共 <strong id="pcEditSeriesSlotCount" class="text-indigo-700">0</strong> 格）</span>
+                </div>
+                <div class="grid grid-cols-2 gap-1.5">
+                  <button type="button" onclick="PCApp.editSeriesModifySlots('addRow')" class="py-1.5 rounded-xl bg-emerald-200 border-2 border-cheki-dark font-black text-[11px] active:scale-95">＋ 新增一整排</button>
+                  <button type="button" onclick="PCApp.editSeriesModifySlots('addOne')" class="py-1.5 rounded-xl bg-white border-2 border-cheki-dark font-black text-[11px] active:scale-95">＋ 尾部加 1 格</button>
+                  <button type="button" onclick="PCApp.editSeriesModifySlots('remOne')" class="py-1.5 rounded-xl bg-amber-100 border-2 border-cheki-dark font-black text-[11px] active:scale-95">－ 刪除尾部 1 格</button>
+                  <button type="button" onclick="PCApp.editSeriesModifySlots('remRow')" class="py-1.5 rounded-xl bg-rose-100 border-2 border-cheki-dark font-black text-[11px] text-rose-800 active:scale-95">－ 刪除最後一排</button>
+                </div>
+              </div>
+            </div>
+
+            <button type="button" onclick="PCApp.saveEditSeriesModal()" class="w-full py-3 rounded-2xl bg-cheki-accent text-white neo-btn font-black text-xs active:scale-95">
+              💾 儲存系列變更
+            </button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(wrap);
+    },
+
+    openEditSeriesModal() {
+      this.ensureEditSeriesModal();
+      const s = this.getActiveSeries();
+      if (!s) return;
+
+      const cols = s.groupCols || 3;
+      const groupNames = [];
+      const seen = new Set();
+      s.slots.forEach(sl => {
+        const g = sl.groupIdx ?? Math.floor((sl.idx - 1) / cols);
+        if (!seen.has(g)) {
+          seen.add(g);
+          groupNames.push(sl.member || `成員 ${g + 1}`);
+        }
+      });
+
+      document.getElementById('pcEditSeriesTitle').value = s.title || '';
+      document.getElementById('pcEditSeriesRatio').value = typeof this.getSeriesRatioKey === 'function' ? this.getSeriesRatioKey(s) : (s.cardRatio || '63x88');
+      document.getElementById('pcEditSeriesCols').value = String(cols);
+      document.getElementById('pcEditSeriesMembers').value = groupNames.join('\n');
+      document.getElementById('pcEditSeriesSlotCount').textContent = String(s.slots.length);
+
+      document.getElementById('pcEditSeriesModal')?.classList.remove('hidden');
+    },
+
+    closeEditSeriesModal() {
+      document.getElementById('pcEditSeriesModal')?.classList.add('hidden');
+    },
+
+    async editSeriesModifySlots(action) {
+      const s = this.getActiveSeries();
+      if (!s) return;
+      const cols = Math.max(1, Math.min(6, Number(document.getElementById('pcEditSeriesCols')?.value) || s.groupCols || 3));
+      const variants = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+      if (action === 'addRow' || action === 'addOne') {
+        const addCount = action === 'addRow' ? cols : 1;
+        const nextGroup = Math.floor(s.slots.length / cols);
+        for (let k = 0; k < addCount; k++) {
+          const newIdx = s.slots.length + 1;
+          const gIdx = Math.floor((newIdx - 1) / cols);
+          const posInRow = (newIdx - 1) % cols;
+          const existingRowSlot = s.slots.find(x => (x.groupIdx ?? Math.floor((x.idx - 1) / cols)) === gIdx);
+          s.slots.push({
+            idx: newIdx,
+            groupIdx: gIdx,
+            member: existingRowSlot?.member || `成員 ${nextGroup + 1}`,
+            variant: variants[posInRow] || String(posInRow + 1),
+            sampleImg: '',
+            realImg: '',
+            realBackImg: '',
+            qty: 0,
+            wish: false,
+            rarity: 'N',
+            note: ''
+          });
+        }
+      } else if (action === 'remOne' || action === 'remRow') {
+        const remCount = action === 'remRow' ? Math.min(cols, Math.max(0, s.slots.length - 1)) : (s.slots.length > 1 ? 1 : 0);
+        if (remCount === 0) {
+          alert('系列至少需保留 1 個卡格！');
+          return;
+        }
+        const tail = s.slots.slice(-remCount);
+        const hasReal = tail.some(x => x.realImg || x.qty > 0);
+        if (hasReal && !confirm(`即將刪除的最後 ${remCount} 格內包含已點亮或已掃描的真卡，確定要刪除嗎？`)) return;
+        s.slots.splice(s.slots.length - remCount, remCount);
+      }
+
+      await this.saveSeries(s);
+      this.openEditSeriesModal();
+      this.renderDex();
+    },
+
+    async saveEditSeriesModal() {
+      const s = this.getActiveSeries();
+      if (!s) return;
+
+      const nextTitle = (document.getElementById('pcEditSeriesTitle')?.value || '').trim();
+      const nextRatio = document.getElementById('pcEditSeriesRatio')?.value || '63x88';
+      const nextCols = Math.max(1, Math.min(6, Number(document.getElementById('pcEditSeriesCols')?.value) || s.groupCols || 3));
+      const memberLines = (document.getElementById('pcEditSeriesMembers')?.value || '')
+        .split(/\r?\n/)
+        .map(x => x.trim());
+
+      if (nextTitle) s.title = nextTitle;
+      s.cardRatio = nextRatio;
+      s.groupCols = nextCols;
+
+      // 重新對齊每格的 groupIdx 與成員名稱
+      s.slots.forEach((sl, i) => {
+        sl.idx = i + 1;
+        const gIdx = Math.floor(i / nextCols);
+        sl.groupIdx = gIdx;
+        if (memberLines[gIdx]) sl.member = memberLines[gIdx];
+      });
+
+      await this.saveSeries(s);
+      this.closeEditSeriesModal();
+      this.renderDex();
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(12);
+      if (typeof window.showChekiToast === 'function') window.showChekiToast('✅ 已更新系列設定！');
+    },
+
+    // -----------------------------------------------------------------------
+    // 4. 掛載「✏️ 編輯系列」入口 ＋ 小卡大圖內的「編輯已存圖片 & 編輯資料筆記」
+    // -----------------------------------------------------------------------
+    onAfterRenderDex(s) {
+      _origAfterRenderDex(s);
+      const delBtn = document.querySelector('#pcDexRoot button[onclick="PCApp.deleteActiveSeries()"]');
+      if (delBtn && delBtn.parentElement && !document.getElementById('pcEditSeriesTriggerBtn')) {
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.id = 'pcEditSeriesTriggerBtn';
+        editBtn.onclick = () => this.openEditSeriesModal();
+        editBtn.className = 'px-2 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 border-2 border-cheki-dark font-black text-xs text-zinc-900 shrink-0 active:scale-95';
+        editBtn.title = '編輯系列設定';
+        editBtn.textContent = '✏️';
+        delBtn.parentElement.insertBefore(editBtn, delBtn);
+      }
+    },
+
+    onAfterOpenSlotPart2(s, slot) {
+      _origOpenSlotP2(s, slot);
+
+      // A. 在掃描操作區加入「🎨 編輯已存圖片（調光/重裁/旋轉）」
+      const actions = document.getElementById('pcSlotScannerActions');
+      const hasFront = Boolean(slot.realImg || slot.sampleImg);
+      const hasBack = Boolean(slot.realBackImg);
+      if (actions && hasFront && !document.getElementById('pcEditSavedImgRow')) {
+        const editRow = document.createElement('div');
+        editRow.id = 'pcEditSavedImgRow';
+        editRow.className = `pt-1.5 grid gap-1.5 ${hasBack ? 'grid-cols-2' : 'grid-cols-1'}`;
+        editRow.innerHTML = `
+          <button type="button" onclick="PCApp.editSavedSlotImage(${slot.idx}, 'front')" class="py-2 px-2 rounded-xl bg-amber-200 hover:bg-amber-300 border-2 border-cheki-dark font-black text-[11px] text-zinc-950 active:scale-95">
+            🎨 編輯正面圖片（調光/重裁）
+          </button>
+          ${hasBack ? `
+            <button type="button" onclick="PCApp.editSavedSlotImage(${slot.idx}, 'back')" class="py-2 px-2 rounded-xl bg-amber-100 hover:bg-amber-200 border-2 border-cheki-dark font-black text-[11px] text-zinc-900 active:scale-95">
+              🎨 編輯背面圖片
+            </button>
+          ` : ''}
+        `;
+        const aiBtnWrap = document.getElementById('pcSlotAiRemasterBtn')?.parentElement;
+        if (aiBtnWrap) actions.insertBefore(editRow, aiBtnWrap);
+        else actions.appendChild(editRow);
+      }
+
+      // B. 在大圖彈窗最底加入「📝 編輯小卡資料與備註筆記」卡片
+      const body = document.getElementById('pcSlotModalBody');
+      if (body && !document.getElementById('pcSlotEditMetaBox')) {
+        const metaBox = document.createElement('div');
+        metaBox.id = 'pcSlotEditMetaBox';
+        metaBox.className = 'rounded-2xl border-2 border-cheki-dark bg-white p-3 space-y-2 text-xs';
+        metaBox.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="font-black text-zinc-900">📝 編輯小卡資料與筆記</span>
+            ${slot.note ? `<span class="text-[10px] font-bold text-emerald-700">✓ 已有筆記</span>` : ''}
+          </div>
+          <div class="grid grid-cols-2 gap-1.5">
+            <div>
+              <label class="text-[10px] font-black text-zinc-500 block mb-0.5">👤 成員名稱</label>
+              <input id="pcEditSlotMember" type="text" value="${this.esc(slot.member || '')}" class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-zinc-50 font-bold text-xs">
+            </div>
+            <div>
+              <label class="text-[10px] font-black text-zinc-500 block mb-0.5">🏷️ 款式名稱</label>
+              <input id="pcEditSlotVariant" type="text" value="${this.esc(slot.variant || '')}" placeholder="例：A / 和服 / 親簽" class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-zinc-50 font-bold text-xs">
+            </div>
+          </div>
+          <label class="flex items-center gap-1.5 text-[10px] font-bold text-zinc-600 cursor-pointer">
+            <input id="pcEditSlotApplyRowCb" type="checkbox" class="w-3.5 h-3.5 accent-indigo-600 rounded">
+            <span>同時將此成員名稱套用至同排全部款式</span>
+          </label>
+          <div>
+            <label class="text-[10px] font-black text-zinc-500 block mb-0.5">📅 入手日期（選填）</label>
+            <input id="pcEditSlotDate" type="date" value="${this.esc(slot.acquiredDate || '')}" class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-zinc-50 font-black text-xs">
+          </div>
+          <div>
+            <label class="text-[10px] font-black text-zinc-500 block mb-0.5">💬 小卡筆記（抽中經過 / 換卡對象 / 價格等）</label>
+            <textarea id="pcEditSlotNote" rows="2" placeholder="寫低呢張小卡嘅回憶或購入紀錄..." class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-zinc-50 font-bold text-xs">${this.esc(slot.note || '')}</textarea>
+          </div>
+          <button type="button" onclick="PCApp.saveSlotMetaEdit(${slot.idx})" class="w-full py-2 rounded-xl bg-indigo-600 text-white neo-btn font-black text-xs active:scale-95">
+            💾 儲存小卡資料與筆記
+          </button>
+        `;
+        body.appendChild(metaBox);
+      }
+    }
+  });
+
+  if (PCApp.state.mode === 'pc') PCApp.renderDex();
+})();
