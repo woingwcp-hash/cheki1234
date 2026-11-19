@@ -891,3 +891,928 @@ Object.assign(PCApp, {
 
 if (PCApp.state.mode === 'pc') PCApp.renderDex();
 // === [第 3 段貼在此行正下方] ===
+// ============================================================================
+// [第 3 段]：滿版圓角真卡掃描覆蓋 ＋ 3D 全息閃卡檢視 ＋ 【譲/求】換卡圖 ＋ 備份同步
+// ============================================================================
+Object.assign(PCApp, {
+  scanner: {
+    slotIdx: -1,
+    targetSide: 'front', // 'front' | 'back'
+    img: null,
+    scale: 1,
+    ox: 0,
+    oy: 0,
+    rot: 0,              // 0 | 90 | 180 | 270
+    deglare: 15,
+    sharpen: 20,
+    bright: 100,
+    contrast: 104,
+    radiusPct: 6,
+    dragging: false,
+    lastX: 0,
+    lastY: 0
+  },
+
+  tradeCfg: {
+    seekMode: 'missing', // 'missing' (全部未擁有) | 'wish' (只標記💖許願)
+    cols: 6,
+    note: '香港面交 / 郵寄交換歡迎 DM ✨'
+  },
+
+  pcRoundRectPath(ctx, x, y, w, h, r) {
+    const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  },
+
+  loadImgAsync(src) {
+    return new Promise((resolve) => {
+      if (!src) return resolve(null);
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => resolve(null);
+      im.src = src;
+    });
+  },
+
+  ensurePart3UI() {
+    if (document.getElementById('pcPart3Style')) return;
+
+    const st = document.createElement('style');
+    st.id = 'pcPart3Style';
+    st.textContent = `
+      .pc-3d-wrap { perspective: 950px; touch-action: none; user-select: none; }
+      .pc-3d-card { transform-style: preserve-3d; transition: transform 0.32s cubic-bezier(0.22,1,0.36,1); will-change: transform; }
+      .pc-3d-card.is-tilting { transition: none; }
+      .pc-3d-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+      .pc-3d-back { transform: rotateY(180deg); }
+      .pc-holo-glare {
+        position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+        background: radial-gradient(circle at var(--px, 50%) var(--py, 50%), rgba(255,255,255,0.42) 0%, rgba(255,255,255,0) 62%);
+        mix-blend-mode: overlay; opacity: var(--glare-op, 0.45);
+      }
+      .pc-holo-foil {
+        position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+        background: linear-gradient(115deg, transparent 15%, rgba(56,189,248,0.42) 32%, rgba(244,114,182,0.45) 50%, rgba(250,204,21,0.42) 68%, transparent 85%);
+        background-size: 220% 220%;
+        background-position: var(--px, 50%) var(--py, 50%);
+        mix-blend-mode: color-dodge; opacity: var(--foil-op, 0.55);
+      }
+      .pc-sign-foil {
+        position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+        background: linear-gradient(125deg, transparent 18%, rgba(253,224,71,0.52) 45%, rgba(255,255,255,0.65) 52%, rgba(245,158,11,0.48) 62%, transparent 82%);
+        background-size: 230% 230%;
+        background-position: var(--px, 50%) var(--py, 50%);
+        mix-blend-mode: color-dodge; opacity: var(--foil-op, 0.65);
+      }
+    `;
+    document.head.appendChild(st);
+
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <input id="pcScanFileInput" type="file" accept="image/*" class="hidden" onchange="PCApp.handleScanFile(event)">
+      <input id="pcJsonImportInput" type="file" accept=".json,application/json" class="hidden" onchange="PCApp.importPhotocardJson(event)">
+
+      <!-- 📸 滿版圓角真卡掃描器 -->
+      <div id="pcScanModal" class="hidden fixed inset-0 z-[136] bg-black/88 flex items-center justify-center p-2.5 overflow-y-auto">
+        <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-3.5 space-y-2.5 text-zinc-900 max-h-[94vh] overflow-y-auto">
+          <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+            <div>
+              <h3 id="pcScanTitle" class="font-black text-base leading-tight">📸 掃描高清實物小卡</h3>
+              <p class="text-[10px] font-bold text-zinc-500">拖曳圖片對準 55:85 滿版框 · 自動平滑圓角與去反光</p>
+            </div>
+            <button type="button" onclick="PCApp.closeCardScanner()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm shrink-0">✕</button>
+          </div>
+
+          <div class="bg-zinc-950 rounded-2xl p-2.5 border-2 border-cheki-dark flex flex-col items-center space-y-1.5">
+            <canvas id="pcScanCanvas" width="330" height="510" class="w-48 aspect-[55/85] rounded-xl border border-white/25 cursor-grab active:cursor-grabbing shadow-2xl" style="touch-action:none;"></canvas>
+            <div class="flex items-center gap-1.5 flex-wrap justify-center">
+              <button type="button" onclick="document.getElementById('pcScanFileInput').click()" class="px-2.5 py-1 rounded-xl bg-sky-400 text-zinc-950 font-black text-[11px]">🖼️ 選相 / 拍照</button>
+              <button type="button" onclick="PCApp.rotateScanImg()" class="px-2.5 py-1 rounded-xl bg-white/15 text-white font-black text-[11px]">🔄 旋轉 90°</button>
+              <button type="button" onclick="PCApp.resetScanTransform()" class="px-2.5 py-1 rounded-xl bg-white/15 text-white font-black text-[11px]">🎯 重置對位</button>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-2.5 space-y-1.5 text-[11px] font-black">
+            <label class="block">
+              <div class="flex justify-between"><span>🔎 縮放比例（拖曳畫面移位）</span><span id="pcScanZoomVal" class="text-indigo-600">100%</span></div>
+              <input id="pcScanZoom" type="range" min="50" max="260" value="100" oninput="PCApp.onScanSlider()" class="w-full accent-indigo-600">
+            </label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="block">
+                <div class="flex justify-between"><span>✨ 去反光</span><span id="pcScanDeglareVal" class="text-sky-600">15</span></div>
+                <input id="pcScanDeglare" type="range" min="0" max="100" value="15" oninput="PCApp.onScanSlider()" class="w-full accent-sky-500">
+              </label>
+              <label class="block">
+                <div class="flex justify-between"><span>🔪 清晰銳化</span><span id="pcScanSharpenVal" class="text-pink-600">20</span></div>
+                <input id="pcScanSharpen" type="range" min="0" max="100" value="20" oninput="PCApp.onScanSlider()" class="w-full accent-pink-500">
+              </label>
+              <label class="block">
+                <div class="flex justify-between"><span>☀️ 亮度</span><span id="pcScanBrightVal" class="text-amber-600">100%</span></div>
+                <input id="pcScanBright" type="range" min="75" max="130" value="100" oninput="PCApp.onScanSlider()" class="w-full accent-amber-500">
+              </label>
+              <label class="block">
+                <div class="flex justify-between"><span>⭕ 圓角弧度</span><span id="pcScanRadiusVal" class="text-emerald-600">6%</span></div>
+                <input id="pcScanRadius" type="range" min="0" max="12" step="1" value="6" oninput="PCApp.onScanSlider()" class="w-full accent-emerald-500">
+              </label>
+            </div>
+          </div>
+
+          <button type="button" onclick="PCApp.saveScannedCard()" class="w-full py-3 rounded-2xl bg-cheki-accent text-white neo-btn font-black text-xs">
+            ✨ 儲存真卡並點亮圖鑑格
+          </button>
+        </div>
+      </div>
+
+      <!-- 🔁 【譲／求】換卡圖生成器 -->
+      <div id="pcTradeModal" class="hidden fixed inset-0 z-[136] bg-black/85 flex items-center justify-center p-2.5 overflow-y-auto">
+        <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-3.5 space-y-2.5 text-zinc-900 max-h-[93vh] overflow-y-auto">
+          <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+            <div>
+              <h3 class="font-black text-base leading-tight">🔁 【譲／求】換卡一覽圖生成</h3>
+              <p class="text-[10px] font-bold text-zinc-500">自動標記多出複數為「譲」・缺卡或許願卡為「求」</p>
+            </div>
+            <button type="button" onclick="PCApp.closeTradeSheetModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm shrink-0">✕</button>
+          </div>
+
+          <div class="bg-zinc-900 rounded-2xl p-2 border-2 border-cheki-dark flex justify-center">
+            <canvas id="pcTradeCanvas" class="max-h-[42vh] max-w-full w-auto h-auto object-contain rounded-xl shadow-lg"></canvas>
+          </div>
+
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-2.5 space-y-2 text-xs">
+            <div class="grid grid-cols-2 gap-1.5">
+              <button type="button" id="pcTradeSeekMissing" onclick="PCApp.setTradeOption('seekMode','missing')" class="py-1.5 rounded-xl border-2 border-cheki-dark font-black text-[11px]">🔴 全部未擁有標「求」</button>
+              <button type="button" id="pcTradeSeekWish" onclick="PCApp.setTradeOption('seekMode','wish')" class="py-1.5 rounded-xl border-2 border-cheki-dark font-black text-[11px]">💖 只標 💖許願卡「求」</button>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="font-black text-[11px] shrink-0">排版欄數：</span>
+              <button type="button" id="pcTradeCols3" onclick="PCApp.setTradeOption('cols',3)" class="flex-1 py-1 rounded-lg border-2 border-cheki-dark font-black text-[11px]">3 欄大圖</button>
+              <button type="button" id="pcTradeCols6" onclick="PCApp.setTradeOption('cols',6)" class="flex-1 py-1 rounded-lg border-2 border-cheki-dark font-black text-[11px]">6 欄全覽</button>
+            </div>
+            <input id="pcTradeNoteInput" type="text" value="香港面交 / 郵寄交換歡迎 DM ✨" oninput="PCApp.onTradeNoteInput(this.value)" placeholder="輸入交換條件備註..." class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark font-bold text-xs bg-zinc-50">
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" onclick="PCApp.exportTradeSheet(false)" class="py-2.5 rounded-2xl bg-cheki-accent text-white neo-btn font-black text-xs">⬇️ 下載換卡圖</button>
+            <button type="button" onclick="PCApp.exportTradeSheet(true)" class="py-2.5 rounded-2xl bg-sky-300 text-zinc-950 neo-btn font-black text-xs">📤 分享至 X / IG</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ☁️ 小卡圖鑑備份與雲端同步 -->
+      <div id="pcBackupModal" class="hidden fixed inset-0 z-[136] bg-black/80 flex items-center justify-center p-3">
+        <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-4 space-y-3 text-zinc-900">
+          <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+            <div>
+              <h3 class="font-black text-base leading-tight">💾 小卡圖鑑備份與雲端同步</h3>
+              <p class="text-[10px] font-bold text-zinc-500">獨立保存所有系列、預覽切格與高清掃描真卡</p>
+            </div>
+            <button type="button" onclick="document.getElementById('pcBackupModal').classList.add('hidden')" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm">✕</button>
+          </div>
+
+          <p id="pcBackupStatusText" class="text-xs font-bold text-zinc-600 bg-sky-50 border border-sky-200 rounded-xl p-2.5"></p>
+
+          <div class="space-y-2">
+            <button type="button" onclick="PCApp.syncPhotocardsToDrive()" class="w-full py-2.5 rounded-2xl bg-gradient-to-r from-sky-400 to-blue-500 text-white neo-btn font-black text-xs">☁️ 同步小卡圖鑑至 Google Drive</button>
+            <button type="button" onclick="PCApp.restorePhotocardsFromDrive()" class="w-full py-2.5 rounded-2xl bg-emerald-300 text-zinc-950 neo-btn font-black text-xs">⬇️ 從 Google Drive 還原小卡圖鑑</button>
+            <div class="grid grid-cols-2 gap-2 pt-1">
+              <button type="button" onclick="PCApp.exportPhotocardJson()" class="py-2.5 rounded-2xl bg-amber-200 text-zinc-950 neo-btn font-black text-xs">📥 匯出本機 .json</button>
+              <button type="button" onclick="document.getElementById('pcJsonImportInput').click()" class="py-2.5 rounded-2xl bg-white neo-btn font-black text-xs">📤 匯入 .json 還原</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+    this.bindScanCanvasDrag();
+  },
+
+  // -------------------------------------------------------------------------
+  // 1. 掛載工具列擴充按鈕 & 3D 閃卡大圖檢視
+  // -------------------------------------------------------------------------
+  onAfterRenderPart2Toolbar(s) {
+    this.ensurePart3UI();
+    const ext = document.getElementById('pcToolbarExtPart3');
+    if (!ext) return;
+    ext.innerHTML = `
+      <button type="button" onclick="PCApp.openTradeSheetModal()" class="px-2.5 py-1.5 rounded-xl bg-pink-200 hover:bg-pink-300 neo-btn font-black text-[11px] text-zinc-900">🔁 【譲/求】換卡圖</button>
+      <button type="button" onclick="PCApp.openPcBackupModal()" class="px-2.5 py-1.5 rounded-xl bg-white neo-btn font-black text-[11px] text-zinc-900">💾 備份</button>
+    `;
+  },
+
+  onAfterOpenSlotPart2(s, slot) {
+    this.ensurePart3UI();
+    const stage = document.getElementById('pcSlotStageArea');
+    const actions = document.getElementById('pcSlotScannerActions');
+    const imgSrc = slot.realImg || slot.sampleImg;
+    const backSrc = slot.realBackImg || s.backImage;
+    const numStr = '#' + String(slot.idx).padStart(3, '0');
+    const isLocked = slot.qty === 0 && !slot.realImg;
+
+    if (stage) {
+      const borderCls = slot.qty > 0
+        ? (slot.rarity === 'SIGN' ? 'pc-sign-border' : slot.rarity === 'HOLO' ? 'pc-holo-border' : 'bg-zinc-900 p-[2.5px]')
+        : 'bg-zinc-400 p-[2.5px]';
+      const foilHtml = slot.rarity === 'SIGN'
+        ? '<div class="pc-sign-foil"></div>'
+        : (slot.rarity === 'HOLO' ? '<div class="pc-holo-foil"></div>' : '');
+
+      stage.innerHTML = `
+        <div id="pc3DTiltWrap" class="pc-3d-wrap py-1 flex flex-col items-center">
+          <div id="pc3DCardInner" class="pc-3d-card relative w-48 aspect-[55/85] cursor-grab active:cursor-grabbing">
+            <!-- 正面 -->
+            <div class="pc-3d-face absolute inset-0 rounded-2xl ${borderCls} shadow-2xl">
+              <div class="w-full h-full rounded-[13px] overflow-hidden bg-zinc-900 relative flex items-center justify-center">
+                ${imgSrc
+                  ? `<img src="${imgSrc}" draggable="false" class="w-full h-full object-cover pointer-events-none ${isLocked ? 'grayscale brightness-75 opacity-60' : ''}">`
+                  : `<span class="text-zinc-500 font-black text-sm">${numStr} 尚未墊底</span>`}
+                ${foilHtml}
+                <div class="pc-holo-glare"></div>
+                ${slot.realImg ? `<span class="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-emerald-400 text-zinc-950 font-black text-[10px] shadow">✨ 實物真卡</span>` : ''}
+              </div>
+            </div>
+            <!-- 背面 -->
+            <div class="pc-3d-face pc-3d-back absolute inset-0 rounded-2xl ${borderCls} shadow-2xl">
+              <div class="w-full h-full rounded-[13px] overflow-hidden bg-gradient-to-br from-indigo-950 via-slate-900 to-zinc-950 relative flex flex-col items-center justify-center p-3 text-center">
+                ${backSrc
+                  ? `<img src="${backSrc}" draggable="false" class="w-full h-full object-cover pointer-events-none"><div class="pc-holo-glare"></div>`
+                  : `<div class="text-3xl mb-1">🃏</div><p class="font-black text-xs text-sky-300">${this.esc(s.title)}</p><p class="text-[11px] font-bold text-zinc-400 mt-1">${numStr} · ${this.esc(slot.member)}</p><p class="text-[10px] text-zinc-500 mt-2">可於下方掃描獨立卡背<br>或設定系列共用卡背</p>`}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-2.5">
+            <span class="text-[10px] font-bold text-zinc-500">👆 手指拖曳可 3D 傾斜賞閃膜</span>
+            <button type="button" id="pc3DFlipBtn" class="px-2.5 py-1 rounded-full bg-indigo-100 border-2 border-cheki-dark text-[11px] font-black text-indigo-900 active:scale-95">🔄 3D 翻面</button>
+          </div>
+        </div>
+      `;
+      this.bind3DTiltCard();
+    }
+
+    if (actions) {
+      actions.innerHTML = `
+        <div class="space-y-1.5">
+          <button type="button" onclick="PCApp.openCardScanner(${slot.idx}, 'front')" class="w-full py-2.5 rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-sky-400 text-zinc-950 neo-btn font-black text-xs flex items-center justify-center gap-1.5 active:scale-95">
+            📸 ${slot.realImg ? '重新掃描 / 替換高清真卡' : '掃描實體真卡覆蓋底圖並點亮'}
+          </button>
+          <div class="grid ${slot.realImg ? 'grid-cols-2' : 'grid-cols-1'} gap-1.5">
+            <button type="button" onclick="PCApp.openCardScanner(${slot.idx}, 'back')" class="py-2 rounded-xl bg-amber-100 border-2 border-cheki-dark font-black text-[11px] text-zinc-900 active:scale-95">
+              ✍️ ${slot.realBackImg ? '更換獨立簽名卡背' : '掃描此卡獨立卡背'}
+            </button>
+            ${slot.realImg ? `
+              <button type="button" onclick="PCApp.clearSlotRealImg(${slot.idx})" class="py-2 rounded-xl bg-zinc-100 border-2 border-cheki-dark font-black text-[11px] text-rose-700 active:scale-95">
+                ↩️ 恢復預覽底圖
+              </button>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+  },
+
+  bind3DTiltCard() {
+    const wrap = document.getElementById('pc3DTiltWrap');
+    const card = document.getElementById('pc3DCardInner');
+    const flipBtn = document.getElementById('pc3DFlipBtn');
+    if (!wrap || !card) return;
+
+    let flipped = false;
+    let active = false;
+
+    const applyTransform = (rx, ry, px, py) => {
+      const baseY = flipped ? 180 : 0;
+      card.style.transform = `rotateX(${rx.toFixed(1)}deg) rotateY(${(baseY + ry).toFixed(1)}deg)`;
+      card.style.setProperty('--px', `${px}%`);
+      card.style.setProperty('--py', `${py}%`);
+    };
+
+    if (flipBtn) {
+      flipBtn.onclick = () => {
+        flipped = !flipped;
+        if (typeof window.triggerHaptic === 'function') window.triggerHaptic(8);
+        card.classList.remove('is-tilting');
+        applyTransform(0, 0, 50, 50);
+        flipBtn.textContent = flipped ? '🔄 翻回正面' : '🔄 3D 翻面';
+      };
+    }
+
+    const onMove = (e) => {
+      if (!active) return;
+      const rect = card.getBoundingClientRect();
+      const nx = Math.max(-1, Math.min(1, ((e.clientX - rect.left) / rect.width) * 2 - 1));
+      const ny = Math.max(-1, Math.min(1, ((e.clientY - rect.top) / rect.height) * 2 - 1));
+      applyTransform(-ny * 18, nx * 22, Math.round((nx + 1) * 50), Math.round((ny + 1) * 50));
+    };
+
+    card.onpointerdown = (e) => {
+      active = true;
+      card.classList.add('is-tilting');
+      card.setPointerCapture?.(e.pointerId);
+      onMove(e);
+    };
+    card.onpointermove = onMove;
+    const endTilt = () => {
+      if (!active) return;
+      active = false;
+      card.classList.remove('is-tilting');
+      applyTransform(0, 0, 50, 50);
+    };
+    card.onpointerup = endTilt;
+    card.onpointercancel = endTilt;
+  },
+
+  // -------------------------------------------------------------------------
+  // 2. 滿版圓角真卡掃描器（去反光、銳化、拖曳縮放與覆蓋點亮）
+  // -------------------------------------------------------------------------
+  openCardScanner(slotIdx, side = 'front') {
+    this.ensurePart3UI();
+    const sc = this.scanner;
+    sc.slotIdx = slotIdx;
+    sc.targetSide = side;
+    sc.img = null;
+    sc.rot = 0;
+    sc.scale = 1;
+    sc.ox = 0;
+    sc.oy = 0;
+    sc.deglare = 15;
+    sc.sharpen = 20;
+    sc.bright = 100;
+    sc.radiusPct = 6;
+
+    const titleEl = document.getElementById('pcScanTitle');
+    if (titleEl) titleEl.textContent = side === 'back' ? '✍️ 掃描小卡獨立背面' : '📸 掃描高清實物小卡';
+    document.getElementById('pcScanZoom').value = '100';
+    document.getElementById('pcScanDeglare').value = '15';
+    document.getElementById('pcScanSharpen').value = '20';
+    document.getElementById('pcScanBright').value = '100';
+    document.getElementById('pcScanRadius').value = '6';
+    this.updateScanLabels();
+
+    const cv = document.getElementById('pcScanCanvas');
+    if (cv) {
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#18181B';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.fillStyle = '#A1A1AA';
+      ctx.font = '900 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('請選擇或拍攝實體小卡', cv.width / 2, cv.height / 2);
+    }
+
+    document.getElementById('pcScanModal')?.classList.remove('hidden');
+    document.getElementById('pcScanFileInput')?.click();
+  },
+
+  closeCardScanner() {
+    document.getElementById('pcScanModal')?.classList.add('hidden');
+  },
+
+  handleScanFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const im = new Image();
+      im.onload = () => {
+        this.scanner.img = im;
+        this.resetScanTransform();
+      };
+      im.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  },
+
+  resetScanTransform() {
+    const sc = this.scanner;
+    sc.scale = 1;
+    sc.ox = 0;
+    sc.oy = 0;
+    const zEl = document.getElementById('pcScanZoom');
+    if (zEl) zEl.value = '100';
+    this.updateScanLabels();
+    this.renderScanCanvas(document.getElementById('pcScanCanvas'), false);
+  },
+
+  rotateScanImg() {
+    this.scanner.rot = (this.scanner.rot + 90) % 360;
+    this.scanner.ox = 0;
+    this.scanner.oy = 0;
+    this.renderScanCanvas(document.getElementById('pcScanCanvas'), false);
+  },
+
+  updateScanLabels() {
+    const sc = this.scanner;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('pcScanZoomVal', `${Math.round(sc.scale * 100)}%`);
+    set('pcScanDeglareVal', String(sc.deglare));
+    set('pcScanSharpenVal', String(sc.sharpen));
+    set('pcScanBrightVal', `${sc.bright}%`);
+    set('pcScanRadiusVal', `${sc.radiusPct}%`);
+  },
+
+  onScanSlider() {
+    const sc = this.scanner;
+    sc.scale = Number(document.getElementById('pcScanZoom')?.value || 100) / 100;
+    sc.deglare = Number(document.getElementById('pcScanDeglare')?.value || 0);
+    sc.sharpen = Number(document.getElementById('pcScanSharpen')?.value || 0);
+    sc.bright = Number(document.getElementById('pcScanBright')?.value || 100);
+    sc.radiusPct = Number(document.getElementById('pcScanRadius')?.value || 6);
+    this.updateScanLabels();
+    this.renderScanCanvas(document.getElementById('pcScanCanvas'), false);
+  },
+
+  bindScanCanvasDrag() {
+    const cv = document.getElementById('pcScanCanvas');
+    if (!cv || cv._boundDrag) return;
+    cv._boundDrag = true;
+    const sc = this.scanner;
+
+    cv.addEventListener('pointerdown', (e) => {
+      if (!sc.img) return;
+      sc.dragging = true;
+      sc.lastX = e.clientX;
+      sc.lastY = e.clientY;
+      cv.setPointerCapture?.(e.pointerId);
+    });
+    cv.addEventListener('pointermove', (e) => {
+      if (!sc.dragging || !sc.img) return;
+      const rect = cv.getBoundingClientRect();
+      const ratio = cv.width / Math.max(1, rect.width);
+      sc.ox += (e.clientX - sc.lastX) * ratio;
+      sc.oy += (e.clientY - sc.lastY) * ratio;
+      sc.lastX = e.clientX;
+      sc.lastY = e.clientY;
+      this.renderScanCanvas(cv, false);
+    });
+    const stop = () => { sc.dragging = false; };
+    cv.addEventListener('pointerup', stop);
+    cv.addEventListener('pointercancel', stop);
+  },
+
+  applyCardPixelEnhance(ctx, w, h, deglare, sharpen) {
+    if (deglare <= 0 && sharpen <= 0) return;
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+
+    // 1. 去反光與暗部通透 (Highlight roll-off + gentle dehaze)
+    if (deglare > 0) {
+      const k = deglare / 100;
+      const cBoost = 1 + k * 0.16;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] === 0) continue;
+        let r = d[i], g = d[i + 1], b = d[i + 2];
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const hiPull = lum > 160 ? k * 24 * Math.pow((lum - 160) / 95, 1.5) : 0;
+        const hazeCut = k * 8;
+        r = (r - 128) * cBoost + 128 - hiPull - hazeCut;
+        g = (g - 128) * cBoost + 128 - hiPull - hazeCut;
+        b = (b - 128) * cBoost + 128 - hiPull - hazeCut;
+        d[i] = r < 0 ? 0 : (r > 255 ? 255 : r);
+        d[i + 1] = g < 0 ? 0 : (g > 255 ? 255 : g);
+        d[i + 2] = b < 0 ? 0 : (b > 255 ? 255 : b);
+      }
+    }
+
+    // 2. 3×3 清晰銳化濾鏡
+    if (sharpen > 0) {
+      const src = new Uint8ClampedArray(d);
+      const s = (sharpen / 100) * 0.55;
+      const centerW = 1 + 4 * s;
+      const rowBytes = w * 4;
+      for (let y = 1; y < h - 1; y++) {
+        let idx = y * rowBytes + 4;
+        for (let x = 1; x < w - 1; x++, idx += 4) {
+          if (src[idx + 3] === 0) continue;
+          for (let c = 0; c < 3; c++) {
+            const p = idx + c;
+            const val = src[p] * centerW - s * (src[p - 4] + src[p + 4] + src[p - rowBytes] + src[p + rowBytes]);
+            d[p] = val < 0 ? 0 : (val > 255 ? 255 : val);
+          }
+        }
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+  },
+
+  renderScanCanvas(canvas, isExport = false) {
+    const sc = this.scanner;
+    if (!canvas || !sc.img) return;
+    const w = canvas.width, h = canvas.height;
+    const ctx = canvas.getContext('2d');
+    const scaleFactor = isExport ? (w / 330) : 1;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    this.pcRoundRectPath(ctx, 0, 0, w, h, w * (sc.radiusPct / 100));
+    ctx.clip();
+
+    ctx.fillStyle = '#111113';
+    ctx.fillRect(0, 0, w, h);
+
+    const rotRad = (sc.rot * Math.PI) / 180;
+    const isSwapped = sc.rot === 90 || sc.rot === 270;
+    const iw = isSwapped ? sc.img.height : sc.img.width;
+    const ih = isSwapped ? sc.img.width : sc.img.height;
+    const coverScale = Math.max(w / iw, h / ih) * sc.scale;
+
+    ctx.save();
+    ctx.filter = `brightness(${sc.bright}%) contrast(${sc.contrast}%)`;
+    ctx.translate(w / 2 + sc.ox * scaleFactor, h / 2 + sc.oy * scaleFactor);
+    ctx.rotate(rotRad);
+    ctx.scale(coverScale, coverScale);
+    ctx.drawImage(sc.img, -sc.img.width / 2, -sc.img.height / 2);
+    ctx.restore();
+
+    this.applyCardPixelEnhance(ctx, w, h, sc.deglare, sc.sharpen);
+    ctx.restore();
+  },
+
+  async saveScannedCard() {
+    const sc = this.scanner;
+    const s = this.getActiveSeries();
+    const slot = s?.slots.find(x => x.idx === sc.slotIdx);
+    if (!s || !slot || !sc.img) {
+      alert('請先選擇或拍攝實體小卡相片！');
+      return;
+    }
+
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = 550;
+    outCanvas.height = 850;
+    this.renderScanCanvas(outCanvas, true);
+
+    let dataUrl = outCanvas.toDataURL('image/webp', 0.88);
+    if (!dataUrl.startsWith('data:image/webp')) {
+      dataUrl = outCanvas.toDataURL('image/jpeg', 0.90);
+    }
+
+    if (sc.targetSide === 'back') {
+      slot.realBackImg = dataUrl;
+    } else {
+      slot.realImg = dataUrl;
+      if ((slot.qty || 0) === 0) {
+        slot.qty = 1;
+        slot.wish = false;
+        this.state.justUnlockedIdx = slot.idx;
+        if (typeof window.fireCheerConfetti === 'function') window.fireCheerConfetti();
+      }
+    }
+
+    await this.saveSeries(s);
+    this.closeCardScanner();
+    this.onSlotClick(slot.idx);
+    this.renderDex();
+    if (typeof window.triggerHaptic === 'function') window.triggerHaptic(16);
+    if (typeof window.showChekiToast === 'function') {
+      window.showChekiToast(sc.targetSide === 'back' ? '✍️ 已儲存小卡獨立背面！' : `✨ #${String(slot.idx).padStart(3, '0')} 真卡入庫點亮成功！`, 3200);
+    }
+  },
+
+  async clearSlotRealImg(slotIdx) {
+    const s = this.getActiveSeries();
+    const slot = s?.slots.find(x => x.idx === slotIdx);
+    if (!s || !slot || !confirm('確定移除此格實物真卡並恢復顯示預覽底圖嗎？')) return;
+    slot.realImg = '';
+    await this.saveSeries(s);
+    this.onSlotClick(slotIdx);
+    this.renderDex();
+  },
+
+  // -------------------------------------------------------------------------
+  // 3. 一鍵生成【譲／求】換卡圖
+  // -------------------------------------------------------------------------
+  openTradeSheetModal() {
+    this.ensurePart3UI();
+    const s = this.getActiveSeries();
+    if (!s) return;
+    this.tradeCfg.cols = s.slots.length >= 12 ? 6 : (s.groupCols || 3);
+    const hasWish = s.slots.some(x => x.wish);
+    this.tradeCfg.seekMode = hasWish ? 'wish' : 'missing';
+    this.updateTradeButtonsUI();
+    document.getElementById('pcTradeModal')?.classList.remove('hidden');
+    this.renderTradeSheetCanvas();
+  },
+
+  closeTradeSheetModal() {
+    document.getElementById('pcTradeModal')?.classList.add('hidden');
+  },
+
+  setTradeOption(k, v) {
+    this.tradeCfg[k] = v;
+    this.updateTradeButtonsUI();
+    this.renderTradeSheetCanvas();
+  },
+
+  onTradeNoteInput(v) {
+    this.tradeCfg.note = v;
+    clearTimeout(this._tradeTimer);
+    this._tradeTimer = setTimeout(() => this.renderTradeSheetCanvas(), 220);
+  },
+
+  updateTradeButtonsUI() {
+    const setBtn = (id, on) => {
+      const el = document.getElementById(id);
+      if (el) el.className = `py-1.5 rounded-xl border-2 border-cheki-dark font-black text-[11px] ${on ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-700'}`;
+    };
+    setBtn('pcTradeSeekMissing', this.tradeCfg.seekMode === 'missing');
+    setBtn('pcTradeSeekWish', this.tradeCfg.seekMode === 'wish');
+    setBtn('pcTradeCols3', this.tradeCfg.cols === 3);
+    setBtn('pcTradeCols6', this.tradeCfg.cols === 6);
+  },
+
+  async renderTradeSheetCanvas() {
+    const s = this.getActiveSeries();
+    const cv = document.getElementById('pcTradeCanvas');
+    if (!s || !cv) return;
+
+    const cols = this.tradeCfg.cols || 6;
+    const rows = Math.max(1, Math.ceil(s.slots.length / cols));
+    const W = 1080;
+    const pad = 34;
+    const gap = cols === 6 ? 14 : 24;
+    const headerH = 158;
+    const footerH = 66;
+    const cardW = Math.floor((W - pad * 2 - gap * (cols - 1)) / cols);
+    const cardH = Math.round(cardW * (85 / 55));
+    const H = headerH + rows * cardH + (rows - 1) * gap + footerH + pad;
+
+    cv.width = W;
+    cv.height = H;
+    const ctx = cv.getContext('2d');
+
+    // 背景
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, '#FFF7FB');
+    bg.addColorStop(1, '#EFF6FF');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // 標題卡
+    ctx.fillStyle = '#272228';
+    this.pcRoundRectPath(ctx, pad + 5, 29, W - pad * 2, 108, 24);
+    ctx.fill();
+    ctx.fillStyle = '#FFFFFF';
+    this.pcRoundRectPath(ctx, pad, 24, W - pad * 2, 108, 24);
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#272228';
+    ctx.stroke();
+
+    const giveCnt = s.slots.filter(x => x.qty > 1).length;
+    const seekCnt = s.slots.filter(x => this.tradeCfg.seekMode === 'wish' ? x.wish : x.qty === 0).length;
+
+    ctx.fillStyle = '#272228';
+    ctx.font = '900 32px "Zen Maru Gothic", sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`🃏 ${s.title}  換卡一覽`, pad + 26, 62);
+
+    ctx.fillStyle = '#52525B';
+    ctx.font = '700 20px "Zen Maru Gothic", sans-serif';
+    ctx.fillText(this.tradeCfg.note || '歡迎交換 ✨', pad + 26, 102);
+
+    // 右上圖例統計膠囊
+    const drawLegend = (label, bgCol, x) => {
+      ctx.fillStyle = bgCol;
+      this.pcRoundRectPath(ctx, x, 46, 152, 42, 21);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 20px "Zen Maru Gothic", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, x + 76, 68);
+      ctx.textAlign = 'left';
+    };
+    drawLegend(`🟢 譲 ${giveCnt}款`, '#10B981', W - pad - 332);
+    drawLegend(`🔴 求 ${seekCnt}款`, '#F43F5E', W - pad - 170);
+
+    // 載入全部卡圖
+    const imgs = await Promise.all(s.slots.map(sl => this.loadImgAsync(sl.realImg || sl.sampleImg)));
+
+    s.slots.forEach((sl, i) => {
+      const r = Math.floor(i / cols);
+      const c = i % cols;
+      const x = pad + c * (cardW + gap);
+      const y = headerH + r * (cardH + gap);
+      const isGive = sl.qty > 1;
+      const isSeek = this.tradeCfg.seekMode === 'wish' ? Boolean(sl.wish) : sl.qty === 0;
+      const rad = Math.round(cardW * 0.08);
+
+      ctx.save();
+      this.pcRoundRectPath(ctx, x, y, cardW, cardH, rad);
+      ctx.clip();
+
+      const im = imgs[i];
+      if (im) {
+        ctx.drawImage(im, x, y, cardW, cardH);
+      } else {
+        ctx.fillStyle = '#E4E4E7';
+        ctx.fillRect(x, y, cardW, cardH);
+      }
+
+      if (!isGive && !isSeek) {
+        ctx.fillStyle = 'rgba(255,255,255,0.52)';
+        ctx.fillRect(x, y, cardW, cardH);
+      } else {
+        ctx.fillStyle = isGive ? 'rgba(16,185,129,0.16)' : 'rgba(244,63,94,0.18)';
+        ctx.fillRect(x, y, cardW, cardH);
+      }
+
+      // 編號小標
+      ctx.fillStyle = 'rgba(24,24,27,0.78)';
+      ctx.fillRect(x, y, Math.max(46, Math.round(cardW * 0.34)), 26);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`#${sl.idx}`, x + Math.max(23, Math.round(cardW * 0.17)), y + 14);
+
+      // 顯眼【譲】或【求】印章
+      if (isGive || isSeek) {
+        const stampH = Math.max(36, Math.round(cardH * 0.22));
+        const stampY = y + cardH - stampH;
+        ctx.fillStyle = isGive ? 'rgba(5,150,105,0.92)' : 'rgba(225,29,72,0.92)';
+        ctx.fillRect(x, stampY, cardW, stampH);
+        ctx.fillStyle = '#FFFFFF';
+        const fontSize = cols === 6 ? 26 : 38;
+        ctx.font = `900 ${fontSize}px "Zen Maru Gothic", sans-serif`;
+        const extra = sl.qty - 1;
+        const txt = isGive ? (extra > 1 ? `譲 ×${extra}` : '譲') : '求';
+        ctx.fillText(txt, x + cardW / 2, stampY + stampH / 2 + 2);
+      } else if (sl.qty === 1) {
+        ctx.fillStyle = 'rgba(39,34,40,0.65)';
+        ctx.font = `900 ${cols === 6 ? 20 : 28}px sans-serif`;
+        ctx.fillText('済', x + cardW / 2, y + cardH - 22);
+      }
+      ctx.textAlign = 'left';
+      ctx.restore();
+
+      // 外框強調色
+      ctx.lineWidth = (isGive || isSeek) ? 6 : 2;
+      ctx.strokeStyle = isGive ? '#059669' : (isSeek ? '#E11D48' : '#CBD5E1');
+      this.pcRoundRectPath(ctx, x, y, cardW, cardH, rad);
+      ctx.stroke();
+    });
+
+    // 底部署名
+    const nick = (typeof userOshiProfile !== 'undefined' && userOshiProfile?.nickname) ? userOshiProfile.nickname : 'ChekiPocket Photocard Dex';
+    ctx.fillStyle = '#52525B';
+    ctx.font = '900 20px "Zen Maru Gothic", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`✨ ${nick}  ·  ${new Date().toISOString().slice(0, 10)} ✨`, W / 2, H - 30);
+    ctx.textAlign = 'left';
+  },
+
+  exportTradeSheet(shareMode = false) {
+    const s = this.getActiveSeries();
+    const cv = document.getElementById('pcTradeCanvas');
+    if (!s || !cv) return;
+    cv.toBlob(async (blob) => {
+      if (!blob) return;
+      const fname = `${s.title}_換卡一覽_${new Date().toISOString().slice(0, 10)}.png`;
+      if (shareMode && navigator.canShare) {
+        try {
+          const f = new File([blob], fname, { type: 'image/png' });
+          if (navigator.canShare({ files: [f] })) {
+            await navigator.share({ title: `${s.title} 換卡一覽`, files: [f] });
+            return;
+          }
+        } catch (_) {}
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fname;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 15000);
+      if (typeof window.showChekiToast === 'function') window.showChekiToast('🔁 【譲/求】換卡圖已下載！');
+    }, 'image/png');
+  },
+
+  // -------------------------------------------------------------------------
+  // 4. 小卡圖鑑本機備份 ＋ Google Drive 雲端同步連動
+  // -------------------------------------------------------------------------
+  openPcBackupModal() {
+    this.ensurePart3UI();
+    const totalSeries = this.state.seriesList.length;
+    const totalOwned = this.state.seriesList.reduce((acc, s) => acc + s.slots.filter(x => x.qty > 0).length, 0);
+    const totalReal = this.state.seriesList.reduce((acc, s) => acc + s.slots.filter(x => Boolean(x.realImg)).length, 0);
+    const lastCloud = localStorage.getItem('pc_last_cloud_sync');
+    const stEl = document.getElementById('pcBackupStatusText');
+    if (stEl) {
+      stEl.textContent = `目前共 ${totalSeries} 套圖鑑（已點亮 ${totalOwned} 張 · 掃描真卡 ${totalReal} 張）` +
+        (lastCloud ? ` · 上次雲端同步：${lastCloud.replace('T', ' ').slice(0, 16)}` : '');
+    }
+    document.getElementById('pcBackupModal')?.classList.remove('hidden');
+  },
+
+  exportPhotocardJson() {
+    const payload = { type: 'ChekiPocket_PhotocardDex', version: 1, exportedAt: new Date().toISOString(), seriesList: this.state.seriesList };
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `PhotocardDex_Backup_${this.state.seriesList.length}series_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+    if (typeof window.showChekiToast === 'function') window.showChekiToast('📥 小卡圖鑑備份檔已下載！');
+  },
+
+  importPhotocardJson(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        const list = Array.isArray(parsed.seriesList) ? parsed.seriesList : [];
+        if (list.length === 0) throw new Error('檔案中找不到小卡圖鑑資料');
+        for (const s of list) {
+          if (s && s.id && Array.isArray(s.slots)) await this.saveSeries(s);
+        }
+        await this.loadSeriesList();
+        this.renderDex();
+        document.getElementById('pcBackupModal')?.classList.add('hidden');
+        alert(`✅ 成功還原 ${list.length} 套小卡圖鑑！`);
+      } catch (err) {
+        alert('❌ 匯入失敗：' + (err.message || err));
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  },
+
+  async syncPhotocardsToDrive() {
+    if (typeof ensureGoogleDriveToken !== 'function' || typeof findOrCreateBackupFolder !== 'function') {
+      alert('請先確認主程式的 Google Drive 雲端同步模組已載入並設定 Client ID！');
+      return;
+    }
+    try {
+      await ensureGoogleDriveToken(false);
+      if (typeof window.showChekiToast === 'function') window.showChekiToast('☁️ 正在上傳小卡圖鑑至 Google Drive...', 3000);
+      const folderId = await findOrCreateBackupFolder(true);
+      const remoteFiles = await listAllBackupFilesInFolder(folderId);
+
+      for (const s of this.state.seriesList) {
+        const fname = `pc_series_${s.id}.json`;
+        const existing = remoteFiles.find(f => f.name === fname);
+        const blob = new Blob([JSON.stringify(s)], { type: 'application/json;charset=utf-8' });
+        await gdriveUploadMultipart({
+          fileId: existing ? existing.id : null,
+          name: fname,
+          folderId,
+          contentBlob: blob,
+          mimeType: 'application/json'
+        });
+      }
+      localStorage.setItem('pc_last_cloud_sync', new Date().toISOString());
+      this.openPcBackupModal();
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast(`☁️ 已成功同步 ${this.state.seriesList.length} 套小卡圖鑑至 Google Drive！`, 3600);
+      }
+    } catch (err) {
+      alert('❌ 雲端同步失敗：' + (err.message || err));
+    }
+  },
+
+  async restorePhotocardsFromDrive() {
+    if (typeof ensureGoogleDriveToken !== 'function' || typeof findOrCreateBackupFolder !== 'function') {
+      alert('請先確認主程式的 Google Drive 雲端同步模組已載入！');
+      return;
+    }
+    try {
+      const token = await ensureGoogleDriveToken(false);
+      const folderId = await findOrCreateBackupFolder(false);
+      if (!folderId) throw new Error('Google Drive 中找不到備份資料夾');
+
+      const remoteFiles = await listAllBackupFilesInFolder(folderId);
+      const pcFiles = remoteFiles.filter(f => f.name.startsWith('pc_series_') && f.name.endsWith('.json'));
+      if (pcFiles.length === 0) throw new Error('雲端尚未有小卡圖鑑備份檔');
+
+      let count = 0;
+      for (const f of pcFiles) {
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(f.id)}?alt=media`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const seriesObj = await res.json();
+          if (seriesObj && seriesObj.id && Array.isArray(seriesObj.slots)) {
+            await this.saveSeries(seriesObj);
+            count++;
+          }
+        }
+      }
+      await this.loadSeriesList();
+      this.renderDex();
+      document.getElementById('pcBackupModal')?.classList.add('hidden');
+      alert(`✅ 成功從 Google Drive 還原 ${count} 套小卡圖鑑！`);
+    } catch (err) {
+      alert('❌ 雲端還原失敗：' + (err.message || err));
+    }
+  }
+});
+
+if (PCApp.state.mode === 'pc') PCApp.renderDex();
