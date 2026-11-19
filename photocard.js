@@ -3848,3 +3848,659 @@ if (PCApp.state.mode === 'pc') PCApp.renderDex();
 
   if (PCApp.state.mode === 'pc') PCApp.renderDex();
 })();
+// ============================================================================
+// [第 7 段]：小卡下載中心（單張高清 PNG ＋ 雙面合圖 ＋ 圖鑑收藏海報 ＋ 一鍵 ZIP 打包）
+// ============================================================================
+(function applyPhotocardPart7DownloadEngine() {
+  if (!window.PCApp) return;
+
+  const _origEnsurePart3 = PCApp.ensurePart3UI.bind(PCApp);
+  const _origRenderP2Bar = PCApp.onAfterRenderPart2Toolbar.bind(PCApp);
+  const _origOpenSlotP2 = PCApp.onAfterOpenSlotPart2.bind(PCApp);
+
+  // 標準 CRC-32 表（供純前端免依賴 ZIP 打包使用）
+  const CRC32_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  function calcCrc32(u8) {
+    let crc = 0xFFFFFFFF;
+    for (let i = 0; i < u8.length; i++) crc = CRC32_TABLE[(crc ^ u8[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  // 純前端標準 ZIP 生成器（STORE 無損打包 + UTF-8 檔名支援中文／日文）
+  function buildZipBlob(entries) {
+    const encoder = new TextEncoder();
+    const now = new Date();
+    const dosTime = ((now.getHours() & 0x1F) << 11) | ((now.getMinutes() & 0x3F) << 5) | ((now.getSeconds() >> 1) & 0x1F);
+    const dosDate = (((Math.max(1980, now.getFullYear()) - 1980) & 0x7F) << 9) | (((now.getMonth() + 1) & 0x0F) << 5) | (now.getDate() & 0x1F);
+
+    const localParts = [];
+    const centralParts = [];
+    let offset = 0;
+
+    entries.forEach(({ name, bytes }) => {
+      const nameBytes = encoder.encode(name);
+      const crc = calcCrc32(bytes);
+      const size = bytes.length;
+
+      const lh = new Uint8Array(30 + nameBytes.length);
+      const ldv = new DataView(lh.buffer);
+      ldv.setUint32(0, 0x04034b50, true);
+      ldv.setUint16(4, 20, true);
+      ldv.setUint16(6, 0x0800, true);
+      ldv.setUint16(8, 0, true);
+      ldv.setUint16(10, dosTime, true);
+      ldv.setUint16(12, dosDate, true);
+      ldv.setUint32(14, crc, true);
+      ldv.setUint32(18, size, true);
+      ldv.setUint32(22, size, true);
+      ldv.setUint16(26, nameBytes.length, true);
+      ldv.setUint16(28, 0, true);
+      lh.set(nameBytes, 30);
+
+      localParts.push(lh, bytes);
+
+      const ch = new Uint8Array(46 + nameBytes.length);
+      const cdv = new DataView(ch.buffer);
+      cdv.setUint32(0, 0x02014b50, true);
+      cdv.setUint16(4, 20, true);
+      cdv.setUint16(6, 20, true);
+      cdv.setUint16(8, 0x0800, true);
+      cdv.setUint16(10, 0, true);
+      cdv.setUint16(12, dosTime, true);
+      cdv.setUint16(14, dosDate, true);
+      cdv.setUint32(16, crc, true);
+      cdv.setUint32(20, size, true);
+      cdv.setUint32(24, size, true);
+      cdv.setUint16(28, nameBytes.length, true);
+      cdv.setUint16(30, 0, true);
+      cdv.setUint16(32, 0, true);
+      cdv.setUint16(34, 0, true);
+      cdv.setUint16(36, 0, true);
+      cdv.setUint32(38, 0, true);
+      cdv.setUint32(42, offset, true);
+      ch.set(nameBytes, 46);
+
+      centralParts.push(ch);
+      offset += lh.length + size;
+    });
+
+    const cdOffset = offset;
+    const cdSize = centralParts.reduce((s, p) => s + p.length, 0);
+
+    const eocd = new Uint8Array(22);
+    const edv = new DataView(eocd.buffer);
+    edv.setUint32(0, 0x06054b50, true);
+    edv.setUint16(4, 0, true);
+    edv.setUint16(6, 0, true);
+    edv.setUint16(8, entries.length, true);
+    edv.setUint16(10, entries.length, true);
+    edv.setUint32(12, cdSize, true);
+    edv.setUint32(16, cdOffset, true);
+    edv.setUint16(20, 0, true);
+
+    return new Blob([...localParts, ...centralParts, eocd], { type: 'application/zip' });
+  }
+
+  Object.assign(PCApp, {
+    posterCfg: {
+      cols: 6,
+      dimMissing: true
+    },
+
+    safeFileName(str) {
+      return String(str || 'Photocard').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 48);
+    },
+
+    triggerBlobDownload(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        a.remove();
+        URL.revokeObjectURL(url);
+      }, 20000);
+    },
+
+    async dataUrlToPngBlob(dataUrl) {
+      const im = await this.loadImgAsync(dataUrl);
+      if (!im) return null;
+      const c = document.createElement('canvas');
+      c.width = im.width;
+      c.height = im.height;
+      c.getContext('2d').drawImage(im, 0, 0);
+      return new Promise(res => c.toBlob(res, 'image/png'));
+    },
+
+    // -----------------------------------------------------------------------
+    // 1. 掛載下載中心彈窗與掃描器快捷下載掣
+    // -----------------------------------------------------------------------
+    ensurePart3UI() {
+      _origEnsurePart3();
+
+      // 在掃描器最底儲存掣下方，加入「⬇️ 僅下載目前裁切圖至手機相簿」
+      const saveBtn = document.getElementById('pcScanSaveSubmitBtn');
+      if (saveBtn && !document.getElementById('pcScanDirectDownloadBtn')) {
+        const dlBtn = document.createElement('button');
+        dlBtn.type = 'button';
+        dlBtn.id = 'pcScanDirectDownloadBtn';
+        dlBtn.onclick = () => this.downloadCurrentScannerPreview();
+        dlBtn.className = 'w-full py-2 rounded-2xl bg-sky-100 border-2 border-cheki-dark text-blue-950 font-black text-xs active:scale-95';
+        dlBtn.textContent = '⬇️ 直接下載目前裁切圖至手機相簿 (.png)';
+        saveBtn.insertAdjacentElement('afterend', dlBtn);
+      }
+
+      if (document.getElementById('pcDownloadCenterModal')) return;
+      const wrap = document.createElement('div');
+      wrap.innerHTML = `
+        <div id="pcDownloadCenterModal" class="hidden fixed inset-0 z-[138] bg-black/85 flex items-center justify-center p-2.5 overflow-y-auto">
+          <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-3.5 space-y-3 text-zinc-900 max-h-[93vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+              <div>
+                <h3 class="font-black text-base leading-tight">⬇️ 小卡圖鑑下載中心</h3>
+                <p class="text-[10px] font-bold text-zinc-500">匯出高清圖鑑收藏海報，或一鍵 ZIP 打包全部小卡圖檔</p>
+              </div>
+              <button type="button" onclick="PCApp.closeDownloadCenter()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm shrink-0">✕</button>
+            </div>
+
+            <!-- 區塊 A：高清收藏海報預覽與下載 -->
+            <div class="rounded-2xl border-2 border-cheki-dark bg-white p-2.5 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="font-black text-xs">🏆 整套圖鑑收藏海報 (.png)</span>
+                <div class="flex items-center gap-1">
+                  <button type="button" id="pcPosterCols3" onclick="PCApp.setPosterOption('cols',3)" class="px-2 py-0.5 rounded-lg border border-cheki-dark text-[10px] font-black">3 欄</button>
+                  <button type="button" id="pcPosterCols6" onclick="PCApp.setPosterOption('cols',6)" class="px-2 py-0.5 rounded-lg border border-cheki-dark text-[10px] font-black">6 欄</button>
+                </div>
+              </div>
+
+              <div class="bg-zinc-900 rounded-xl p-1.5 border border-zinc-700 flex justify-center">
+                <canvas id="pcShowcasePosterCanvas" class="max-h-[36vh] max-w-full w-auto h-auto object-contain rounded-lg shadow"></canvas>
+              </div>
+
+              <label class="flex items-center gap-2 text-[11px] font-bold text-zinc-700 cursor-pointer">
+                <input id="pcPosterDimMissingCb" type="checkbox" checked onchange="PCApp.setPosterOption('dimMissing', this.checked)" class="w-4 h-4 accent-indigo-600 rounded">
+                <span>未點亮小卡顯示為灰階鎖定狀態（取消則全彩顯示）</span>
+              </label>
+
+              <div class="grid grid-cols-2 gap-1.5">
+                <button type="button" onclick="PCApp.exportShowcasePoster(false)" class="py-2 rounded-xl bg-cheki-accent text-white neo-btn font-black text-xs active:scale-95">⬇️ 下載圖鑑海報</button>
+                <button type="button" onclick="PCApp.exportShowcasePoster(true)" class="py-2 rounded-xl bg-sky-300 text-zinc-950 neo-btn font-black text-xs active:scale-95">📤 分享至 X / IG</button>
+              </div>
+            </div>
+
+            <!-- 區塊 B：批次 ZIP 打包下載 -->
+            <div class="rounded-2xl border-2 border-cheki-dark bg-amber-50/80 p-3 space-y-2">
+              <div>
+                <span class="font-black text-xs block">📦 批次打包下載小卡原圖 (.zip)</span>
+                <p id="pcZipCountHint" class="text-[10px] font-bold text-zinc-600 mt-0.5"></p>
+              </div>
+              <div class="grid grid-cols-1 gap-1.5">
+                <button type="button" id="pcZipRealBtn" onclick="PCApp.downloadSeriesZip(false)" class="w-full py-2.5 rounded-xl bg-emerald-400 text-zinc-950 neo-btn font-black text-xs active:scale-95">
+                  📦 打包下載「全部已掃描高清真卡」(.zip)
+                </button>
+                <button type="button" id="pcZipAllBtn" onclick="PCApp.downloadSeriesZip(true)" class="w-full py-2 rounded-xl bg-white border-2 border-cheki-dark text-zinc-800 font-black text-[11px] active:scale-95">
+                  🗂️ 打包下載「全套圖鑑（真卡優先＋預覽切圖＋卡背）」(.zip)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(wrap);
+    },
+
+    onAfterRenderPart2Toolbar(s) {
+      _origRenderP2Bar(s);
+      const ext = document.getElementById('pcToolbarExtPart3');
+      if (!ext || document.getElementById('pcOpenDownloadCenterBtn')) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.id = 'pcOpenDownloadCenterBtn';
+      btn.onclick = () => this.openDownloadCenter();
+      btn.className = 'px-2.5 py-1.5 rounded-xl bg-indigo-200 hover:bg-indigo-300 neo-btn font-black text-[11px] text-zinc-900';
+      btn.textContent = '⬇️ 下載圖鑑/原圖';
+      ext.insertBefore(btn, ext.firstElementChild);
+    },
+
+    // -----------------------------------------------------------------------
+    // 2. 單張小卡大圖視窗：注入「⬇️ 下載正面 / 🖼️ 雙面展示卡 / ⬇️ 背面」按鈕
+    // -----------------------------------------------------------------------
+    onAfterOpenSlotPart2(s, slot) {
+      _origOpenSlotP2(s, slot);
+      const actions = document.getElementById('pcSlotScannerActions');
+      const frontSrc = slot.realImg || slot.sampleImg;
+      const backSrc = slot.realBackImg || s.backImage;
+      if (!actions || !frontSrc || document.getElementById('pcSlotDownloadRow')) return;
+
+      const dlBox = document.createElement('div');
+      dlBox.id = 'pcSlotDownloadRow';
+      dlBox.className = 'pt-1.5 mt-1.5 border-t border-zinc-200 grid gap-1.5 ' + (backSrc ? 'grid-cols-3' : 'grid-cols-2');
+      dlBox.innerHTML = `
+        <button type="button" onclick="PCApp.downloadSingleSlotImage(${slot.idx}, 'front')" class="py-2 px-1.5 rounded-xl bg-sky-100 hover:bg-sky-200 border-2 border-cheki-dark font-black text-[11px] text-blue-950 active:scale-95">
+          ⬇️ ${slot.realImg ? '下載真卡' : '下載底圖'}
+        </button>
+        ${backSrc ? `
+          <button type="button" onclick="PCApp.downloadSingleSlotImage(${slot.idx}, 'back')" class="py-2 px-1.5 rounded-xl bg-white hover:bg-zinc-100 border-2 border-cheki-dark font-black text-[11px] text-zinc-800 active:scale-95">
+            ⬇️ 下載背面
+          </button>
+        ` : ''}
+        <button type="button" onclick="PCApp.downloadSlotShowcaseCard(${slot.idx})" class="py-2 px-1.5 rounded-xl bg-pink-100 hover:bg-pink-200 border-2 border-cheki-dark font-black text-[11px] text-pink-950 active:scale-95">
+          🖼️ ${backSrc ? '雙面紀念卡' : '收藏展示卡'}
+        </button>
+      `;
+      actions.appendChild(dlBox);
+    },
+
+    // 下載單張高清正面或背面 (.png，保留平滑透明圓角)
+    async downloadSingleSlotImage(slotIdx, side = 'front') {
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === slotIdx);
+      if (!s || !slot) return;
+      const src = side === 'back' ? (slot.realBackImg || s.backImage) : (slot.realImg || slot.sampleImg);
+      if (!src) {
+        alert('此面尚未有圖片可下載！');
+        return;
+      }
+      const blob = await this.dataUrlToPngBlob(src);
+      if (!blob) return;
+      const num = String(slot.idx).padStart(3, '0');
+      const suffix = side === 'back' ? 'back' : (slot.realImg ? 'real' : 'sample');
+      const fname = `${this.safeFileName(s.title)}_#${num}_${this.safeFileName(slot.member)}_${slot.variant}_${suffix}.png`;
+      this.triggerBlobDownload(blob, fname);
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(10);
+      if (typeof window.showChekiToast === 'function') window.showChekiToast(`⬇️ 已下載 #${num} ${slot.member} 高清圖！`);
+    },
+
+    // 匯出單張「正＋背」雙面紀念展示卡 (.png)
+    async downloadSlotShowcaseCard(slotIdx) {
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === slotIdx);
+      if (!s || !slot) return;
+      const frontImg = await this.loadImgAsync(slot.realImg || slot.sampleImg);
+      const backImg = await this.loadImgAsync(slot.realBackImg || s.backImage);
+      if (!frontImg) return;
+
+      const spec = typeof this.getSeriesRatioSpec === 'function' ? this.getSeriesRatioSpec(s) : { w: 630, h: 880 };
+      const cardW = 420;
+      const cardH = Math.round(cardW * (spec.h / spec.w));
+      const pad = 44;
+      const gap = 30;
+      const hasBack = Boolean(backImg);
+      const W = hasBack ? (pad * 2 + cardW * 2 + gap) : (pad * 2 + cardW + 80);
+      const H = 128 + cardH + 92;
+
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+
+      const bg = ctx.createLinearGradient(0, 0, W, H);
+      bg.addColorStop(0, '#FDF2F8');
+      bg.addColorStop(0.5, '#FFFFFF');
+      bg.addColorStop(1, '#EFF6FF');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      const numStr = '#' + String(slot.idx).padStart(3, '0');
+      const rarityMap = { N: 'NORMAL', HOLO: '🌈 HOLO', SIGN: '✍️ SIGNED' };
+
+      ctx.fillStyle = '#272228';
+      ctx.font = '900 32px "Zen Maru Gothic", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${slot.member}  ·  ${numStr} (${slot.variant})`, W / 2, 50);
+
+      ctx.fillStyle = '#6366F1';
+      ctx.font = '800 20px "Zen Maru Gothic", sans-serif';
+      ctx.fillText(`🃏 ${s.title}  |  ${rarityMap[slot.rarity] || 'NORMAL'}`, W / 2, 92);
+
+      const drawFramedCard = (im, x, y, label) => {
+        const rad = Math.round(cardW * 0.06);
+        ctx.save();
+        ctx.shadowColor = 'rgba(24, 24, 27, 0.24)';
+        ctx.shadowBlur = 22;
+        ctx.shadowOffsetY = 10;
+        ctx.fillStyle = '#18181B';
+        this.pcRoundRectPath(ctx, x, y, cardW, cardH, rad);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        this.pcRoundRectPath(ctx, x, y, cardW, cardH, rad);
+        ctx.clip();
+        ctx.drawImage(im, x, y, cardW, cardH);
+        ctx.restore();
+
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = slot.rarity === 'SIGN' ? '#F59E0B' : (slot.rarity === 'HOLO' ? '#EC4899' : '#272228');
+        this.pcRoundRectPath(ctx, x, y, cardW, cardH, rad);
+        ctx.stroke();
+
+        ctx.fillStyle = '#52525B';
+        ctx.font = '900 18px "Zen Maru Gothic", sans-serif';
+        ctx.fillText(label, x + cardW / 2, y + cardH + 34);
+      };
+
+      const startY = 128;
+      if (hasBack) {
+        drawFramedCard(frontImg, pad, startY, 'FRONT 正面');
+        drawFramedCard(backImg, pad + cardW + gap, startY, 'BACK 背面');
+      } else {
+        drawFramedCard(frontImg, (W - cardW) / 2, startY, slot.realImg ? '✨ 實物高清真卡' : 'PREVIEW');
+      }
+
+      ctx.fillStyle = '#A1A1AA';
+      ctx.font = '700 16px sans-serif';
+      ctx.fillText(`ChekiPocket Photocard Dex · ${new Date().toISOString().slice(0, 10)}`, W / 2, H - 22);
+
+      cv.toBlob((blob) => {
+        if (!blob) return;
+        const fname = `${this.safeFileName(s.title)}_${numStr}_${this.safeFileName(slot.member)}_紀念卡.png`;
+        this.triggerBlobDownload(blob, fname);
+        if (typeof window.showChekiToast === 'function') window.showChekiToast('🖼️ 紀念展示卡已下載！');
+      }, 'image/png');
+    },
+
+    // 在掃描器內直接下載目前拉直／裁切好嘅真卡
+    async downloadCurrentScannerPreview() {
+      const sc = this.scanner;
+      const s = this.getActiveSeries();
+      if (!sc.img) {
+        alert('請先拍攝或選取實體小卡相片！');
+        return;
+      }
+      const spec = (this.CARD_RATIOS && this.CARD_RATIOS[sc.ratioKey || '63x88']) || { w: 630, h: 880 };
+      const origHi = sc.hiResImg;
+      const origScale = sc.scale, origOx = sc.ox, origOy = sc.oy, origRot = sc.rot, origFine = sc.fineRot;
+
+      if (sc.cropMode === 'quad' && sc.rawHiResImg && typeof this.warpQuadToCanvas === 'function') {
+        sc.hiResImg = this.warpQuadToCanvas(sc.rawHiResImg, sc.quadPts, spec.w, spec.h);
+        sc.scale = 1; sc.ox = 0; sc.oy = 0; sc.rot = 0; sc.fineRot = 0;
+      }
+
+      const out = document.createElement('canvas');
+      out.width = spec.w; out.height = spec.h;
+      this.renderScanCanvasFast(out, true, true);
+
+      // 恢復掃描器狀態，不影響用戶繼續微調
+      sc.hiResImg = origHi;
+      sc.scale = origScale; sc.ox = origOx; sc.oy = origOy; sc.rot = origRot; sc.fineRot = origFine;
+
+      out.toBlob((blob) => {
+        if (!blob) return;
+        const slot = s?.slots.find(x => x.idx === sc.slotIdx);
+        const tag = slot ? `#${String(slot.idx).padStart(3, '0')}_${this.safeFileName(slot.member)}` : 'Card';
+        this.triggerBlobDownload(blob, `Photocard_${tag}_${Date.now().toString().slice(-4)}.png`);
+        if (typeof window.showChekiToast === 'function') window.showChekiToast('⬇️ 已將高清拉直小卡下載至手機！');
+      }, 'image/png');
+    },
+
+    // -----------------------------------------------------------------------
+    // 3. 下載中心：高清圖鑑收藏海報 ＋ 一鍵 ZIP 打包全套小卡
+    // -----------------------------------------------------------------------
+    openDownloadCenter() {
+      this.ensurePart3UI();
+      const s = this.getActiveSeries();
+      if (!s) return;
+      this.posterCfg.cols = s.slots.length >= 12 ? 6 : (s.groupCols || 3);
+      const realCnt = s.slots.filter(x => Boolean(x.realImg)).length;
+      const anyCnt = s.slots.filter(x => Boolean(x.realImg || x.sampleImg)).length;
+      const hint = document.getElementById('pcZipCountHint');
+      if (hint) {
+        hint.textContent = `目前系列共 ${s.slots.length} 格：已有 ${realCnt} 張高清真卡、${anyCnt} 張可匯出圖檔${s.backImage ? '（含共用卡背）' : ''}`;
+      }
+      this.updatePosterButtonsUI();
+      document.getElementById('pcDownloadCenterModal')?.classList.remove('hidden');
+      this.renderDexShowcasePoster();
+    },
+
+    closeDownloadCenter() {
+      document.getElementById('pcDownloadCenterModal')?.classList.add('hidden');
+    },
+
+    setPosterOption(k, v) {
+      this.posterCfg[k] = v;
+      this.updatePosterButtonsUI();
+      this.renderDexShowcasePoster();
+    },
+
+    updatePosterButtonsUI() {
+      const setBtn = (id, on) => {
+        const el = document.getElementById(id);
+        if (el) el.className = `px-2 py-0.5 rounded-lg border border-cheki-dark text-[10px] font-black ${on ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-700'}`;
+      };
+      setBtn('pcPosterCols3', this.posterCfg.cols === 3);
+      setBtn('pcPosterCols6', this.posterCfg.cols === 6);
+    },
+
+    async renderDexShowcasePoster() {
+      const s = this.getActiveSeries();
+      const cv = document.getElementById('pcShowcasePosterCanvas');
+      if (!s || !cv) return;
+
+      const spec = typeof this.getSeriesRatioSpec === 'function' ? this.getSeriesRatioSpec(s) : { w: 630, h: 880 };
+      const cols = this.posterCfg.cols || 6;
+      const rows = Math.max(1, Math.ceil(s.slots.length / cols));
+      const W = 1080;
+      const pad = 34;
+      const gap = cols === 6 ? 14 : 24;
+      const headerH = 166;
+      const footerH = 62;
+      const cardW = Math.floor((W - pad * 2 - gap * (cols - 1)) / cols);
+      const cardH = Math.round(cardW * (spec.h / spec.w));
+      const H = headerH + rows * cardH + (rows - 1) * gap + footerH + pad;
+
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+
+      const bg = ctx.createLinearGradient(0, 0, W, H);
+      bg.addColorStop(0, '#FFF7FB');
+      bg.addColorStop(0.5, '#F5F3FF');
+      bg.addColorStop(1, '#EFF6FF');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      // 頂部標題與進度條卡片
+      ctx.fillStyle = '#272228';
+      this.pcRoundRectPath(ctx, pad + 5, 29, W - pad * 2, 114, 24);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      this.pcRoundRectPath(ctx, pad, 24, W - pad * 2, 114, 24);
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#272228';
+      ctx.stroke();
+
+      const owned = s.slots.filter(x => x.qty > 0).length;
+      const realCnt = s.slots.filter(x => Boolean(x.realImg)).length;
+      const pct = Math.round((owned / Math.max(1, s.slots.length)) * 100);
+
+      ctx.fillStyle = '#272228';
+      ctx.font = '900 32px "Zen Maru Gothic", sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`🃏 ${s.title}`, pad + 24, 58);
+
+      ctx.fillStyle = '#6366F1';
+      ctx.font = '900 21px "Zen Maru Gothic", sans-serif';
+      ctx.fillText(`✨ 已收集 ${owned}/${s.slots.length} (${pct}%)  ·  📸 高清真卡 ${realCnt} 張`, pad + 24, 102);
+
+      // 右側進度膠囊
+      const barW = 240, barH = 22, barX = W - pad - barW - 24, barY = 72;
+      ctx.fillStyle = '#E4E4E7';
+      this.pcRoundRectPath(ctx, barX, barY, barW, barH, 11);
+      ctx.fill();
+      if (pct > 0) {
+        const gBar = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+        gBar.addColorStop(0, '#6366F1');
+        gBar.addColorStop(0.5, '#EC4899');
+        gBar.addColorStop(1, '#F59E0B');
+        ctx.fillStyle = gBar;
+        this.pcRoundRectPath(ctx, barX, barY, Math.max(22, Math.round(barW * pct / 100)), barH, 11);
+        ctx.fill();
+      }
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#272228';
+      this.pcRoundRectPath(ctx, barX, barY, barW, barH, 11);
+      ctx.stroke();
+
+      const imgs = await Promise.all(s.slots.map(sl => this.loadImgAsync(sl.realImg || sl.sampleImg)));
+
+      s.slots.forEach((sl, i) => {
+        const r = Math.floor(i / cols);
+        const c = i % cols;
+        const x = pad + c * (cardW + gap);
+        const y = headerH + r * (cardH + gap);
+        const unlocked = sl.qty > 0;
+        const rad = Math.round(cardW * 0.065);
+
+        ctx.save();
+        this.pcRoundRectPath(ctx, x, y, cardW, cardH, rad);
+        ctx.clip();
+
+        const im = imgs[i];
+        if (im) {
+          if (!unlocked && this.posterCfg.dimMissing) {
+            ctx.filter = 'grayscale(100%) brightness(58%) contrast(82%)';
+          }
+          ctx.drawImage(im, x, y, cardW, cardH);
+          ctx.filter = 'none';
+        } else {
+          ctx.fillStyle = '#E4E4E7';
+          ctx.fillRect(x, y, cardW, cardH);
+        }
+
+        // 左上編號
+        ctx.fillStyle = 'rgba(24,24,27,0.78)';
+        ctx.fillRect(x, y, Math.max(48, Math.round(cardW * 0.34)), 25);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '900 14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`#${sl.idx}`, x + Math.max(24, Math.round(cardW * 0.17)), y + 13);
+
+        // 右上複數數量
+        if (sl.qty > 1) {
+          ctx.fillStyle = '#FCD34D';
+          this.pcRoundRectPath(ctx, x + cardW - 44, y + 4, 40, 22, 11);
+          ctx.fill();
+          ctx.fillStyle = '#18181B';
+          ctx.font = '900 13px sans-serif';
+          ctx.fillText(`×${sl.qty}`, x + cardW - 24, y + 15);
+        }
+
+        if (!unlocked && this.posterCfg.dimMissing) {
+          ctx.font = `${cols === 6 ? 26 : 38}px sans-serif`;
+          ctx.fillText('🔒', x + cardW / 2, y + cardH / 2);
+        }
+        ctx.textAlign = 'left';
+        ctx.restore();
+
+        // 外框（親簽金／全息粉／普通黑）
+        ctx.lineWidth = unlocked ? 4 : 2;
+        ctx.strokeStyle = unlocked
+          ? (sl.rarity === 'SIGN' ? '#F59E0B' : (sl.rarity === 'HOLO' ? '#EC4899' : '#272228'))
+          : '#CBD5E1';
+        this.pcRoundRectPath(ctx, x, y, cardW, cardH, rad);
+        ctx.stroke();
+      });
+
+      const nick = (typeof userOshiProfile !== 'undefined' && userOshiProfile?.nickname) ? userOshiProfile.nickname : 'ChekiPocket Photocard Dex';
+      ctx.fillStyle = '#52525B';
+      ctx.font = '900 20px "Zen Maru Gothic", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`✨ ${nick} 收藏圖鑑 · ${new Date().toISOString().slice(0, 10)} ✨`, W / 2, H - 28);
+      ctx.textAlign = 'left';
+    },
+
+    exportShowcasePoster(shareMode = false) {
+      const s = this.getActiveSeries();
+      const cv = document.getElementById('pcShowcasePosterCanvas');
+      if (!s || !cv) return;
+      cv.toBlob(async (blob) => {
+        if (!blob) return;
+        const fname = `${this.safeFileName(s.title)}_圖鑑收藏海報_${new Date().toISOString().slice(0, 10)}.png`;
+        if (shareMode && navigator.canShare) {
+          try {
+            const f = new File([blob], fname, { type: 'image/png' });
+            if (navigator.canShare({ files: [f] })) {
+              await navigator.share({ title: `${s.title} 收藏圖鑑`, files: [f] });
+              return;
+            }
+          } catch (_) {}
+        }
+        this.triggerBlobDownload(blob, fname);
+        if (typeof window.showChekiToast === 'function') window.showChekiToast('🏆 圖鑑收藏海報已下載！');
+      }, 'image/png');
+    },
+
+    async downloadSeriesZip(includeSamples = false) {
+      const s = this.getActiveSeries();
+      if (!s) return;
+
+      const btn = document.getElementById(includeSamples ? 'pcZipAllBtn' : 'pcZipRealBtn');
+      const oldText = btn?.textContent;
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ 正在打包高清圖檔...'; }
+
+      try {
+        const entries = [];
+        for (const sl of s.slots) {
+          const src = includeSamples ? (sl.realImg || sl.sampleImg) : sl.realImg;
+          const num = String(sl.idx).padStart(3, '0');
+          const mName = this.safeFileName(sl.member);
+
+          if (src) {
+            const blob = await this.dataUrlToPngBlob(src);
+            if (blob) {
+              const bytes = new Uint8Array(await blob.arrayBuffer());
+              const tag = sl.realImg ? 'real' : 'sample';
+              entries.push({ name: `${num}_${mName}_${sl.variant}_${tag}.png`, bytes });
+            }
+          }
+          if (sl.realBackImg) {
+            const bBlob = await this.dataUrlToPngBlob(sl.realBackImg);
+            if (bBlob) {
+              const bBytes = new Uint8Array(await bBlob.arrayBuffer());
+              entries.push({ name: `${num}_${mName}_${sl.variant}_back.png`, bytes: bBytes });
+            }
+          }
+        }
+
+        if (includeSamples && s.backImage) {
+          const sbBlob = await this.dataUrlToPngBlob(s.backImage);
+          if (sbBlob) {
+            entries.push({ name: `000_共用卡背.png`, bytes: new Uint8Array(await sbBlob.arrayBuffer()) });
+          }
+        }
+
+        if (entries.length === 0) {
+          alert(includeSamples ? '此系列尚未有任何小卡圖片可打包！' : '此系列尚未掃描任何高清實物真卡！如想下載預覽切圖，請按下方「全套圖鑑」打包掣。');
+          return;
+        }
+
+        const zipBlob = buildZipBlob(entries);
+        const fname = `${this.safeFileName(s.title)}_${includeSamples ? '全套圖檔' : '高清真卡'}_${entries.length}張.zip`;
+        this.triggerBlobDownload(zipBlob, fname);
+        if (typeof window.triggerHaptic === 'function') window.triggerHaptic(15);
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast(`📦 已打包下載 ${entries.length} 張小卡圖檔 (.zip)！`, 3500);
+        }
+      } catch (err) {
+        alert('❌ 打包下載失敗：' + (err.message || err));
+      } finally {
+        if (btn) { btn.disabled = false; if (oldText) btn.textContent = oldText; }
+      }
+    }
+  });
+
+  if (PCApp.state.mode === 'pc') PCApp.renderDex();
+})();
