@@ -4659,3 +4659,555 @@ if (PCApp.state.mode === 'pc') PCApp.renderDex();
 
   if (PCApp.state.mode === 'pc') PCApp.renderDex();
 })();
+// ============================================================================
+// [第 9 段]：Gemini AI 小卡超高清化模組（保真五官・去反光印刷網點・前後拉桿對比）
+// ============================================================================
+(function applyPhotocardPart9GeminiAI() {
+  if (!window.PCApp) return;
+
+  const _origOpenSlotP2 = PCApp.onAfterOpenSlotPart2.bind(PCApp);
+
+  const AI_PRESETS = {
+    standard: {
+      label: '✨ 標準高清去反光（保真首選）',
+      prompt: [
+        'Ultra-HD photo restoration and remaster of this Japanese idol trading photocard.',
+        'STRICT RULES: Preserve the exact facial features, eyes, nose, mouth, expression, hairstyle, fingers, hand poses, outfit, and background 100% faithfully without changing identity, age, makeup, or composition.',
+        'Remove plastic sleeve glare, surface reflections, light hotspots, dust specks, camera noise, and printing halftone/moiré dot patterns.',
+        'Restore crisp natural focus, delicate eye catchlights, clear hair strands, and authentic natural skin texture (do NOT over-smooth or look AI-plastic).',
+        'Output as a clean full-bleed edge-to-edge photograph matching the exact original framing and aspect ratio. Do NOT add any white Polaroid frame, border, text, or watermark.'
+      ].join(' ')
+    },
+    detail: {
+      label: '💎 極致細節強化（眼神光・衣裝）',
+      prompt: [
+        'Professional studio-grade ultra-HD remaster of this Japanese idol trading photocard.',
+        'STRICT RULES: Strictly maintain the exact person identity, facial structure, gaze, smile, hair shape, hand gestures, and background elements with zero alteration.',
+        'Eliminate all card surface glare, sleeve reflections, haze, compression artifacts, and print dot noise.',
+        'Significantly enhance micro-details: sparkling clear eye catchlights, fine hair strands, crisp eyelashes, and vivid fabric/lace/glitter/star sheen textures on the costume while keeping natural skin tone.',
+        'Maintain exact full-bleed edge-to-edge framing and aspect ratio with NO added borders or frames.'
+      ].join(' ')
+    },
+    bright: {
+      label: '🌙 暗場提亮降噪（去偏黃發灰）',
+      prompt: [
+        'Clean ultra-HD restoration and lighting correction of this Japanese idol trading photocard.',
+        'STRICT RULES: Keep exact facial features, expression, hairstyle, pose, costume, and background completely unchanged.',
+        'Remove low-light grain, yellow/green color cast, glare reflections, and dull haze. Balance white balance to clean luminous natural skin tones with crisp shadow and highlight clarity.',
+        'Keep exact full-bleed edge-to-edge framing and aspect ratio. Do NOT add white borders or frames.'
+      ].join(' ')
+    }
+  };
+
+  const AI_MODELS = [
+    { id: 'gemini-2.5-flash-image', label: '⚡ Gemini 2.5 Flash Image（推薦・快速高質）' },
+    { id: 'gemini-3-pro-image-preview', label: '👑 Gemini 3 Pro Image（旗艦精細）' },
+    { id: 'gemini-2.0-flash-exp-image-generation', label: '🧩 Gemini 2.0 Flash Image（經典相容）' }
+  ];
+
+  Object.assign(PCApp, {
+    aiState: {
+      slotIdx: -1,
+      side: 'front',       // 'front' | 'back'
+      preset: 'standard',
+      model: localStorage.getItem('pc_gemini_model') || 'gemini-2.5-flash-image',
+      beforeDataUrl: '',
+      afterDataUrl: '',
+      busy: false
+    },
+
+    // 自動從現有 ChekiPocket 設定中偵測已儲存的 Gemini API Key
+    getStoredGeminiKey() {
+      const knownKeys = [
+        'pc_gemini_api_key',
+        'cheki_gemini_api_key',
+        'gemini_api_key',
+        'geminiApiKey',
+        'GEMINI_API_KEY'
+      ];
+      for (const k of knownKeys) {
+        const v = (localStorage.getItem(k) || '').trim();
+        if (v && v.startsWith('AIza')) return v;
+      }
+      // 掃描主程式可能使用的其他 key 名稱
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          const v = (localStorage.getItem(k) || '').trim();
+          if (/^AIza[0-9A-Za-z\-_]{30,}$/.test(v)) return v;
+        }
+      } catch (_) {}
+      const domInp = document.getElementById('geminiApiKeyInput') || document.querySelector('input[id*="gemini" i][id*="key" i]');
+      if (domInp && domInp.value && domInp.value.trim().startsWith('AIza')) {
+        return domInp.value.trim();
+      }
+      return '';
+    },
+
+    saveGeminiKeyForPC(key) {
+      const clean = (key || '').trim();
+      if (!clean) return;
+      localStorage.setItem('pc_gemini_api_key', clean);
+      // 同步寫入常用鍵名，方便跨模組共用
+      if (!localStorage.getItem('cheki_gemini_api_key')) {
+        localStorage.setItem('cheki_gemini_api_key', clean);
+      }
+    },
+
+    ensurePart9AIModal() {
+      if (document.getElementById('pcAiRemasterModal')) return;
+      const wrap = document.createElement('div');
+      wrap.innerHTML = `
+        <div id="pcAiRemasterModal" class="hidden fixed inset-0 z-[140] bg-black/88 flex items-center justify-center p-2.5 overflow-y-auto">
+          <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-3.5 space-y-2.5 text-zinc-900 max-h-[94vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+              <div>
+                <h3 class="font-black text-base leading-tight">✨ Gemini AI 小卡超高清化</h3>
+                <p class="text-[10px] font-bold text-zinc-500">保真五官神情 · 去除膠套反光、印刷網點與雜訊</p>
+              </div>
+              <button type="button" onclick="PCApp.closeAiRemasterModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm shrink-0">✕</button>
+            </div>
+
+            <!-- 正背面目標選擇（如該卡有獨立背面才顯示） -->
+            <div id="pcAiSideBar" class="hidden grid grid-cols-2 gap-1.5">
+              <button type="button" id="pcAiSideFront" onclick="PCApp.setAiTargetSide('front')" class="py-1.5 rounded-xl border-2 border-cheki-dark font-black text-xs">📸 高清化正面</button>
+              <button type="button" id="pcAiSideBack" onclick="PCApp.setAiTargetSide('back')" class="py-1.5 rounded-xl border-2 border-cheki-dark font-black text-xs">✍️ 高清化背面</button>
+            </div>
+
+            <!-- 預覽 / 前後拉桿對比區 -->
+            <div class="bg-zinc-950 rounded-2xl p-2.5 border-2 border-cheki-dark flex flex-col items-center space-y-2">
+              <div id="pcAiCompareBox" class="relative w-52 rounded-xl overflow-hidden border border-white/25 shadow-2xl bg-zinc-900 select-none" style="aspect-ratio:63/88;">
+                <img id="pcAiAfterImg" class="hidden absolute inset-0 w-full h-full object-cover pointer-events-none">
+                <img id="pcAiBeforeImg" class="absolute inset-0 w-full h-full object-cover pointer-events-none">
+                <div id="pcAiDividerLine" class="hidden absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_8px_rgba(0,0,0,0.9)] pointer-events-none" style="left:50%;">
+                  <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-white text-zinc-900 border-2 border-zinc-900 flex items-center justify-center text-[10px] font-black shadow-lg">↔</div>
+                </div>
+                <span id="pcAiBeforeTag" class="hidden absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/75 text-zinc-200 text-[9px] font-black">修圖前</span>
+                <span id="pcAiAfterTag" class="hidden absolute top-2 right-2 px-1.5 py-0.5 rounded bg-emerald-400 text-zinc-950 text-[9px] font-black">✨ AI 高清</span>
+                <div id="pcAiLoadingOverlay" class="hidden absolute inset-0 bg-black/72 backdrop-blur-[2px] flex flex-col items-center justify-center p-3 text-center space-y-2">
+                  <div class="w-8 h-8 rounded-full border-4 border-pink-400 border-t-transparent animate-spin"></div>
+                  <p id="pcAiLoadingMsg" class="text-xs font-black text-white">Gemini AI 正在重繪高清細節...</p>
+                  <p class="text-[10px] font-bold text-zinc-300">通常需時 8～18 秒，請勿關閉視窗</p>
+                </div>
+              </div>
+
+              <div id="pcAiCompareSliderWrap" class="hidden w-full px-1 space-y-0.5">
+                <div class="flex justify-between text-[10px] font-black text-zinc-300">
+                  <span>◀ 原本掃描</span>
+                  <span>拉動檢視五官與細節對比</span>
+                  <span class="text-emerald-300">AI 高清 ▶</span>
+                </div>
+                <input id="pcAiCompareRange" type="range" min="0" max="100" value="50" oninput="PCApp.updateAiCompareSplit(this.value)" class="w-full accent-emerald-400">
+              </div>
+            </div>
+
+            <!-- 修復模式與模型選擇 -->
+            <div class="rounded-2xl border-2 border-cheki-dark bg-white p-2.5 space-y-2 text-xs">
+              <div>
+                <label class="text-[11px] font-black text-zinc-700 block mb-1">🎨 高清化模式</label>
+                <select id="pcAiPresetSelect" onchange="PCApp.aiState.preset=this.value" class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-zinc-50 font-black text-xs">
+                  ${Object.entries(AI_PRESETS).map(([k, p]) => `<option value="${k}">${p.label}</option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label class="text-[11px] font-black text-zinc-700 block mb-1">🤖 Gemini 影像模型</label>
+                <select id="pcAiModelSelect" onchange="PCApp.aiState.model=this.value;localStorage.setItem('pc_gemini_model',this.value);" class="w-full px-2.5 py-1.5 rounded-xl border-2 border-cheki-dark bg-zinc-50 font-black text-[11px]">
+                  ${AI_MODELS.map(m => `<option value="${m.id}">${m.label}</option>`).join('')}
+                </select>
+              </div>
+              <details id="pcAiKeyDetails" class="rounded-xl bg-amber-50/80 border border-amber-300 p-2">
+                <summary class="text-[11px] font-black text-amber-900 cursor-pointer flex items-center justify-between">
+                  <span id="pcAiKeyStatusLabel">🔑 Gemini API Key 設定</span>
+                  <span class="text-[10px] underline">展開設定</span>
+                </summary>
+                <div class="pt-2 flex gap-1.5">
+                  <input id="pcAiKeyInput" type="password" placeholder="貼上 AIza 開頭的 Gemini API Key" class="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border border-cheki-dark bg-white text-xs font-bold">
+                  <button type="button" onclick="PCApp.saveAiKeyFromUI()" class="px-3 py-1.5 rounded-lg bg-amber-300 border border-cheki-dark font-black text-xs shrink-0">儲存</button>
+                </div>
+              </details>
+            </div>
+
+            <!-- 操作按鈕 -->
+            <div class="space-y-1.5">
+              <button type="button" id="pcAiRunBtn" onclick="PCApp.runGeminiPhotocardHD()" class="w-full py-3 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white neo-btn font-black text-xs active:scale-95">
+                ✨ 開始 Gemini AI 超高清化
+              </button>
+              <div id="pcAiResultActions" class="hidden grid grid-cols-2 gap-1.5">
+                <button type="button" onclick="PCApp.applyAiRemasterResult()" class="py-2.5 rounded-2xl bg-emerald-400 text-zinc-950 neo-btn font-black text-xs active:scale-95">
+                  ✅ 套用此高清真卡
+                </button>
+                <button type="button" onclick="PCApp.downloadAiPreviewPng()" class="py-2.5 rounded-2xl bg-sky-200 text-zinc-950 neo-btn font-black text-xs active:scale-95">
+                  ⬇️ 直接下載 (.png)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(wrap);
+    },
+
+    openAiRemasterModal(slotIdx, side = 'front') {
+      this.ensurePart9AIModal();
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === slotIdx);
+      if (!s || !slot) return;
+
+      this.aiState.slotIdx = slotIdx;
+      this.aiState.side = side;
+      this.aiState.afterDataUrl = '';
+      this.aiState.busy = false;
+
+      const spec = typeof this.getSeriesRatioSpec === 'function' ? this.getSeriesRatioSpec(s) : { css: '63 / 88' };
+      const box = document.getElementById('pcAiCompareBox');
+      if (box) box.style.aspectRatio = spec.css;
+
+      // 是否顯示正背面切換列
+      const sideBar = document.getElementById('pcAiSideBar');
+      if (sideBar) sideBar.classList.toggle('hidden', !slot.realBackImg);
+
+      // 檢查並自動帶入現有 API Key
+      const key = this.getStoredGeminiKey();
+      const kInp = document.getElementById('pcAiKeyInput');
+      const kLbl = document.getElementById('pcAiKeyStatusLabel');
+      const kDet = document.getElementById('pcAiKeyDetails');
+      if (kInp) kInp.value = key;
+      if (kLbl) kLbl.textContent = key ? `🔑 已自動偵測 Gemini Key (${key.slice(0, 6)}•••)` : '⚠️ 尚未設定 Gemini API Key（請展開貼上）';
+      if (kDet) kDet.open = !key;
+
+      const mSel = document.getElementById('pcAiModelSelect');
+      if (mSel) mSel.value = this.aiState.model;
+      const pSel = document.getElementById('pcAiPresetSelect');
+      if (pSel) pSel.value = this.aiState.preset;
+
+      this.refreshAiModalPreviewState();
+      document.getElementById('pcAiRemasterModal')?.classList.remove('hidden');
+    },
+
+    closeAiRemasterModal() {
+      if (this.aiState.busy && !confirm('AI 仍在處理中，確定要取消關閉嗎？')) return;
+      this.aiState.busy = false;
+      document.getElementById('pcAiRemasterModal')?.classList.add('hidden');
+    },
+
+    setAiTargetSide(side) {
+      if (this.aiState.busy) return;
+      this.aiState.side = side;
+      this.aiState.afterDataUrl = '';
+      this.refreshAiModalPreviewState();
+    },
+
+    saveAiKeyFromUI() {
+      const val = (document.getElementById('pcAiKeyInput')?.value || '').trim();
+      if (!val.startsWith('AIza')) {
+        alert('請輸入有效的 Gemini API Key（通常以 AIza 開頭）！');
+        return;
+      }
+      this.saveGeminiKeyForPC(val);
+      const kLbl = document.getElementById('pcAiKeyStatusLabel');
+      const kDet = document.getElementById('pcAiKeyDetails');
+      if (kLbl) kLbl.textContent = `🔑 已儲存 Gemini Key (${val.slice(0, 6)}•••)`;
+      if (kDet) kDet.open = false;
+      if (typeof window.showChekiToast === 'function') window.showChekiToast('🔑 已儲存 Gemini API Key！');
+    },
+
+    refreshAiModalPreviewState() {
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === this.aiState.slotIdx);
+      if (!slot) return;
+
+      const isBack = this.aiState.side === 'back';
+      const src = isBack ? (slot.realBackImg || s.backImage) : (slot.realImg || slot.sampleImg);
+      this.aiState.beforeDataUrl = src || '';
+
+      const bF = document.getElementById('pcAiSideFront');
+      const bB = document.getElementById('pcAiSideBack');
+      if (bF) bF.className = `py-1.5 rounded-xl border-2 border-cheki-dark font-black text-xs ${!isBack ? 'bg-emerald-400 text-zinc-950' : 'bg-zinc-100 text-zinc-500'}`;
+      if (bB) bB.className = `py-1.5 rounded-xl border-2 border-cheki-dark font-black text-xs ${isBack ? 'bg-amber-300 text-zinc-950' : 'bg-zinc-100 text-zinc-500'}`;
+
+      const beforeImg = document.getElementById('pcAiBeforeImg');
+      const afterImg = document.getElementById('pcAiAfterImg');
+      const hasAfter = Boolean(this.aiState.afterDataUrl);
+
+      if (beforeImg) {
+        beforeImg.src = src || '';
+        beforeImg.style.clipPath = hasAfter ? 'inset(0 50% 0 0)' : 'none';
+      }
+      if (afterImg) {
+        afterImg.src = this.aiState.afterDataUrl || '';
+        afterImg.classList.toggle('hidden', !hasAfter);
+      }
+
+      document.getElementById('pcAiDividerLine')?.classList.toggle('hidden', !hasAfter);
+      document.getElementById('pcAiBeforeTag')?.classList.toggle('hidden', !hasAfter);
+      document.getElementById('pcAiAfterTag')?.classList.toggle('hidden', !hasAfter);
+      document.getElementById('pcAiCompareSliderWrap')?.classList.toggle('hidden', !hasAfter);
+      document.getElementById('pcAiResultActions')?.classList.toggle('hidden', !hasAfter);
+
+      const rng = document.getElementById('pcAiCompareRange');
+      if (rng) rng.value = '50';
+      const runBtn = document.getElementById('pcAiRunBtn');
+      if (runBtn) {
+        runBtn.textContent = hasAfter ? '🔄 重新生成一次 AI 高清版本' : '✨ 開始 Gemini AI 超高清化';
+      }
+    },
+
+    updateAiCompareSplit(pct) {
+      const p = Math.max(0, Math.min(100, Number(pct) || 50));
+      const beforeImg = document.getElementById('pcAiBeforeImg');
+      const line = document.getElementById('pcAiDividerLine');
+      if (beforeImg) beforeImg.style.clipPath = `inset(0 ${100 - p}% 0 0)`;
+      if (line) line.style.left = `${p}%`;
+    },
+
+    // 將輸入圖片轉為不帶圓角透明邊的乾淨 JPEG 供 Gemini 辨識（減少邊角黑邊干擾）
+    async prepareCleanJpegForGemini(dataUrl) {
+      const im = await this.loadImgAsync(dataUrl);
+      if (!im) throw new Error('無法載入小卡原圖');
+      const maxEdge = 1280;
+      const scale = Math.min(1, maxEdge / Math.max(im.width, im.height));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(im.width * scale));
+      c.height = Math.max(1, Math.round(im.height * scale));
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(im, 0, 0, c.width, c.height);
+      const jpegUrl = c.toDataURL('image/jpeg', 0.93);
+      return jpegUrl.split(',')[1];
+    },
+
+    // 將 Gemini 回傳的高清圖依系列精確比例 (63×88 / 55×85 / 89×127) 與平滑圓角標準化輸出
+    async normalizeAiOutputToCard(rawDataUrl, seriesObj) {
+      const im = await this.loadImgAsync(rawDataUrl);
+      if (!im) throw new Error('AI 回傳圖片解碼失敗');
+      const spec = typeof this.getSeriesRatioSpec === 'function'
+        ? this.getSeriesRatioSpec(seriesObj)
+        : { w: 630, h: 880 };
+
+      // 輸出 1.5 倍高解析度（例如 63×88 輸出 945×1320，放大都依然細膩）
+      const outW = Math.round(spec.w * 1.5);
+      const outH = Math.round(spec.h * 1.5);
+      const c = document.createElement('canvas');
+      c.width = outW;
+      c.height = outH;
+      const ctx = c.getContext('2d');
+
+      this.pcRoundRectPath(ctx, 0, 0, outW, outH, outW * 0.06);
+      ctx.clip();
+
+      const targetRatio = outW / outH;
+      const imgRatio = im.width / im.height;
+      let sx = 0, sy = 0, sw = im.width, sh = im.height;
+      if (imgRatio > targetRatio) {
+        sw = im.height * targetRatio;
+        sx = (im.width - sw) / 2;
+      } else {
+        sh = im.width / targetRatio;
+        sy = (im.height - sh) / 2;
+      }
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(im, sx, sy, sw, sh, 0, 0, outW, outH);
+
+      let outUrl = c.toDataURL('image/webp', 0.92);
+      if (!outUrl.startsWith('data:image/webp')) outUrl = c.toDataURL('image/jpeg', 0.93);
+      return outUrl;
+    },
+
+    async callGeminiImageModel(apiKey, modelId, promptText, base64Jpeg) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: promptText },
+              { inline_data: { mime_type: 'image/jpeg', data: base64Jpeg } }
+            ]
+          }],
+          generationConfig: {
+            responseModalities: ['IMAGE', 'TEXT']
+          }
+        })
+      });
+
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const msg = json?.error?.message || `HTTP ${resp.status}`;
+        const err = new Error(msg);
+        err.status = resp.status;
+        throw err;
+      }
+
+      const parts = json?.candidates?.[0]?.content?.parts || [];
+      for (const p of parts) {
+        const inl = p.inlineData || p.inline_data;
+        if (inl && inl.data) {
+          const mime = inl.mimeType || inl.mime_type || 'image/png';
+          return `data:${mime};base64,${inl.data}`;
+        }
+      }
+      const txtReason = parts.find(p => p.text)?.text || '模型未回傳影像資料';
+      throw new Error(txtReason);
+    },
+
+    async runGeminiPhotocardHD() {
+      if (this.aiState.busy) return;
+      const s = this.getActiveSeries();
+      const src = this.aiState.beforeDataUrl;
+      if (!s || !src) {
+        alert('找不到可處理的小卡圖片，請先掃描或選取實物小卡！');
+        return;
+      }
+
+      let apiKey = (document.getElementById('pcAiKeyInput')?.value || '').trim() || this.getStoredGeminiKey();
+      if (!apiKey) {
+        const kDet = document.getElementById('pcAiKeyDetails');
+        if (kDet) kDet.open = true;
+        alert('請先貼上你的 Gemini API Key（AIza 開頭）！');
+        return;
+      }
+      this.saveGeminiKeyForPC(apiKey);
+
+      const overlay = document.getElementById('pcAiLoadingOverlay');
+      const msgEl = document.getElementById('pcAiLoadingMsg');
+      const runBtn = document.getElementById('pcAiRunBtn');
+
+      this.aiState.busy = true;
+      if (overlay) overlay.classList.remove('hidden');
+      if (runBtn) runBtn.disabled = true;
+
+      try {
+        if (msgEl) msgEl.textContent = '⏳ 正在準備小卡影像資料...';
+        const b64 = await this.prepareCleanJpegForGemini(src);
+        const preset = AI_PRESETS[this.aiState.preset] || AI_PRESETS.standard;
+
+        // 依序嘗試選定模型與後備模型（避免個別帳號未開通某版本報 404）
+        const tryOrder = [this.aiState.model, ...AI_MODELS.map(m => m.id).filter(id => id !== this.aiState.model)];
+        let rawOut = '';
+        let lastErr = null;
+
+        for (let i = 0; i < tryOrder.length; i++) {
+          const mId = tryOrder[i];
+          if (msgEl) msgEl.textContent = `✨ Gemini (${mId}) 正在重繪高清細節...`;
+          try {
+            rawOut = await this.callGeminiImageModel(apiKey, mId, preset.prompt, b64);
+            if (rawOut) {
+              this.aiState.model = mId;
+              localStorage.setItem('pc_gemini_model', mId);
+              const mSel = document.getElementById('pcAiModelSelect');
+              if (mSel) mSel.value = mId;
+              break;
+            }
+          } catch (err) {
+            lastErr = err;
+            // 若為 404 模型不存在，自動換下一個後備模型；若是 API Key 錯誤/額度不足則直接停止
+            if (err.status !== 404 && !String(err.message || '').toLowerCase().includes('not found')) {
+              throw err;
+            }
+          }
+        }
+
+        if (!rawOut) throw lastErr || new Error('未能取得 AI 影像輸出');
+        if (!this.aiState.busy) return; // 用家已中途關閉視窗
+
+        if (msgEl) msgEl.textContent = '✂️ 正在鎖定小卡比例與平滑圓角...';
+        this.aiState.afterDataUrl = await this.normalizeAiOutputToCard(rawOut, s);
+        this.refreshAiModalPreviewState();
+        if (typeof window.triggerHaptic === 'function') window.triggerHaptic(15);
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast('✨ AI 超高清化完成！拉動滑桿對比滿意後按套用', 3500);
+        }
+      } catch (err) {
+        alert('❌ Gemini AI 高清化失敗：\n' + (err.message || err));
+      } finally {
+        this.aiState.busy = false;
+        if (overlay) overlay.classList.add('hidden');
+        if (runBtn) runBtn.disabled = false;
+      }
+    },
+
+    async applyAiRemasterResult() {
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === this.aiState.slotIdx);
+      if (!s || !slot || !this.aiState.afterDataUrl) return;
+
+      if (this.aiState.side === 'back') {
+        if (!slot.preAiBackImg && slot.realBackImg) slot.preAiBackImg = slot.realBackImg;
+        slot.realBackImg = this.aiState.afterDataUrl;
+        slot.isBackAiHD = true;
+        this._autoFlipSlotOnce = slot.idx;
+      } else {
+        if (!slot.preAiRealImg && slot.realImg) slot.preAiRealImg = slot.realImg;
+        slot.realImg = this.aiState.afterDataUrl;
+        slot.isAiHD = true;
+        if ((slot.qty || 0) === 0) {
+          slot.qty = 1;
+          slot.wish = false;
+          this.state.justUnlockedIdx = slot.idx;
+        }
+      }
+
+      await this.saveSeries(s);
+      document.getElementById('pcAiRemasterModal')?.classList.add('hidden');
+      this.onSlotClick(slot.idx);
+      this.renderDex();
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(16);
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast('✨ 已套用 Gemini AI 超高清真卡（保留原圖可隨時還原）！', 3400);
+      }
+    },
+
+    async downloadAiPreviewPng() {
+      if (!this.aiState.afterDataUrl || typeof this.dataUrlToPngBlob !== 'function') return;
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === this.aiState.slotIdx);
+      const blob = await this.dataUrlToPngBlob(this.aiState.afterDataUrl);
+      if (!blob) return;
+      const tag = slot ? `#${String(slot.idx).padStart(3, '0')}_${this.safeFileName(slot.member)}` : 'Card';
+      this.triggerBlobDownload(blob, `${this.safeFileName(s?.title)}_${tag}_AI_HD.png`);
+      if (typeof window.showChekiToast === 'function') window.showChekiToast('⬇️ 已下載 AI 高清圖檔 (.png)！');
+    },
+
+    async undoSlotAiRemaster(slotIdx) {
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === slotIdx);
+      if (!s || !slot || !slot.preAiRealImg) return;
+      if (!confirm('確定要還原至 AI 高清化之前的原始掃描圖嗎？')) return;
+      slot.realImg = slot.preAiRealImg;
+      delete slot.preAiRealImg;
+      slot.isAiHD = false;
+      await this.saveSeries(s);
+      this.onSlotClick(slotIdx);
+      this.renderDex();
+      if (typeof window.showChekiToast === 'function') window.showChekiToast('↩️ 已還原至 AI 修圖前的原始真卡！');
+    },
+
+    // 在小卡大圖視窗掛載「✨ Gemini AI 超高清化」與「↩️ 還原 AI 前原圖」按鈕
+    onAfterOpenSlotPart2(s, slot) {
+      _origOpenSlotP2(s, slot);
+      const actions = document.getElementById('pcSlotScannerActions');
+      const hasAnyImg = Boolean(slot.realImg || slot.sampleImg);
+      if (!actions || !hasAnyImg || document.getElementById('pcSlotAiRemasterBtn')) return;
+
+      const aiWrap = document.createElement('div');
+      aiWrap.className = 'pt-1.5 space-y-1.5';
+      aiWrap.innerHTML = `
+        <button type="button" id="pcSlotAiRemasterBtn" onclick="PCApp.openAiRemasterModal(${slot.idx}, 'front')" class="w-full py-2.5 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white neo-btn font-black text-xs flex items-center justify-center gap-1.5 active:scale-95">
+          <span>✨</span><span>${slot.isAiHD ? 'Gemini AI 重新高清化 / 換模式' : 'Gemini AI 超高清化（去反光・保真五官）'}</span>
+        </button>
+        ${slot.preAiRealImg ? `
+          <button type="button" onclick="PCApp.undoSlotAiRemaster(${slot.idx})" class="w-full py-1.5 rounded-xl bg-amber-50 border-2 border-cheki-dark text-amber-900 font-black text-[11px] active:scale-95">
+            ↩️ 還原 AI 高清化前的原始掃描圖
+          </button>
+        ` : ''}
+      `;
+
+      const dlRow = document.getElementById('pcSlotDownloadRow');
+      if (dlRow) actions.insertBefore(aiWrap, dlRow);
+      else actions.appendChild(aiWrap);
+    }
+  });
+})();
