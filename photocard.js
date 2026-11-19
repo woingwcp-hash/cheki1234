@@ -5807,3 +5807,333 @@ if (PCApp.state.mode === 'pc') PCApp.renderDex();
     }
   });
 })();
+// ============================================================================
+// [第 12 段]：無損自由調圓角（留底無缺角原圖）＋ 預覽去遮擋 ＋ 卡框自動貼合消黑縫
+// ============================================================================
+(function applyPhotocardPart12NonDestructiveRadius() {
+  if (!window.PCApp) return;
+
+  const _origEnsurePart3 = PCApp.ensurePart3UI.bind(PCApp);
+  const _origRenderSlot = PCApp.renderSlotCardHtml.bind(PCApp);
+  const _origOpenSlotP2 = PCApp.onAfterOpenSlotPart2.bind(PCApp);
+  const _origApplyAi = PCApp.applyAiRemasterResult ? PCApp.applyAiRemasterResult.bind(PCApp) : null;
+
+  Object.assign(PCApp, {
+    // 計算與 Canvas 圓角 (r = w * pct / 100) 數學完全一致的 CSS border-radius
+    getSlotCssRadius(radiusPct, seriesObj) {
+      const r = Math.max(0, Math.min(15, Number(radiusPct)));
+      if (!r || Number.isNaN(r)) return '0px';
+      const spec = typeof this.getSeriesRatioSpec === 'function'
+        ? this.getSeriesRatioSpec(seriesObj)
+        : { w: 630, h: 880 };
+      const vPct = (r * (spec.w / spec.h)).toFixed(2);
+      return `${r}% / ${vPct}%`;
+    },
+
+    // 1. 升級掃描器 UI：移除畫布固定 rounded-xl 遮擋、擴大圓角範圍至 0~15%，並加舊黑角補救掣
+    ensurePart3UI() {
+      _origEnsurePart3();
+
+      const radInp = document.getElementById('pcScanRadius');
+      if (radInp) radInp.max = '15';
+
+      const cv = document.getElementById('pcScanCanvas');
+      if (cv) {
+        cv.classList.remove('rounded-xl', 'border', 'border-white/25');
+        cv.style.borderRadius = '0px';
+        cv.style.background = 'transparent';
+      }
+
+      const resetRow = document.querySelector('#pcScanModal button[onclick="PCApp.resetScanTransform()"]')?.parentElement;
+      if (resetRow && !document.getElementById('pcFixOldCornerBtn')) {
+        const fixBtn = document.createElement('button');
+        fixBtn.type = 'button';
+        fixBtn.id = 'pcFixOldCornerBtn';
+        fixBtn.onclick = () => this.nudgeZoomToRemoveOldCorners();
+        fixBtn.className = 'hidden px-2.5 py-1 rounded-xl bg-amber-300 text-zinc-950 font-black text-[11px] active:scale-95';
+        fixBtn.textContent = '🩹 清舊黑角';
+        fixBtn.title = '微放大 106% 推出舊版已裁走的黑角，毋須重拍即可重新調細圓角';
+        resetRow.appendChild(fixBtn);
+      }
+    },
+
+    nudgeZoomToRemoveOldCorners() {
+      const sc = this.scanner;
+      if (!sc.img) return;
+      sc.scale = Math.max(sc.scale || 1, 1.06);
+      const zEl = document.getElementById('pcScanZoom');
+      if (zEl) zEl.value = String(Math.round(sc.scale * 100));
+      this.updateScanLabels();
+      this.scheduleScanRender(true);
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast('✨ 已微放大推出舊黑角，現在可自由調整 0%～15% 圓角！', 2600);
+      }
+    },
+
+    // 2. 修正繪圖管線：先完成未裁切矩形＋去反光銳化，最後先套用圓角裁切（徹底避免黑底寫死與白邊）
+    renderUnclippedRectCanvas(width, height, isExport = false, applyEnhance = false) {
+      const sc = this.scanner;
+      const spec = (this.CARD_RATIOS && this.CARD_RATIOS[sc.ratioKey || '63x88']) || { preW: 315, preH: 440 };
+      const srcImg = isExport ? (sc.hiResImg || sc.img) : (sc.previewImg || sc.img);
+      const tmp = document.createElement('canvas');
+      tmp.width = width;
+      tmp.height = height;
+      if (!srcImg) return tmp;
+
+      const tCtx = tmp.getContext('2d', { willReadFrequently: applyEnhance });
+      const scaleFactor = isExport ? (width / spec.preW) : 1;
+
+      tCtx.fillStyle = '#111113';
+      tCtx.fillRect(0, 0, width, height);
+
+      const rotRad = (((sc.rot || 0) + (sc.fineRot || 0)) * Math.PI) / 180;
+      const isSwapped = sc.rot === 90 || sc.rot === 270;
+      const iw = isSwapped ? srcImg.height : srcImg.width;
+      const ih = isSwapped ? srcImg.width : srcImg.height;
+      const coverScale = Math.max(width / iw, height / ih) * (sc.scale || 1);
+
+      tCtx.save();
+      if (sc.bright !== 100 || sc.contrast !== 100) {
+        tCtx.filter = `brightness(${sc.bright}%) contrast(${sc.contrast}%)`;
+      }
+      tCtx.translate(width / 2 + (sc.ox || 0) * scaleFactor, height / 2 + (sc.oy || 0) * scaleFactor);
+      tCtx.rotate(rotRad);
+      tCtx.scale(coverScale, coverScale);
+      tCtx.drawImage(srcImg, -srcImg.width / 2, -srcImg.height / 2);
+      tCtx.restore();
+
+      if (applyEnhance && (sc.deglare > 0 || sc.sharpen > 0)) {
+        this.applyCardPixelEnhance(tCtx, width, height, sc.deglare, sc.sharpen);
+      }
+      return tmp;
+    },
+
+    renderScanCanvasFast(canvas, isExport = false, applyEnhance = false) {
+      const sc = this.scanner;
+      if (!canvas || !sc.img) return;
+      const w = canvas.width, h = canvas.height;
+      const ctx = canvas.getContext('2d');
+      const rPx = w * ((sc.radiusPct || 0) / 100);
+
+      // 預覽畫布取消 CSS 固定圓角，讓 0%~15% 每 1% 都即時可見
+      if (!isExport) {
+        canvas.classList.remove('rounded-xl', 'border', 'border-white/25');
+        canvas.style.borderRadius = '0px';
+      }
+
+      const rectCanvas = this.renderUnclippedRectCanvas(w, h, isExport, applyEnhance);
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.save();
+      if (rPx > 0.5) {
+        this.pcRoundRectPath(ctx, 0, 0, w, h, rPx);
+        ctx.clip();
+      }
+      ctx.drawImage(rectCanvas, 0, 0);
+      ctx.restore();
+
+      // 預覽模式沿實際圓角畫一條細白輪廓線，方便在深色背景看清真實弧度
+      if (!isExport) {
+        ctx.save();
+        this.pcRoundRectPath(ctx, 1, 1, w - 2, h - 2, Math.max(0, rPx - 1));
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+      }
+    },
+
+    // 3. 儲存時同步保存「無圓角高清原圖 (rawRectImg)」與「radiusPct」，支援永久無損重調
+    async saveScannedCard() {
+      const sc = this.scanner;
+      const s = this.getActiveSeries();
+      if (!s || !sc.img) {
+        alert('請先拍攝或選取實體小卡相片！');
+        return;
+      }
+
+      const saveBtn = document.getElementById('pcScanSaveSubmitBtn');
+      const oldTxt = saveBtn?.textContent;
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ 正在拉直並合成高清真卡...'; }
+
+      await new Promise(r => setTimeout(r, 30));
+      try {
+        const spec = (this.CARD_RATIOS && this.CARD_RATIOS[sc.ratioKey || '63x88']) || { w: 630, h: 880 };
+        s.cardRatio = sc.ratioKey || '63x88';
+
+        if (sc.cropMode === 'quad' && sc.rawHiResImg && typeof this.warpQuadToCanvas === 'function') {
+          sc.hiResImg = this.warpQuadToCanvas(sc.rawHiResImg, sc.quadPts, spec.w, spec.h);
+          sc.img = sc.hiResImg;
+          sc.scale = 1; sc.ox = 0; sc.oy = 0; sc.rot = 0; sc.fineRot = 0;
+        }
+
+        // 先生成未切圓角的高清底圖留底（供日後無損改圓角 / 調光）
+        const rectOut = this.renderUnclippedRectCanvas(spec.w, spec.h, true, true);
+        const rawRectUrl = rectOut.toDataURL('image/jpeg', 0.88);
+
+        // 再套用使用者設定的精確圓角輸出（含透明角，支援 WebP 失敗時改用 PNG 避免變黑角）
+        const outCanvas = document.createElement('canvas');
+        outCanvas.width = spec.w;
+        outCanvas.height = spec.h;
+        const oCtx = outCanvas.getContext('2d');
+        const rPx = spec.w * ((sc.radiusPct || 0) / 100);
+        if (rPx > 0.5) {
+          this.pcRoundRectPath(oCtx, 0, 0, spec.w, spec.h, rPx);
+          oCtx.clip();
+        }
+        oCtx.drawImage(rectOut, 0, 0);
+
+        let dataUrl = outCanvas.toDataURL('image/webp', 0.90);
+        if (!dataUrl.startsWith('data:image/webp')) {
+          dataUrl = rPx > 0.5 ? outCanvas.toDataURL('image/png') : outCanvas.toDataURL('image/jpeg', 0.91);
+        }
+
+        if (sc.targetSide === 'seriesBack') {
+          s.backImage = dataUrl;
+          s.backRawRectImg = rawRectUrl;
+          s.backRadiusPct = sc.radiusPct;
+          await this.saveSeries(s);
+          this.closeCardScanner();
+          this.renderDex();
+          if (typeof window.showChekiToast === 'function') window.showChekiToast('🎴 已儲存系列共用卡背！');
+          return;
+        }
+
+        const slot = s.slots.find(x => x.idx === sc.slotIdx);
+        if (!slot) return;
+        if (sc.targetSide === 'back') {
+          slot.realBackImg = dataUrl;
+          slot.rawRectBackImg = rawRectUrl;
+          slot.backRadiusPct = sc.radiusPct;
+          this._autoFlipSlotOnce = slot.idx;
+        } else {
+          slot.realImg = dataUrl;
+          slot.rawRectImg = rawRectUrl;
+          slot.radiusPct = sc.radiusPct;
+          if ((slot.qty || 0) === 0) {
+            slot.qty = 1;
+            slot.wish = false;
+            this.state.justUnlockedIdx = slot.idx;
+            if (typeof window.fireCheerConfetti === 'function') window.fireCheerConfetti();
+          }
+        }
+        await this.saveSeries(s);
+        this.closeCardScanner();
+        this.onSlotClick(slot.idx);
+        this.renderDex();
+        if (typeof window.triggerHaptic === 'function') window.triggerHaptic(16);
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast(
+            sc.targetSide === 'back' ? '✍️ 已儲存小卡獨立背面（已自動翻面）！' : `✨ #${String(slot.idx).padStart(3, '0')} 真卡入庫成功（圓角 ${sc.radiusPct}%）！`,
+            3200
+          );
+        }
+      } finally {
+        if (saveBtn) { saveBtn.disabled = false; if (oldTxt) saveBtn.textContent = oldTxt; }
+      }
+    },
+
+    // 4. 編輯已存圖片：優先載入無圓角底圖 rawRectImg，並自動還原原本的圓角數值
+    async editSavedSlotImage(slotIdx, side = 'front') {
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === slotIdx);
+      if (!s || !slot) return;
+
+      const rawSrc = side === 'back' ? slot.rawRectBackImg : slot.rawRectImg;
+      const fallbackSrc = side === 'back' ? (slot.realBackImg || s.backImage) : (slot.realImg || slot.sampleImg);
+      const src = rawSrc || fallbackSrc;
+
+      if (!src) {
+        this.openCardScanner(slotIdx, side);
+        return;
+      }
+
+      const im = await this.loadImgAsync(src);
+      if (!im) {
+        alert('無法讀取已儲存的圖片，請重新選相！');
+        return;
+      }
+
+      this.openCardScanner(slotIdx, side);
+      this.loadSourceImageToScanner(im);
+
+      // 還原此張小卡儲存時的圓角百分比
+      const savedRad = side === 'back'
+        ? (typeof slot.backRadiusPct === 'number' ? slot.backRadiusPct : 6)
+        : (typeof slot.radiusPct === 'number' ? slot.radiusPct : 6);
+      this.scanner.radiusPct = savedRad;
+      const radEl = document.getElementById('pcScanRadius');
+      if (radEl) radEl.value = String(savedRad);
+      this.updateScanLabels();
+
+      // 若是舊版已烤死黑角的卡（尚無 rawRectImg），顯示「🩹 清舊黑角」一鍵補救掣
+      const fixBtn = document.getElementById('pcFixOldCornerBtn');
+      if (fixBtn) fixBtn.classList.toggle('hidden', Boolean(rawSrc));
+
+      this.scanner.cropMode = 'adjust';
+      if (typeof this.updateScanRatioAndModeUI === 'function') this.updateScanRatioAndModeUI();
+      if (typeof this.applyCanvasBoxForCurrentMode === 'function') this.applyCanvasBoxForCurrentMode();
+      if (typeof this.scheduleScanRender === 'function') this.scheduleScanRender(true);
+
+      if (typeof window.showChekiToast === 'function') {
+        window.showChekiToast(
+          rawSrc
+            ? '🎨 已載入無損原圖，可自由由 0%～15% 重調圓角！'
+            : '🎨 舊版存圖若曾切角，可按「🩹 清舊黑角」再自由調圓角！',
+          3200
+        );
+      }
+    },
+
+    // 若套用了 AI 高清圖，同步清除舊 rawRectImg 避免下次編輯誤載入 AI 之前的舊圖
+    async applyAiRemasterResult() {
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === this.aiState.slotIdx);
+      if (slot) {
+        if (this.aiState.side === 'back') delete slot.rawRectBackImg;
+        else delete slot.rawRectImg;
+      }
+      if (_origApplyAi) return _origApplyAi();
+    },
+
+    // 5. 圖鑑卡格與 3D 大圖自動貼合每張小卡真實圓角（消除外框黑角縫隙）
+    renderSlotCardHtml(sl) {
+      const html = _origRenderSlot(sl);
+      const s = this.getActiveSeries();
+      const hasCustom = typeof sl.radiusPct === 'number';
+      if (!hasCustom) return html;
+
+      const cssRad = this.getSlotCssRadius(sl.radiusPct, s);
+      // 動態套用真實圓角至外框與內層容器
+      return html
+        .replace('rounded-xl ', `" style="border-radius:${cssRad};" data-r-out="1" class="`)
+        .replace('rounded-[10px] ', '')
+        .replace('style="aspect-ratio:', `style="border-radius:${cssRad};aspect-ratio:`);
+    },
+
+    onAfterOpenSlotPart2(s, slot) {
+      _origOpenSlotP2(s, slot);
+      const cardInner = document.getElementById('pc3DCardInner');
+      if (!cardInner) return;
+
+      const frontRad = this.getSlotCssRadius(typeof slot.radiusPct === 'number' ? slot.radiusPct : 6, s);
+      const backRad = this.getSlotCssRadius(
+        typeof slot.backRadiusPct === 'number'
+          ? slot.backRadiusPct
+          : (typeof s.backRadiusPct === 'number' ? s.backRadiusPct : 6),
+        s
+      );
+      const faces = cardInner.querySelectorAll('.pc-3d-face');
+      if (faces[0]) {
+        faces[0].style.borderRadius = frontRad;
+        if (faces[0].firstElementChild) faces[0].firstElementChild.style.borderRadius = frontRad;
+      }
+      if (faces[1]) {
+        faces[1].style.borderRadius = backRad;
+        if (faces[1].firstElementChild) faces[1].firstElementChild.style.borderRadius = backRad;
+      }
+    }
+  });
+
+  if (PCApp.state.mode === 'pc') PCApp.renderDex();
+})();
