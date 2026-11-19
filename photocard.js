@@ -457,3 +457,437 @@ if (document.readyState === 'loading') {
   PCApp.start();
 }
 // === [第 2 段貼在此行正下方] ===
+// ============================================================================
+// [第 2 段]：官方預覽大圖自動偵測白邊切格墊底 ＋ 系列共用卡背與翻面檢視
+// ============================================================================
+Object.assign(PCApp, {
+  slicer: {
+    img: null,
+    mode: 'auto',      // 'auto' | 'grid'
+    thresh: 224,       // 去白底與淺灰 SAMPLE 水印靈敏度
+    trimPct: 1,        // 四邊內縮修邊 (%)
+    gridRows: 5,
+    gridCols: 6,
+    boxes: []          // [{ rx, ry, rw, rh }] 相對比例 (0~1)
+  },
+
+  ensurePart2UI() {
+    if (document.getElementById('pcSlicerModal')) return;
+    const div = document.createElement('div');
+    div.innerHTML = `
+      <input id="pcSheetFileInput" type="file" accept="image/*" class="hidden" onchange="PCApp.handleSheetFile(event)">
+      <input id="pcBackFileInput" type="file" accept="image/*" class="hidden" onchange="PCApp.handleSeriesBackFile(event)">
+      <div id="pcSlicerModal" class="hidden fixed inset-0 z-[134] bg-black/85 flex items-center justify-center p-2.5 overflow-y-auto">
+        <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-3.5 space-y-2.5 text-zinc-900 max-h-[93vh] overflow-y-auto">
+          <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
+            <div>
+              <h3 class="font-black text-base leading-tight">✂️ 官方預覽圖一鍵切格墊底</h3>
+              <p class="text-[10px] font-bold text-zinc-500">自動過濾白邊與淺灰 SAMPLE 水印 · 點擊綠框可剔除誤判</p>
+            </div>
+            <button type="button" onclick="PCApp.closeSlicerModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm shrink-0">✕</button>
+          </div>
+
+          <div class="bg-zinc-900 rounded-2xl p-2 border-2 border-cheki-dark flex flex-col items-center">
+            <div class="w-full max-h-[40vh] flex items-center justify-center overflow-hidden rounded-xl bg-zinc-950 relative">
+              <canvas id="pcSlicerCanvas" onclick="PCApp.onSlicerCanvasTap(event)" class="max-h-[40vh] max-w-full w-auto h-auto object-contain cursor-pointer"></canvas>
+              <div id="pcSlicerEmptyHint" class="py-10 text-center space-y-2">
+                <p class="text-xs font-black text-zinc-300">尚未載入官方一覽圖</p>
+                <button type="button" onclick="document.getElementById('pcSheetFileInput').click()" class="px-4 py-2 rounded-xl bg-sky-400 text-zinc-950 neo-btn text-xs font-black">🖼️ 選擇官方預覽圖</button>
+              </div>
+            </div>
+            <div class="w-full flex items-center justify-between mt-1.5 px-1 text-[11px] font-black">
+              <span id="pcSlicerCountText" class="text-emerald-400">待選擇圖片...</span>
+              <button type="button" onclick="document.getElementById('pcSheetFileInput').click()" class="text-sky-300 underline">換另一張圖</button>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border-2 border-cheki-dark bg-white p-2.5 space-y-2 text-xs">
+            <div class="grid grid-cols-2 gap-1.5">
+              <button type="button" id="pcSliceModeAuto" onclick="PCApp.setSlicerMode('auto')" class="py-1.5 rounded-xl border-2 border-cheki-dark font-black">✨ 智能白邊偵測</button>
+              <button type="button" id="pcSliceModeGrid" onclick="PCApp.setSlicerMode('grid')" class="py-1.5 rounded-xl border-2 border-cheki-dark font-black">📐 均分網格切圖</button>
+            </div>
+
+            <div id="pcSliceGridInputs" class="hidden grid grid-cols-2 gap-2 pt-0.5">
+              <label class="font-black text-[11px]">橫排數 (Rows)
+                <input id="pcSliceRowsInp" type="number" min="1" max="20" value="5" onchange="PCApp.recomputeSlicerBoxes()" class="mt-0.5 w-full px-2.5 py-1 rounded-lg border-2 border-cheki-dark bg-zinc-50 font-black">
+              </label>
+              <label class="font-black text-[11px]">每排格數 (Cols)
+                <input id="pcSliceColsInp" type="number" min="1" max="15" value="6" onchange="PCApp.recomputeSlicerBoxes()" class="mt-0.5 w-full px-2.5 py-1 rounded-lg border-2 border-cheki-dark bg-zinc-50 font-black">
+              </label>
+            </div>
+
+            <div class="space-y-1.5 pt-0.5">
+              <div class="flex items-center justify-between text-[11px] font-black">
+                <span>🎯 去白底/水印靈敏度</span>
+                <span id="pcSliceThreshVal" class="text-indigo-600">224</span>
+              </div>
+              <input id="pcSliceThreshSlider" type="range" min="185" max="245" value="224" oninput="PCApp.onSlicerParamChange()" class="w-full accent-indigo-600">
+              <div class="flex items-center justify-between text-[11px] font-black">
+                <span>✂️ 四邊內縮修邊（去掉細白/藍邊）</span>
+                <span id="pcSliceTrimVal" class="text-pink-600">1%</span>
+              </div>
+              <input id="pcSliceTrimSlider" type="range" min="0" max="6" step="0.5" value="1" oninput="PCApp.onSlicerParamChange()" class="w-full accent-pink-500">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-1.5">
+            <button type="button" onclick="PCApp.recomputeSlicerBoxes()" class="py-2.5 rounded-2xl bg-zinc-100 neo-btn font-black text-xs">🔄 重測</button>
+            <button type="button" id="pcApplySliceBtn" onclick="PCApp.applySlicedSamplesToSeries()" class="col-span-2 py-2.5 rounded-2xl bg-cheki-accent text-white neo-btn font-black text-xs">✅ 裁切並填入圖鑑格</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(div);
+  },
+
+  openSlicerModal() {
+    this.ensurePart2UI();
+    this.updateSlicerModeButtons();
+    document.getElementById('pcSlicerModal')?.classList.remove('hidden');
+    if (!this.slicer.img) document.getElementById('pcSheetFileInput')?.click();
+  },
+
+  closeSlicerModal() {
+    document.getElementById('pcSlicerModal')?.classList.add('hidden');
+  },
+
+  setSlicerMode(m) {
+    this.slicer.mode = m;
+    this.updateSlicerModeButtons();
+    if (this.slicer.img) this.recomputeSlicerBoxes();
+  },
+
+  updateSlicerModeButtons() {
+    const isAuto = this.slicer.mode === 'auto';
+    const bA = document.getElementById('pcSliceModeAuto');
+    const bG = document.getElementById('pcSliceModeGrid');
+    const gBox = document.getElementById('pcSliceGridInputs');
+    if (bA) bA.className = `py-1.5 rounded-xl border-2 border-cheki-dark font-black ${isAuto ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-700'}`;
+    if (bG) bG.className = `py-1.5 rounded-xl border-2 border-cheki-dark font-black ${!isAuto ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-700'}`;
+    if (gBox) gBox.classList.toggle('hidden', isAuto);
+  },
+
+  onSlicerParamChange() {
+    this.slicer.thresh = Number(document.getElementById('pcSliceThreshSlider')?.value || 224);
+    this.slicer.trimPct = Number(document.getElementById('pcSliceTrimSlider')?.value || 1);
+    const tv = document.getElementById('pcSliceThreshVal');
+    const trv = document.getElementById('pcSliceTrimVal');
+    if (tv) tv.textContent = String(this.slicer.thresh);
+    if (trv) trv.textContent = `${this.slicer.trimPct}%`;
+    if (this.slicer.img) this.recomputeSlicerBoxes();
+  },
+
+  handleSheetFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        this.slicer.img = img;
+        document.getElementById('pcSlicerEmptyHint')?.classList.add('hidden');
+        this.recomputeSlicerBoxes();
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  },
+
+  recomputeSlicerBoxes() {
+    const img = this.slicer.img;
+    if (!img) return;
+    const maxDim = 640;
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+
+    const off = document.createElement('canvas');
+    off.width = w; off.height = h;
+    const ctx = off.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h).data;
+
+    const thresh = this.slicer.thresh;
+    const satThresh = Math.max(14, Math.round((255 - thresh) * 0.65));
+    const mask = new Uint8Array(w * h);
+
+    for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+      const mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+      if ((r + g + b) / 3 < thresh || (mx - mn) > satThresh) mask[p] = 1;
+    }
+
+    const getDensity = (x0, y0, x1, y1) => {
+      let c = 0, tot = Math.max(1, (x1 - x0) * (y1 - y0));
+      for (let y = y0; y < y1; y++) {
+        let rowOff = y * w;
+        for (let x = x0; x < x1; x++) if (mask[rowOff + x]) c++;
+      }
+      return c / tot;
+    };
+
+    const rawBoxes = [];
+
+    if (this.slicer.mode === 'grid') {
+      // 先自動鎖定外圍實質內容邊界，再套用行列均分並自動跳過全白空白格
+      let minX = w, minY = h, maxX = 0, maxY = 0;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (mask[y * w + x]) {
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX <= minX || maxY <= minY) { minX = 0; minY = 0; maxX = w; maxY = h; }
+      const rows = Math.max(1, Number(document.getElementById('pcSliceRowsInp')?.value) || 5);
+      const cols = Math.max(1, Number(document.getElementById('pcSliceColsInp')?.value) || 6);
+      const cw = (maxX - minX) / cols, ch = (maxY - minY) / rows;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const x0 = Math.round(minX + c * cw), y0 = Math.round(minY + r * ch);
+          const x1 = Math.round(minX + (c + 1) * cw), y1 = Math.round(minY + (r + 1) * ch);
+          if (getDensity(x0, y0, x1, y1) > 0.14) {
+            rawBoxes.push({ rx: x0 / w, ry: y0 / h, rw: (x1 - x0) / w, rh: (y1 - y0) / h });
+          }
+        }
+      }
+    } else {
+      // 1. 水平投影找出每個橫排
+      const rowBands = [];
+      let inBand = false, bStart = 0, gap = 0;
+      for (let y = 0; y < h; y++) {
+        let cnt = 0, rowOff = y * w;
+        for (let x = 0; x < w; x++) if (mask[rowOff + x]) cnt++;
+        if (cnt > w * 0.03) {
+          if (!inBand) { inBand = true; bStart = y; }
+          gap = 0;
+        } else if (inBand) {
+          gap++;
+          if (gap > 3) {
+            if (y - gap - bStart >= h * 0.05) rowBands.push([bStart, y - gap]);
+            inBand = false;
+          }
+        }
+      }
+      if (inBand && h - bStart >= h * 0.05) rowBands.push([bStart, h]);
+
+      // 2. 每個橫排內做垂直投影，遇到緊貼嘅三連卡自動按 55:85 比例拆分
+      rowBands.forEach(([y0, y1]) => {
+        const bh = y1 - y0;
+        const segs = [];
+        let inSeg = false, sStart = 0, sGap = 0;
+        for (let x = 0; x < w; x++) {
+          let cnt = 0;
+          for (let y = y0; y < y1; y++) if (mask[y * w + x]) cnt++;
+          if (cnt > bh * 0.14) {
+            if (!inSeg) { inSeg = true; sStart = x; }
+            sGap = 0;
+          } else if (inSeg) {
+            sGap++;
+            if (sGap > 1) {
+              if (x - sGap - sStart >= bh * 0.28) segs.push([sStart, x - sGap]);
+              inSeg = false;
+            }
+          }
+        }
+        if (inSeg && w - sStart >= bh * 0.28) segs.push([sStart, w]);
+
+        segs.forEach(([x0, x1]) => {
+          const sw = x1 - x0;
+          if (getDensity(x0, y0, x1, y1) < 0.20) return;
+          const ratio = sw / bh;
+          const splits = ratio > 1.08 ? Math.max(2, Math.round(ratio / 0.65)) : 1;
+          const subW = sw / splits;
+          for (let k = 0; k < splits; k++) {
+            const sx0 = Math.round(x0 + k * subW), sx1 = Math.round(x0 + (k + 1) * subW);
+            if (getDensity(sx0, y0, sx1, y1) >= 0.18) {
+              rawBoxes.push({ rx: sx0 / w, ry: y0 / h, rw: (sx1 - sx0) / w, rh: bh / h });
+            }
+          }
+        });
+      });
+    }
+
+    this.slicer.boxes = rawBoxes;
+    this.drawSlicerPreview();
+  },
+
+  drawSlicerPreview() {
+    const img = this.slicer.img;
+    const canvas = document.getElementById('pcSlicerCanvas');
+    if (!img || !canvas) return;
+
+    const maxW = 720;
+    const scale = Math.min(1, maxW / img.width);
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    const trim = this.slicer.trimPct / 100;
+    this.slicer.boxes.forEach((b, idx) => {
+      const x = (b.rx + b.rw * trim) * canvas.width;
+      const y = (b.ry + b.rh * trim) * canvas.height;
+      const bw = b.rw * (1 - trim * 2) * canvas.width;
+      const bh = b.rh * (1 - trim * 2) * canvas.height;
+
+      ctx.strokeStyle = '#10B981';
+      ctx.lineWidth = Math.max(2, Math.round(canvas.width / 260));
+      ctx.strokeRect(x, y, bw, bh);
+
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.88)';
+      const badgeW = 28, badgeH = 18;
+      ctx.fillRect(x, y, badgeW, badgeH);
+      ctx.fillStyle = '#09090B';
+      ctx.font = '900 11px sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`#${idx + 1}`, x + 3, y + 9);
+    });
+
+    const cntEl = document.getElementById('pcSlicerCountText');
+    const applyBtn = document.getElementById('pcApplySliceBtn');
+    const n = this.slicer.boxes.length;
+    if (cntEl) cntEl.textContent = n > 0 ? `✅ 已偵測到 ${n} 張小卡（點綠框可剔除）` : '⚠️ 未偵測到卡片，請調高靈敏度或改用均分網格';
+    if (applyBtn) applyBtn.textContent = `✅ 裁切並填入圖鑑 (${n} 張)`;
+  },
+
+  onSlicerCanvasTap(e) {
+    const canvas = document.getElementById('pcSlicerCanvas');
+    if (!canvas || this.slicer.boxes.length === 0) return;
+    const rect = canvas.getBoundingClientRect();
+    const rx = (e.clientX - rect.left) / rect.width;
+    const ry = (e.clientY - rect.top) / rect.height;
+
+    const hitIdx = this.slicer.boxes.findIndex(b => rx >= b.rx && rx <= b.rx + b.rw && ry >= b.ry && ry <= b.ry + b.rh);
+    if (hitIdx >= 0) {
+      this.slicer.boxes.splice(hitIdx, 1);
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(8);
+      this.drawSlicerPreview();
+    }
+  },
+
+  async applySlicedSamplesToSeries() {
+    const s = this.getActiveSeries();
+    const img = this.slicer.img;
+    const boxes = this.slicer.boxes;
+    if (!s || !img || boxes.length === 0) return;
+
+    const trim = this.slicer.trimPct / 100;
+    const cols = s.groupCols || 3;
+    const variants = ['A', 'B', 'C', 'D', 'E', 'F'];
+    const cutCanvas = document.createElement('canvas');
+    const cutCtx = cutCanvas.getContext('2d');
+
+    boxes.forEach((b, i) => {
+      const sx = Math.max(0, Math.round((b.rx + b.rw * trim) * img.width));
+      const sy = Math.max(0, Math.round((b.ry + b.rh * trim) * img.height));
+      const sw = Math.max(10, Math.round(b.rw * (1 - trim * 2) * img.width));
+      const sh = Math.max(10, Math.round(b.rh * (1 - trim * 2) * img.height));
+
+      const outW = Math.min(360, sw);
+      const outH = Math.round(outW * (sh / sw));
+      cutCanvas.width = outW;
+      cutCanvas.height = outH;
+      cutCtx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+      const dataUrl = cutCanvas.toDataURL('image/jpeg', 0.84);
+
+      if (!s.slots[i]) {
+        const gIdx = Math.floor(i / cols);
+        s.slots.push({
+          idx: i + 1, groupIdx: gIdx, member: `成員 ${gIdx + 1}`,
+          variant: variants[i % cols] || String((i % cols) + 1),
+          sampleImg: dataUrl, realImg: '', realBackImg: '', qty: 0, wish: false, rarity: 'N'
+        });
+      } else {
+        s.slots[i].sampleImg = dataUrl;
+      }
+    });
+
+    await this.saveSeries(s);
+    this.closeSlicerModal();
+    this.renderDex();
+    if (typeof window.triggerHaptic === 'function') window.triggerHaptic(15);
+    if (typeof window.showChekiToast === 'function') {
+      window.showChekiToast(`✂️ 已成功切割並墊底 ${boxes.length} 張預覽圖！`, 3500);
+    }
+  },
+
+  triggerSeriesBackUpload() {
+    this.ensurePart2UI();
+    document.getElementById('pcBackFileInput')?.click();
+  },
+
+  handleSeriesBackFile(e) {
+    const file = e.target.files?.[0];
+    const s = this.getActiveSeries();
+    if (!file || !s) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = async () => {
+        const outW = 440, outH = 680; // 55:85 標準小卡比例
+        const c = document.createElement('canvas');
+        c.width = outW; c.height = outH;
+        const ctx = c.getContext('2d');
+        const targetRatio = outW / outH;
+        const imgRatio = img.width / img.height;
+        let sx = 0, sy = 0, sw = img.width, sh = img.height;
+        if (imgRatio > targetRatio) {
+          sw = img.height * targetRatio; sx = (img.width - sw) / 2;
+        } else {
+          sh = img.width / targetRatio; sy = (img.height - sh) / 2;
+        }
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+        s.backImage = c.toDataURL('image/jpeg', 0.86);
+        await this.saveSeries(s);
+        this.renderDex();
+        if (typeof window.showChekiToast === 'function') window.showChekiToast('🎴 已設定本系列共用卡背！點開小卡即可翻面檢視');
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  },
+
+  onAfterRenderDex(s) {
+    this.ensurePart2UI();
+    const bar = document.getElementById('pcToolbarExt');
+    if (!bar) return;
+    bar.innerHTML = `
+      <button type="button" onclick="PCApp.openSlicerModal()" class="px-2.5 py-1.5 rounded-xl bg-sky-200 hover:bg-sky-300 neo-btn font-black text-[11px] text-zinc-900">✂️ 預覽圖切格墊底</button>
+      <button type="button" onclick="PCApp.triggerSeriesBackUpload()" class="px-2.5 py-1.5 rounded-xl ${s.backImage ? 'bg-emerald-200' : 'bg-amber-200'} neo-btn font-black text-[11px] text-zinc-900">${s.backImage ? '✅ 更換共用卡背' : '🎴 設定共用卡背'}</button>
+      <span id="pcToolbarExtPart3" class="inline-flex items-center gap-1.5 flex-wrap"></span>
+    `;
+    if (typeof this.onAfterRenderPart2Toolbar === 'function') this.onAfterRenderPart2Toolbar(s);
+  },
+
+  onAfterOpenSlotModal(s, slot) {
+    const stage = document.getElementById('pcSlotStageArea');
+    const backSrc = slot.realBackImg || s.backImage;
+    if (stage && backSrc && !document.getElementById('pcSlotFlipToggleBtn')) {
+      let showingBack = false;
+      const imgEl = stage.querySelector('img');
+      const flipBtn = document.createElement('button');
+      flipBtn.type = 'button';
+      flipBtn.id = 'pcSlotFlipToggleBtn';
+      flipBtn.className = 'mt-2 px-3 py-1 rounded-full bg-indigo-100 border-2 border-cheki-dark text-[11px] font-black text-indigo-900 active:scale-95';
+      flipBtn.textContent = '🔄 翻看小卡背面';
+      flipBtn.onclick = () => {
+        if (!imgEl) return;
+        showingBack = !showingBack;
+        imgEl.src = showingBack ? backSrc : (slot.realImg || slot.sampleImg);
+        if (showingBack) imgEl.classList.remove('grayscale', 'brightness-75', 'opacity-60');
+        else if (slot.qty === 0 && !slot.realImg) imgEl.classList.add('grayscale', 'brightness-75', 'opacity-60');
+        flipBtn.textContent = showingBack ? '🔄 翻回小卡正面' : '🔄 翻看小卡背面';
+      };
+      stage.appendChild(flipBtn);
+    }
+    if (typeof this.onAfterOpenSlotPart2 === 'function') this.onAfterOpenSlotPart2(s, slot);
+  }
+});
+
+if (PCApp.state.mode === 'pc') PCApp.renderDex();
+// === [第 3 段貼在此行正下方] ===
