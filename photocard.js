@@ -1668,10 +1668,12 @@ Object.assign(PCApp, {
     if (typeof window.showChekiToast === 'function') window.showChekiToast(`✂️ 已精準切割並墊底 ${activeBoxes.length} 張預覽圖！`, 3500);
   },
 
-  // --------------------------------------------------------------------------
-  // 2. 四角透視真卡掃描器 ＋ 60fps 縮放微調 ＋ 無損圓角編輯
+ // --------------------------------------------------------------------------
+  // 2. 四角透視真卡掃描器 ＋ 自動貼邊水平校正 ＋ 真・無損參數重編
   // --------------------------------------------------------------------------
   triggerSeriesBackUpload() {
+    const s = this.getActiveSeries();
+    if (s?.backImage) return this.editSeriesBackImage();
     this.openCardScanner(-1, 'seriesBack');
   },
 
@@ -1684,21 +1686,15 @@ Object.assign(PCApp, {
     sc.targetSide = side;
     sc.ratioKey = this.getSeriesRatioKey(s);
     sc.cropMode = 'quad';
+    sc.quadDirty = false;
     sc.img = null; sc.rawHiResImg = null; sc.rawPreviewImg = null; sc.hiResImg = null; sc.previewImg = null;
     sc.quadPts = [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }];
     sc.activeCorner = -1; sc.quadRect = null;
     sc.rot = 0; sc.fineRot = 0; sc.scale = 1; sc.ox = 0; sc.oy = 0;
     sc.deglare = 15; sc.sharpen = 20; sc.bright = 100; sc.radiusPct = 6;
 
-    document.getElementById('pcScanZoom').value = '100';
-    document.getElementById('pcScanFineRot').value = '0';
-    document.getElementById('pcScanDeglare').value = '15';
-    document.getElementById('pcScanSharpen').value = '20';
-    document.getElementById('pcScanBright').value = '100';
-    document.getElementById('pcScanRadius').value = '6';
+    this.syncScannerSlidersDOM();
     document.getElementById('pcFixOldCornerBtn')?.classList.add('hidden');
-
-    this.updateScanLabels();
     this.updateScannerControlsUI();
     this.applyCanvasBoxForCurrentMode();
 
@@ -1723,44 +1719,124 @@ Object.assign(PCApp, {
     document.getElementById('pcScanModal')?.classList.add('hidden');
   },
 
+  syncScannerSlidersDOM() {
+    const sc = this.scanner;
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = String(v); };
+    setVal('pcScanZoom', Math.round((sc.scale || 1) * 100));
+    setVal('pcScanFineRot', sc.fineRot || 0);
+    setVal('pcScanDeglare', sc.deglare ?? 0);
+    setVal('pcScanSharpen', sc.sharpen ?? 0);
+    setVal('pcScanBright', sc.bright ?? 100);
+    setVal('pcScanRadius', sc.radiusPct ?? 6);
+    this.updateScanLabels();
+  },
+
+  makeScaledCanvas(imgObj, maxEdge) {
+    const s = Math.min(1, maxEdge / Math.max(imgObj.width, imgObj.height));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(imgObj.width * s));
+    c.height = Math.max(1, Math.round(imgObj.height * s));
+    c.getContext('2d').drawImage(imgObj, 0, 0, c.width, c.height);
+    return c;
+  },
+
+  // 載入已保存的無損原圖與完整參數（支援重調水平角度、濾鏡與返回四角重裁）
+  restoreLosslessSession(im, params, fallbackRadius = 6) {
+    const sc = this.scanner;
+    if (params?.ratioKey && this.CARD_RATIOS[params.ratioKey]) sc.ratioKey = params.ratioKey;
+    const spec = this.CARD_RATIOS[sc.ratioKey || '63x88'] || this.CARD_RATIOS['63x88'];
+
+    sc.rawHiResImg = this.makeScaledCanvas(im, 1500);
+    sc.rawPreviewImg = this.makeScaledCanvas(im, 720);
+
+    if (params && Array.isArray(params.quadPts) && params.quadPts.length === 4) {
+      sc.quadPts = params.quadPts.map(p => ({ x: Number(p.x) || 0, y: Number(p.y) || 0 }));
+      sc.hiResImg = this.warpQuadToCanvas(sc.rawHiResImg, sc.quadPts, spec.w, spec.h);
+      sc.previewImg = this.warpQuadToCanvas(sc.rawPreviewImg, sc.quadPts, spec.preW, spec.preH);
+      sc.img = sc.hiResImg;
+      sc.scale = params.scale ?? 1;
+      sc.ox = params.ox ?? 0;
+      sc.oy = params.oy ?? 0;
+      sc.rot = params.rot ?? 0;
+      sc.fineRot = params.fineRot ?? 0;
+      sc.deglare = params.deglare ?? 0;
+      sc.sharpen = params.sharpen ?? 0;
+      sc.bright = params.bright ?? 100;
+      sc.radiusPct = typeof params.radiusPct === 'number' ? params.radiusPct : fallbackRadius;
+    } else {
+      // 兼容舊版已存圖或 AI 高清圖：將去反光與銳化歸零，避免二次疊加劣化
+      sc.quadPts = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
+      sc.hiResImg = sc.rawHiResImg;
+      sc.previewImg = sc.rawPreviewImg;
+      sc.img = sc.rawHiResImg;
+      sc.scale = 1; sc.ox = 0; sc.oy = 0; sc.rot = 0; sc.fineRot = 0;
+      sc.deglare = 0; sc.sharpen = 0; sc.bright = 100;
+      sc.radiusPct = fallbackRadius;
+    }
+
+    sc.quadDirty = false;
+    sc.cropMode = 'adjust';
+    this.syncScannerSlidersDOM();
+    this.updateScannerControlsUI();
+    this.applyCanvasBoxForCurrentMode();
+    this.scheduleScanRender(true);
+  },
+
+  async editSeriesBackImage() {
+    const s = this.getActiveSeries();
+    if (!s?.backImage) return this.openCardScanner(-1, 'seriesBack');
+    const hasLossless = Boolean(s.backScanSrcImg && s.backScanParams);
+    const src = hasLossless ? s.backScanSrcImg : (s.backRawRectImg || s.backImage);
+    const im = await this.loadImgAsync(src);
+    if (!im) return this.openCardScanner(-1, 'seriesBack');
+
+    this.openCardScanner(-1, 'seriesBack');
+    this.restoreLosslessSession(im, hasLossless ? s.backScanParams : null, typeof s.backRadiusPct === 'number' ? s.backRadiusPct : 6);
+  },
+
   async editSavedSlotImage(slotIdx, side = 'front') {
     const s = this.getActiveSeries();
     const slot = s?.slots.find(x => x.idx === slotIdx);
     if (!s || !slot) return;
 
-    const rawSrc = side === 'back' ? slot.rawRectBackImg : slot.rawRectImg;
-    const fallbackSrc = side === 'back' ? (slot.realBackImg || s.backImage) : (slot.realImg || slot.sampleImg);
-    const src = rawSrc || fallbackSrc;
-    if (!src) return this.openCardScanner(slotIdx, side);
+    const isBack = side === 'back';
+    const hasLossless = isBack
+      ? Boolean(slot.scanSrcBackImg && slot.scanBackParams && (!slot.scanBackSyncedLen || slot.scanBackSyncedLen === (slot.rawRectBackImg || '').length))
+      : Boolean(slot.scanSrcImg && slot.scanParams && !slot.isAiHD && (!slot.scanSyncedLen || slot.scanSyncedLen === (slot.rawRectImg || '').length));
 
+    const src = hasLossless
+      ? (isBack ? slot.scanSrcBackImg : slot.scanSrcImg)
+      : (isBack ? (slot.rawRectBackImg || slot.realBackImg || s.backImage) : (slot.rawRectImg || slot.realImg || slot.sampleImg));
+
+    if (!src) return this.openCardScanner(slotIdx, side);
     const im = await this.loadImgAsync(src);
     if (!im) return alert('無法讀取已儲存的圖片，請重新選相！');
 
-    this.openCardScanner(slotIdx, side);
-    this.loadSourceImageToScanner(im, 'adjust');
-
-    const savedRad = side === 'back'
+    const savedRad = isBack
       ? (typeof slot.backRadiusPct === 'number' ? slot.backRadiusPct : 6)
       : (typeof slot.radiusPct === 'number' ? slot.radiusPct : 6);
-    this.scanner.radiusPct = savedRad;
-    document.getElementById('pcScanRadius').value = String(savedRad);
-    document.getElementById('pcFixOldCornerBtn')?.classList.toggle('hidden', Boolean(rawSrc));
 
-    this.updateScanLabels();
-    this.scheduleScanRender(true);
+    this.openCardScanner(slotIdx, side);
+    this.restoreLosslessSession(im, hasLossless ? (isBack ? slot.scanBackParams : slot.scanParams) : null, savedRad);
+    document.getElementById('pcFixOldCornerBtn')?.classList.toggle('hidden', hasLossless);
+
     if (typeof window.showChekiToast === 'function') {
-      window.showChekiToast(rawSrc ? '🎨 已載入無損原圖，可自由重調 0%～15% 圓角！' : '🎨 如舊圖曾切角，可按「🩹 清舊黑角」再調圓角！', 2800);
+      window.showChekiToast(
+        hasLossless
+          ? '🎨 已還原無損原圖與上次角度設定，可隨時重調水平或切回四角重裁！'
+          : '🎨 如舊存圖已有黑邊，可按「🩹 清舊黑角」放大推走或重選原相一次！',
+        3000
+      );
     }
   },
 
   nudgeZoomToRemoveOldCorners() {
     const sc = this.scanner;
     if (!sc.img) return;
-    sc.scale = Math.max(sc.scale || 1, 1.06);
-    document.getElementById('pcScanZoom').value = String(Math.round(sc.scale * 100));
-    this.updateScanLabels();
+    sc.scale = Math.min(2.6, Number(((sc.scale || 1) + 0.08).toFixed(2)));
+    this.syncScannerSlidersDOM();
     this.scheduleScanRender(true);
-    if (typeof window.showChekiToast === 'function') window.showChekiToast('✨ 已微放大推出舊黑角，可自由重設圓角！', 2500);
+    if (typeof window.showChekiToast === 'function') window.showChekiToast(`✨ 已放大至 ${Math.round(sc.scale * 100)}% 推走舊黑邊！`, 2200);
   },
 
   setScanTargetSide(side) {
@@ -1778,14 +1854,22 @@ Object.assign(PCApp, {
     this.applyCanvasBoxForCurrentMode();
     if (this.scanner.rawHiResImg) {
       if (this.scanner.cropMode === 'quad') this.renderQuadEditorCanvas();
-      else this.confirmQuadPerspectiveCrop(true);
+      else this.confirmQuadPerspectiveCrop(true, true);
     }
   },
 
   setScanCropMode(mode) {
     const sc = this.scanner;
     if (mode === 'adjust' && sc.cropMode === 'quad' && sc.rawHiResImg) {
-      return this.confirmQuadPerspectiveCrop(false);
+      // 若在四角模式未動過角點且已有拉直圖，保留原有水平角度與微調設定
+      if (!sc.quadDirty && sc.hiResImg && sc.hiResImg !== sc.rawHiResImg) {
+        sc.cropMode = 'adjust';
+        this.updateScannerControlsUI();
+        this.applyCanvasBoxForCurrentMode();
+        this.scheduleScanRender(true);
+        return;
+      }
+      return this.confirmQuadPerspectiveCrop(false, false);
     }
     sc.cropMode = mode;
     this.updateScannerControlsUI();
@@ -1858,26 +1942,22 @@ Object.assign(PCApp, {
   },
 
   loadSourceImageToScanner(imgObj, defaultMode = 'quad') {
-    const makeScaled = (src, maxEdge) => {
-      const s = Math.min(1, maxEdge / Math.max(src.width, src.height));
-      const c = document.createElement('canvas');
-      c.width = Math.max(1, Math.round(src.width * s));
-      c.height = Math.max(1, Math.round(src.height * s));
-      c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
-      return c;
-    };
     const sc = this.scanner;
-    sc.rawHiResImg = makeScaled(imgObj, 1600);
-    sc.rawPreviewImg = makeScaled(imgObj, 720);
+    sc.rawHiResImg = this.makeScaledCanvas(imgObj, 1500);
+    sc.rawPreviewImg = this.makeScaledCanvas(imgObj, 720);
     sc.hiResImg = sc.rawHiResImg;
     sc.previewImg = sc.rawPreviewImg;
     sc.img = sc.rawHiResImg;
     sc.rot = 0; sc.fineRot = 0; sc.scale = 1; sc.ox = 0; sc.oy = 0;
+    sc.deglare = 15; sc.sharpen = 20; sc.bright = 100;
     sc.quadPts = defaultMode === 'adjust'
       ? [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }]
       : [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }];
+    sc.quadDirty = defaultMode === 'quad';
     sc.cropMode = defaultMode;
 
+    document.getElementById('pcFixOldCornerBtn')?.classList.add('hidden');
+    this.syncScannerSlidersDOM();
     this.updateScannerControlsUI();
     this.applyCanvasBoxForCurrentMode();
     if (defaultMode === 'quad') this.renderQuadEditorCanvas();
@@ -1963,6 +2043,7 @@ Object.assign(PCApp, {
       sc.rawPreviewImg = rot90(sc.rawPreviewImg);
       sc.img = sc.rawHiResImg;
       sc.quadPts = [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }];
+      sc.quadDirty = true;
       this.applyCanvasBoxForCurrentMode();
       this.renderQuadEditorCanvas();
       return;
@@ -1976,24 +2057,23 @@ Object.assign(PCApp, {
     const sc = this.scanner;
     if (sc.cropMode === 'quad' && sc.rawPreviewImg) {
       sc.quadPts = [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }];
+      sc.quadDirty = true;
       return this.renderQuadEditorCanvas();
     }
-    sc.scale = 1; sc.ox = 0; sc.oy = 0; sc.fineRot = 0;
-    document.getElementById('pcScanZoom').value = '100';
-    document.getElementById('pcScanFineRot').value = '0';
-    this.updateScanLabels();
+    sc.scale = 1; sc.ox = 0; sc.oy = 0; sc.rot = 0; sc.fineRot = 0;
+    this.syncScannerSlidersDOM();
     this.scheduleScanRender(true);
   },
 
   updateScanLabels() {
     const sc = this.scanner;
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    set('pcScanZoomVal', `${Math.round(sc.scale * 100)}%`);
-    set('pcScanFineRotVal', `${sc.fineRot}°`);
-    set('pcScanDeglareVal', String(sc.deglare));
-    set('pcScanSharpenVal', String(sc.sharpen));
-    set('pcScanBrightVal', `${sc.bright}%`);
-    set('pcScanRadiusVal', `${sc.radiusPct}%`);
+    set('pcScanZoomVal', `${Math.round((sc.scale || 1) * 100)}%`);
+    set('pcScanFineRotVal', `${sc.fineRot || 0}°`);
+    set('pcScanDeglareVal', String(sc.deglare ?? 0));
+    set('pcScanSharpenVal', String(sc.sharpen ?? 0));
+    set('pcScanBrightVal', `${sc.bright ?? 100}%`);
+    set('pcScanRadiusVal', `${sc.radiusPct ?? 6}%`);
   },
 
   onScanSlider() {
@@ -2113,18 +2193,19 @@ Object.assign(PCApp, {
     return out;
   },
 
-  confirmQuadPerspectiveCrop(silent = false) {
+  confirmQuadPerspectiveCrop(silent = false, keepAdjustments = false) {
     const sc = this.scanner;
     if (!sc.rawHiResImg) return;
     const spec = this.CARD_RATIOS[sc.ratioKey || '63x88'] || this.CARD_RATIOS['63x88'];
     sc.hiResImg = this.warpQuadToCanvas(sc.rawHiResImg, sc.quadPts, spec.w, spec.h);
     sc.previewImg = this.warpQuadToCanvas(sc.rawPreviewImg, sc.quadPts, spec.preW, spec.preH);
     sc.img = sc.hiResImg;
+    sc.quadDirty = false;
     sc.cropMode = 'adjust';
-    sc.scale = 1; sc.ox = 0; sc.oy = 0; sc.rot = 0; sc.fineRot = 0;
-    document.getElementById('pcScanZoom').value = '100';
-    document.getElementById('pcScanFineRot').value = '0';
-    this.updateScanLabels();
+    if (!keepAdjustments) {
+      sc.scale = 1; sc.ox = 0; sc.oy = 0; sc.rot = 0; sc.fineRot = 0;
+      this.syncScannerSlidersDOM();
+    }
     this.updateScannerControlsUI();
     this.applyCanvasBoxForCurrentMode();
     this.scheduleScanRender(true);
@@ -2166,30 +2247,70 @@ Object.assign(PCApp, {
     ctx.putImageData(imgData, 0, 0);
   },
 
-  renderUnclippedRectCanvas(width, height, isExport = false, applyEnhance = false) {
+  // 自動計算水平旋轉斜邊貼齊倍率與防露黑邊位移限制
+  computeClampedTransform(width, height, iw, ih, isExport) {
     const sc = this.scanner;
     const spec = this.CARD_RATIOS[sc.ratioKey || '63x88'] || this.CARD_RATIOS['63x88'];
+    const scaleFactor = isExport ? (width / spec.preW) : 1;
+
+    const baseCover = Math.max(width / iw, height / ih);
+    const w0 = iw * baseCover, h0 = ih * baseCover;
+
+    const fineRad = ((sc.fineRot || 0) * Math.PI) / 180;
+    const absC = Math.abs(Math.cos(fineRad)), absS = Math.abs(Math.sin(fineRad));
+    const needW = width * absC + height * absS;
+    const needH = width * absS + height * absC;
+
+    // 當有微角度水平旋轉時，自動補償放大倍率以消除四角黑三角形
+    const tiltAutoScale = Math.abs(sc.fineRot || 0) > 0.01 ? Math.max(1, needW / w0, needH / h0) : 1;
+    const userScale = sc.scale || 1;
+    const finalScale = baseCover * tiltAutoScale * userScale;
+
+    let ox = (sc.ox || 0) * scaleFactor;
+    let oy = (sc.oy || 0) * scaleFactor;
+
+    // 縮放 >= 100% 時自動鎖定拖曳邊界，防止拉出黑邊
+    if (userScale >= 0.999) {
+      const cosP = Math.cos(fineRad), sinP = Math.sin(fineRad);
+      const uMax = Math.max(0, (iw * finalScale - needW) / 2);
+      const vMax = Math.max(0, (ih * finalScale - needH) / 2);
+      let uOff = ox * cosP + oy * sinP;
+      let vOff = -ox * sinP + oy * cosP;
+      uOff = Math.max(-uMax, Math.min(uMax, uOff));
+      vOff = Math.max(-vMax, Math.min(vMax, vOff));
+      ox = uOff * cosP - vOff * sinP;
+      oy = uOff * sinP + vOff * cosP;
+      if (!isExport) {
+        sc.ox = ox;
+        sc.oy = oy;
+      }
+    }
+
+    return { finalScale, ox, oy, fineRad, coarseRad: ((sc.rot || 0) * Math.PI) / 180 };
+  },
+
+  renderUnclippedRectCanvas(width, height, isExport = false, applyEnhance = false) {
+    const sc = this.scanner;
     const srcImg = isExport ? (sc.hiResImg || sc.img) : (sc.previewImg || sc.img);
     const tmp = document.createElement('canvas');
     tmp.width = width; tmp.height = height;
     if (!srcImg) return tmp;
 
     const tCtx = tmp.getContext('2d', { willReadFrequently: applyEnhance });
-    const scaleFactor = isExport ? (width / spec.preW) : 1;
     tCtx.fillStyle = '#111113';
     tCtx.fillRect(0, 0, width, height);
 
-    const rotRad = (((sc.rot || 0) + (sc.fineRot || 0)) * Math.PI) / 180;
     const isSwapped = sc.rot === 90 || sc.rot === 270;
     const iw = isSwapped ? srcImg.height : srcImg.width;
     const ih = isSwapped ? srcImg.width : srcImg.height;
-    const coverScale = Math.max(width / iw, height / ih) * (sc.scale || 1);
+    const tf = this.computeClampedTransform(width, height, iw, ih, isExport);
 
     tCtx.save();
     if (sc.bright !== 100 || sc.contrast !== 100) tCtx.filter = `brightness(${sc.bright}%) contrast(${sc.contrast}%)`;
-    tCtx.translate(width / 2 + (sc.ox || 0) * scaleFactor, height / 2 + (sc.oy || 0) * scaleFactor);
-    tCtx.rotate(rotRad);
-    tCtx.scale(coverScale, coverScale);
+    tCtx.translate(width / 2 + tf.ox, height / 2 + tf.oy);
+    tCtx.rotate(tf.fineRad);
+    tCtx.scale(tf.finalScale, tf.finalScale);
+    tCtx.rotate(tf.coarseRad);
     tCtx.drawImage(srcImg, -srcImg.width / 2, -srcImg.height / 2);
     tCtx.restore();
 
@@ -2291,6 +2412,7 @@ Object.assign(PCApp, {
           x: Math.max(0, Math.min(1, (pos.x - r.x) / Math.max(1, r.w))),
           y: Math.max(0, Math.min(1, (pos.y - r.y) / Math.max(1, r.h)))
         };
+        sc.quadDirty = true;
         if (!quadRaf) quadRaf = requestAnimationFrame(() => { quadRaf = null; this.renderQuadEditorCanvas(); });
         return;
       }
@@ -2330,7 +2452,7 @@ Object.assign(PCApp, {
 
     const spec = this.CARD_RATIOS[sc.ratioKey || '63x88'] || this.CARD_RATIOS['63x88'];
     const backup = { hi: sc.hiResImg, scale: sc.scale, ox: sc.ox, oy: sc.oy, rot: sc.rot, fine: sc.fineRot };
-    if (sc.cropMode === 'quad' && sc.rawHiResImg) {
+    if (sc.cropMode === 'quad' && sc.rawHiResImg && (sc.quadDirty || sc.hiResImg === sc.rawHiResImg)) {
       sc.hiResImg = this.warpQuadToCanvas(sc.rawHiResImg, sc.quadPts, spec.w, spec.h);
       sc.scale = 1; sc.ox = 0; sc.oy = 0; sc.rot = 0; sc.fineRot = 0;
     }
@@ -2363,13 +2485,30 @@ Object.assign(PCApp, {
       const spec = this.CARD_RATIOS[sc.ratioKey || '63x88'] || this.CARD_RATIOS['63x88'];
       s.cardRatio = sc.ratioKey || '63x88';
 
-      if (sc.cropMode === 'quad' && sc.rawHiResImg) {
+      if (sc.cropMode === 'quad' && sc.rawHiResImg && (sc.quadDirty || sc.hiResImg === sc.rawHiResImg)) {
         sc.hiResImg = this.warpQuadToCanvas(sc.rawHiResImg, sc.quadPts, spec.w, spec.h);
         sc.img = sc.hiResImg;
         sc.scale = 1; sc.ox = 0; sc.oy = 0; sc.rot = 0; sc.fineRot = 0;
       }
 
-      // 儲存無損未切圓角底圖（供日後無損重改 0%~15% 圓角）
+      // 1. 留底未裁切原始相片與完整編輯參數（支援日後無限次重調四角、水平角度與濾鏡）
+      const srcBaseCv = sc.rawHiResImg ? this.makeScaledCanvas(sc.rawHiResImg, 1280) : null;
+      const scanSrcUrl = srcBaseCv ? srcBaseCv.toDataURL('image/jpeg', 0.86) : '';
+      const scanParams = {
+        ratioKey: sc.ratioKey || '63x88',
+        quadPts: sc.quadPts.map(p => ({ x: Number(p.x.toFixed(4)), y: Number(p.y.toFixed(4)) })),
+        scale: Number((sc.scale || 1).toFixed(3)),
+        ox: Number((sc.ox || 0).toFixed(2)),
+        oy: Number((sc.oy || 0).toFixed(2)),
+        rot: sc.rot || 0,
+        fineRot: Number((sc.fineRot || 0).toFixed(1)),
+        deglare: sc.deglare ?? 0,
+        sharpen: sc.sharpen ?? 0,
+        bright: sc.bright ?? 100,
+        radiusPct: sc.radiusPct ?? 6
+      };
+
+      // 2. 生成已拉直未切圓角底圖（供 Gemini AI 對齊使用）與最終圓角卡片圖
       const rectOut = this.renderUnclippedRectCanvas(spec.w, spec.h, true, true);
       const rawRectUrl = rectOut.toDataURL('image/jpeg', 0.88);
 
@@ -2389,6 +2528,7 @@ Object.assign(PCApp, {
         s.backImage = dataUrl;
         s.backRawRectImg = rawRectUrl;
         s.backRadiusPct = sc.radiusPct;
+        if (scanSrcUrl) { s.backScanSrcImg = scanSrcUrl; s.backScanParams = scanParams; }
         await this.saveSeries(s);
         this.closeCardScanner();
         this.renderDex();
@@ -2402,11 +2542,22 @@ Object.assign(PCApp, {
         slot.realBackImg = dataUrl;
         slot.rawRectBackImg = rawRectUrl;
         slot.backRadiusPct = sc.radiusPct;
+        if (scanSrcUrl) {
+          slot.scanSrcBackImg = scanSrcUrl;
+          slot.scanBackParams = scanParams;
+          slot.scanBackSyncedLen = rawRectUrl.length;
+        }
         this.state.autoFlipSlotOnce = slot.idx;
       } else {
         slot.realImg = dataUrl;
         slot.rawRectImg = rawRectUrl;
         slot.radiusPct = sc.radiusPct;
+        slot.isAiHD = false;
+        if (scanSrcUrl) {
+          slot.scanSrcImg = scanSrcUrl;
+          slot.scanParams = scanParams;
+          slot.scanSyncedLen = rawRectUrl.length;
+        }
         if ((slot.qty || 0) === 0) {
           slot.qty = 1; slot.wish = false; this.state.justUnlockedIdx = slot.idx;
           if (typeof window.fireCheerConfetti === 'function') window.fireCheerConfetti();
@@ -2418,7 +2569,7 @@ Object.assign(PCApp, {
       this.renderDex();
       if (typeof window.triggerHaptic === 'function') window.triggerHaptic(16);
       if (typeof window.showChekiToast === 'function') {
-        window.showChekiToast(sc.targetSide === 'back' ? '✍️ 已儲存小卡獨立背面（已自動翻面）！' : `✨ #${String(slot.idx).padStart(3, '0')} 真卡入庫成功（圓角 ${sc.radiusPct}%）！`, 3200);
+        window.showChekiToast(sc.targetSide === 'back' ? '✍️ 已儲存小卡獨立背面（已自動翻面）！' : `✨ #${String(slot.idx).padStart(3, '0')} 無損真卡入庫成功！`, 3200);
       }
     } finally {
       if (saveBtn) { saveBtn.disabled = false; if (oldTxt) saveBtn.textContent = oldTxt; }
