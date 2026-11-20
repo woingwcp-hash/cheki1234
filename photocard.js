@@ -2487,31 +2487,30 @@ Object.assign(PCApp, {
       label: '✨ 標準高清去反光（保真首選）',
       appPrompt: [
         '請將這張日本偶像實體小卡進行超高清修復與重製（Ultra-HD Remaster）。',
-        '【嚴格要求】：100% 忠實保留原本人物的五官、眼睛神韻、笑容表情、髮型、手指動作、服裝與背景構圖，絕對不可改變長相、妝容或變臉。',
-        '【修復重點】：徹底去除卡套反光、燈光白斑、灰塵、雜訊及印刷網點（網紋），恢復清晰銳利的眼神光、細緻髮絲與自然真實膚質（不要過度磨皮或塑膠感）。',
-        '【構圖輸出】：維持原本滿版邊到邊構圖與比例，不要加上任何拍立得白邊、邊框、文字或浮水印。'
+        '【構圖與座標死鎖（極重要）】：必須保持與原圖 1:1 完全相同的長寬比例、鏡頭距離、人物大小與五官像素座標！嚴禁放大、縮小、平移人物，嚴禁裁切上下左右任何邊緣或自行延伸背景。',
+        '【五官嚴格保真】：100% 忠實保留原本人物的五官、眼神、笑容、髮型、手指動作與服裝，絕不可變臉或改變妝容。',
+        '【修復重點】：去除卡套反光、燈光白斑、灰塵、雜訊及印刷網點（網紋），恢復清晰眼神光、髮絲與自然真實膚質（勿過度磨皮），維持無白邊滿版輸出。'
       ].join('\n'),
-      apiPrompt: 'Ultra-HD photo restoration of this Japanese idol trading photocard. STRICTLY preserve 100% exact facial features, expression, hairstyle, hand pose, outfit, and background without changing identity. Remove sleeve glare, light hotspots, dust, noise, and print halftone dots. Restore crisp eye catchlights, clear hair strands, and natural skin texture. Keep exact full-bleed framing and aspect ratio with NO borders or frames.'
+      apiPrompt: 'Ultra-HD photo restoration of this Japanese idol photocard. STRICT GEOMETRY LOCK: Keep 1:1 identical aspect ratio, exact camera framing, exact head/face/hand pixel coordinates, and exact canvas boundaries—DO NOT zoom in, zoom out, crop edges, pan, or re-center. Preserve 100% exact facial identity, expression, hair, hands, and outfit. Remove sleeve glare, hotspots, noise, and print halftone dots. Output full-bleed with NO borders.'
     },
     detail: {
       label: '💎 極致細節強化（眼神光・衣裝）',
       appPrompt: [
-        '請將這張日本偶像實體小卡進行專業棚拍級超高清細節強化（Ultra-HD Detail Remaster）。',
-        '【嚴格要求】：100% 鎖定人物原本五官、神情、髮型、手勢、服飾與背景，不可變臉或改動構圖。',
-        '【強化重點】：清除所有表面反光、膠膜霧感、雜訊與印刷網點，重點強化眼神光澤、睫毛、髮絲層次、手指紋理以及舞台服裝的蕾絲、布料與星光亮片細節，同時保持自然紅潤膚色。',
-        '【構圖輸出】：維持完全滿版無邊框構圖與原比例，不要加上任何拍立得白邊或邊框。'
+        '請將這張日本偶像實體小卡進行棚拍級超高清細節強化（Ultra-HD Detail Remaster）。',
+        '【構圖與座標死鎖（極重要）】：必須保持與原圖 1:1 完全相同的長寬比例、人物大小與五官像素座標！嚴禁放大、縮小、平移或裁切上下左右邊緣。',
+        '【五官嚴格保真】：100% 鎖定人物原本五官、神情、髮型、手勢與背景，不可變臉。',
+        '【強化重點】：清除表面反光、霧感與印刷網點，強化眼神光澤、睫毛、髮絲層次與服裝蕾絲亮片細節，保持自然膚質，維持無白邊滿版輸出。'
       ].join('\n'),
-      apiPrompt: 'Studio-grade ultra-HD detail remaster of this Japanese idol trading photocard. STRICTLY maintain exact identity, facial structure, gaze, smile, hair, hands, and background. Eliminate surface glare, haze, and print dot patterns. Enhance sparkling eye catchlights, eyelashes, fine hair strands, and costume fabric/lace/glitter textures with natural skin tone. Keep exact full-bleed framing with NO borders.'
+      apiPrompt: 'Studio-grade ultra-HD detail remaster of this Japanese idol photocard. STRICT GEOMETRY LOCK: Keep 1:1 identical aspect ratio, scale, and exact pixel coordinates of face, hands, and borders—DO NOT zoom, crop, or shift framing. Maintain exact facial identity and expression. Remove glare and halftone dots; enhance eye catchlights, hair strands, and costume textures. Full-bleed, NO borders.'
     },
     bright: {
       label: '🌙 暗場提亮降噪（去偏黃發灰）',
       appPrompt: [
         '請將這張日本偶像實體小卡進行超高清暗場提亮與色彩還原（Ultra-HD Lighting Restoration）。',
-        '【嚴格要求】：100% 保留原本五官、表情、髮型、姿勢、衣裝與背景，不可變臉或改動構圖。',
-        '【修復重點】：去除昏暗雜訊、偏黃／偏綠偏色、霧感與卡面反光，將白平衡校正為通透自然明亮的膚色與清晰光影層次。',
-        '【構圖輸出】：維持完全滿版無邊框構圖與原比例，不要加上任何拍立得白邊或邊框。'
+        '【構圖與座標死鎖（極重要）】：必須保持與原圖 1:1 完全相同的長寬比例、人物大小與五官像素座標！嚴禁放大、縮小、平移或裁切上下左右邊緣。',
+        '【修復重點】：100% 保留原本五官、表情與姿勢，去除昏暗雜訊、偏黃偏色與卡面反光，校正為通透明亮的自然膚色，維持無白邊滿版輸出。'
       ].join('\n'),
-      apiPrompt: 'Clean ultra-HD lighting restoration of this Japanese idol trading photocard. STRICTLY keep exact facial features, expression, hairstyle, pose, costume, and background unchanged. Remove low-light grain, yellow/green color cast, glare, and dull haze. Restore luminous natural skin tones and crisp clarity. Keep exact full-bleed framing with NO borders.'
+      apiPrompt: 'Clean ultra-HD lighting restoration of this Japanese idol photocard. STRICT GEOMETRY LOCK: Keep 1:1 identical aspect ratio, scale, and exact pixel coordinates—DO NOT zoom, crop, or shift framing. Keep exact facial features and expression. Remove low-light grain, color cast, and glare; restore luminous natural skin tones. Full-bleed, NO borders.'
     }
   };
 
@@ -2524,14 +2523,19 @@ Object.assign(PCApp, {
   Object.assign(PCApp, {
     tradeCfg: { seekMode: 'missing', cols: 6, note: '香港面交 / 郵寄交換歡迎 DM ✨' },
     posterCfg: { cols: 6, dimMissing: true },
+    _aiPreviewRaf: null,
+    _aiTmpCanvas: null,
+
     aiState: {
       slotIdx: -1,
       side: 'front',
       preset: 'standard',
       model: localStorage.getItem('pc_gemini_model') || 'gemini-2.5-flash-image',
       beforeDataUrl: '',
-      afterDataUrl: '',
-      afterRectDataUrl: '',
+      beforeCanvas: null,
+      rawAiImg: null,
+      align: { zoom: 1, shiftX: 0, shiftY: 0 },
+      splitPct: 50,
       busy: false
     },
 
@@ -2545,13 +2549,13 @@ Object.assign(PCApp, {
         <input id="pcGeminiAppImportInput" type="file" accept="image/*" class="hidden" onchange="PCApp.importFromGeminiAppFile(event)">
         <input id="pcJsonImportInput" type="file" accept=".json,application/json" class="hidden" onchange="PCApp.importPhotocardJson(event)">
 
-        <!-- ✨ Gemini AI 超高清化（內建手機 Gemini App Ultra 零費用聯動 ＋ 進階 API 選項） -->
+        <!-- ✨ Gemini AI 超高清化（含自動像素級五官對齊 ＋ 60fps 微調滑桿） -->
         <div id="pcAiRemasterModal" class="hidden fixed inset-0 z-[140] bg-black/88 flex items-center justify-center p-2.5 overflow-y-auto">
           <div class="bg-[#FFF9FB] w-full max-w-md rounded-3xl neo-box p-3.5 space-y-2.5 text-zinc-900 max-h-[94vh] overflow-y-auto">
             <div class="flex justify-between items-center border-b-2 border-cheki-dark pb-2">
               <div>
                 <h3 class="font-black text-base leading-tight">✨ Gemini AI 小卡超高清化</h3>
-                <p class="text-[10px] font-bold text-zinc-500">保真五官神情 · 去除膠套反光、印刷網點與雜訊</p>
+                <p class="text-[10px] font-bold text-zinc-500">自動鎖定原圖五官座標 · 去反光網點與前後無縫對比</p>
               </div>
               <button type="button" onclick="PCApp.closeAiRemasterModal()" class="w-8 h-8 rounded-full bg-pink-100 neo-btn font-black text-sm shrink-0">✕</button>
             </div>
@@ -2563,7 +2567,7 @@ Object.assign(PCApp, {
 
             <div class="bg-zinc-950 rounded-2xl p-2.5 border-2 border-cheki-dark flex flex-col items-center space-y-2">
               <div id="pcAiCompareBox" class="relative w-52 rounded-xl overflow-hidden border border-white/25 shadow-2xl bg-zinc-900 select-none" style="aspect-ratio:63/88;">
-                <img id="pcAiAfterImg" class="hidden absolute inset-0 w-full h-full object-cover pointer-events-none">
+                <canvas id="pcAiAfterCanvas" class="hidden absolute inset-0 w-full h-full object-cover pointer-events-none"></canvas>
                 <img id="pcAiBeforeImg" class="absolute inset-0 w-full h-full object-cover pointer-events-none">
                 <div id="pcAiDividerLine" class="hidden absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_8px_rgba(0,0,0,0.9)] pointer-events-none" style="left:50%;">
                   <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-white text-zinc-900 border-2 border-zinc-900 flex items-center justify-center text-[10px] font-black shadow-lg">↔</div>
@@ -2572,17 +2576,44 @@ Object.assign(PCApp, {
                 <span id="pcAiAfterTag" class="hidden absolute top-2 right-2 px-1.5 py-0.5 rounded bg-emerald-400 text-zinc-950 text-[9px] font-black">✨ AI 高清</span>
                 <div id="pcAiLoadingOverlay" class="hidden absolute inset-0 bg-black/72 backdrop-blur-[2px] flex flex-col items-center justify-center p-3 text-center space-y-2">
                   <div class="w-8 h-8 rounded-full border-4 border-pink-400 border-t-transparent animate-spin"></div>
-                  <p id="pcAiLoadingMsg" class="text-xs font-black text-white">正在處理高清小卡...</p>
+                  <p id="pcAiLoadingMsg" class="text-xs font-black text-white">正在自動對齊五官座標...</p>
                 </div>
               </div>
 
-              <div id="pcAiCompareSliderWrap" class="hidden w-full px-1 space-y-0.5">
-                <div class="flex justify-between text-[10px] font-black text-zinc-300">
-                  <span>◀ 原本掃描</span>
-                  <span>拉動檢視五官與細節對比</span>
-                  <span class="text-emerald-300">AI 高清 ▶</span>
+              <div id="pcAiCompareSliderWrap" class="hidden w-full px-1 space-y-2">
+                <div class="space-y-0.5">
+                  <div class="flex justify-between text-[10px] font-black text-zinc-300">
+                    <span>◀ 原本掃描</span>
+                    <span>拉動檢視五官與細節對比</span>
+                    <span class="text-emerald-300">AI 高清 ▶</span>
+                  </div>
+                  <input id="pcAiCompareRange" type="range" min="0" max="100" value="50" oninput="PCApp.updateAiCompareSplit(this.value)" class="w-full accent-emerald-400">
                 </div>
-                <input id="pcAiCompareRange" type="range" min="0" max="100" value="50" oninput="PCApp.updateAiCompareSplit(this.value)" class="w-full accent-emerald-400">
+
+                <!-- 🎯 五官座標自動對齊與微調面板 -->
+                <div class="rounded-xl bg-zinc-900/95 border border-white/15 p-2 space-y-1.5 text-[10px] font-black text-zinc-200">
+                  <div class="flex items-center justify-between gap-1">
+                    <span class="text-emerald-300">🎯 五官對位微調（修正 AI 縮放/移位）</span>
+                    <div class="flex items-center gap-1">
+                      <button type="button" onclick="PCApp.runAutoAlignCurrentAi()" class="px-2 py-0.5 rounded bg-emerald-400 text-zinc-950 font-black">⚡ 自動對齊</button>
+                      <button type="button" onclick="PCApp.resetAiAlignment()" class="px-1.5 py-0.5 rounded bg-white/15 text-white font-black">↺ 置中</button>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-3 gap-1.5">
+                    <label class="block">
+                      <div class="flex justify-between text-[9.5px]"><span>🔎 縮放</span><span id="pcAiAlignZoomVal" class="text-sky-300">100%</span></div>
+                      <input id="pcAiAlignZoom" type="range" min="82" max="118" step="0.2" value="100" oninput="PCApp.onAiAlignInput()" class="w-full accent-sky-400">
+                    </label>
+                    <label class="block">
+                      <div class="flex justify-between text-[9.5px]"><span>↔ 左右</span><span id="pcAiAlignXVal" class="text-amber-300">0%</span></div>
+                      <input id="pcAiAlignX" type="range" min="-14" max="14" step="0.2" value="0" oninput="PCApp.onAiAlignInput()" class="w-full accent-amber-400">
+                    </label>
+                    <label class="block">
+                      <div class="flex justify-between text-[9.5px]"><span>↕ 上下</span><span id="pcAiAlignYVal" class="text-pink-300">0%</span></div>
+                      <input id="pcAiAlignY" type="range" min="-14" max="14" step="0.2" value="0" oninput="PCApp.onAiAlignInput()" class="w-full accent-pink-400">
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -2596,21 +2627,21 @@ Object.assign(PCApp, {
             <!-- 📱 手機版 Gemini App (Ultra) 零費用聯動專區 -->
             <div class="rounded-2xl border-2 border-cheki-dark bg-gradient-to-br from-indigo-50 via-white to-pink-50 p-3 space-y-2">
               <div class="flex items-center justify-between gap-1">
-                <span class="font-black text-xs text-indigo-950">📱 手機版 Gemini App 直連（用 Ultra・免 API 費）</span>
+                <span class="font-black text-[11.5px] text-indigo-950 truncate">📱 手機 Gemini App 直連（Ultra 免 API 費）</span>
                 <span class="px-2 py-0.5 rounded-full bg-emerald-200 border border-cheki-dark text-[9px] font-black text-emerald-950 shrink-0">零額外費用</span>
               </div>
               <button type="button" onclick="PCApp.sendCardToGeminiApp()" class="w-full py-2.5 px-3 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white neo-btn font-black text-xs flex items-center justify-center gap-1.5 active:scale-95">
-                <span>🚀</span><span>步驟 1：複製保真指令 ＋ 傳圖至 Gemini App</span>
+                <span>🚀</span><span>步驟 1：複製鎖座標指令 ＋ 傳圖至 Gemini</span>
               </button>
               <div class="grid grid-cols-2 gap-1.5">
                 <button type="button" onclick="PCApp.copyPromptAndDownloadCard()" class="py-1.5 px-2 rounded-xl bg-white border-2 border-cheki-dark font-black text-[10.5px] text-zinc-800 active:scale-95">📋 複製指令＋存圖</button>
                 <button type="button" onclick="PCApp.openGeminiWebApp()" class="py-1.5 px-2 rounded-xl bg-sky-100 border-2 border-cheki-dark font-black text-[10.5px] text-blue-950 active:scale-95">🌐 直接打開 Gemini</button>
               </div>
               <button type="button" onclick="document.getElementById('pcGeminiAppImportInput').click()" class="w-full py-2.5 px-3 rounded-2xl bg-amber-300 hover:bg-amber-400 text-zinc-950 neo-btn font-black text-xs flex items-center justify-center gap-1.5 active:scale-95">
-                <span>📥</span><span>步驟 2：匯入 Gemini 完成的高清圖（自動對齊對比）</span>
+                <span>📥</span><span>步驟 2：匯入 Gemini 高清圖（自動對齊五官）</span>
               </button>
               <p class="text-[10px] font-bold text-zinc-500 leading-snug">
-                💡 按「步驟 1」揀 <strong>Gemini</strong> 並貼上指令發送；存低結果後返嚟按「步驟 2」即可自動對齊比例與無損圓角！
+                💡 匯入後系統會自動計算五官邊緣座標修正 AI 縮放與移位；亦可拉動上方滑桿微調至中線完全無縫！
               </p>
             </div>
 
@@ -2619,7 +2650,6 @@ Object.assign(PCApp, {
               <button type="button" onclick="PCApp.downloadAiPreviewPng()" class="py-2.5 rounded-2xl bg-sky-200 text-zinc-950 neo-btn font-black text-xs active:scale-95">⬇️ 直接下載 (.png)</button>
             </div>
 
-            <!-- 進階：API Key 站內自動生成 -->
             <details id="pcAiApiAdvancedDetails" class="rounded-2xl border-2 border-zinc-300 bg-zinc-50 p-2.5 text-xs">
               <summary class="font-black text-[11px] text-zinc-600 cursor-pointer select-none flex items-center justify-between">
                 <span>⚙️ 進階：改用 Gemini API Key 站內生成（分開計費）</span>
@@ -2744,7 +2774,7 @@ Object.assign(PCApp, {
     },
 
     // ------------------------------------------------------------------------
-    // 1. Gemini AI 高清化（支援手機版 Gemini App 聯動 ＋ 無損保留 rawRectImg）
+    // 1. Gemini AI 高清化（標準化原圖比例 ＋ 方向梯度自動對齊五官 ＋ 羽化補底）
     // ------------------------------------------------------------------------
     getStoredGeminiKey() {
       for (const k of ['pc_gemini_api_key', 'cheki_gemini_api_key', 'gemini_api_key', 'geminiApiKey']) {
@@ -2767,20 +2797,46 @@ Object.assign(PCApp, {
       if (typeof window.showChekiToast === 'function') window.showChekiToast('🔑 已儲存 Gemini API Key！');
     },
 
-    openAiRemasterModal(slotIdx, side = 'front') {
+    // 將修圖前原圖統一標準化為系列精確比例矩形，確保「傳送圖 / 對比左圖 / 對齊基準」100% 一致
+    async prepareStandardBeforeCanvas(rawSrc, seriesObj) {
+      const im = await this.loadImgAsync(rawSrc);
+      if (!im) return null;
+      const spec = this.getSeriesRatioSpec(seriesObj);
+      const outW = Math.round(spec.w * 1.5), outH = Math.round(spec.h * 1.5);
+      const cv = document.createElement('canvas');
+      cv.width = outW; cv.height = outH;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#111113';
+      ctx.fillRect(0, 0, outW, outH);
+
+      const targetRatio = outW / outH, imgRatio = im.width / im.height;
+      let sx = 0, sy = 0, sw = im.width, sh = im.height;
+      if (imgRatio > targetRatio) { sw = im.height * targetRatio; sx = (im.width - sw) / 2; }
+      else { sh = im.width / targetRatio; sy = (im.height - sh) / 2; }
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(im, sx, sy, sw, sh, 0, 0, outW, outH);
+      return cv;
+    },
+
+    async openAiRemasterModal(slotIdx, side = 'front') {
       const s = this.getActiveSeries();
       const slot = s?.slots.find(x => x.idx === slotIdx);
       if (!s || !slot) return;
 
       this.aiState.slotIdx = slotIdx;
       this.aiState.side = side;
-      this.aiState.afterDataUrl = '';
-      this.aiState.afterRectDataUrl = '';
+      this.aiState.rawAiImg = null;
+      this.aiState.align = { zoom: 1, shiftX: 0, shiftY: 0 };
+      this.aiState.splitPct = 50;
       this.aiState.busy = false;
 
       const spec = this.getSeriesRatioSpec(s);
+      const radPct = side === 'back' ? (slot.backRadiusPct ?? s.backRadiusPct) : slot.radiusPct;
       const box = document.getElementById('pcAiCompareBox');
-      if (box) box.style.aspectRatio = spec.css;
+      if (box) {
+        box.style.aspectRatio = spec.css;
+        box.style.borderRadius = this.getSlotCssRadius(radPct, s);
+      }
       document.getElementById('pcAiSideBar')?.classList.toggle('hidden', !slot.realBackImg);
 
       const kInp = document.getElementById('pcAiKeyInput');
@@ -2788,8 +2844,28 @@ Object.assign(PCApp, {
       const adv = document.getElementById('pcAiApiAdvancedDetails');
       if (adv) adv.open = false;
 
-      this.refreshAiModalPreviewState();
       document.getElementById('pcAiRemasterModal')?.classList.remove('hidden');
+      await this.loadAiSideSource(s, slot, side);
+    },
+
+    async loadAiSideSource(s, slot, side) {
+      const isBack = side === 'back';
+      const rawSrc = isBack
+        ? (slot.rawRectBackImg || slot.realBackImg || s.backImage)
+        : (slot.rawRectImg || slot.realImg || slot.sampleImg);
+
+      this.aiState.beforeDataUrl = rawSrc || '';
+      this.aiState.beforeCanvas = null;
+      this.refreshAiModalPreviewState();
+
+      if (rawSrc) {
+        const stdCv = await this.prepareStandardBeforeCanvas(rawSrc, s);
+        if (stdCv && this.aiState.slotIdx === slot.idx && this.aiState.side === side) {
+          this.aiState.beforeCanvas = stdCv;
+          this.aiState.beforeDataUrl = stdCv.toDataURL('image/jpeg', 0.94);
+          this.refreshAiModalPreviewState();
+        }
+      }
     },
 
     closeAiRemasterModal() {
@@ -2798,46 +2874,288 @@ Object.assign(PCApp, {
       document.getElementById('pcAiRemasterModal')?.classList.add('hidden');
     },
 
-    setAiTargetSide(side) {
+    async setAiTargetSide(side) {
       if (this.aiState.busy) return;
+      const s = this.getActiveSeries();
+      const slot = s?.slots.find(x => x.idx === this.aiState.slotIdx);
+      if (!s || !slot) return;
       this.aiState.side = side;
-      this.aiState.afterDataUrl = '';
-      this.aiState.afterRectDataUrl = '';
-      this.refreshAiModalPreviewState();
+      this.aiState.rawAiImg = null;
+      this.aiState.align = { zoom: 1, shiftX: 0, shiftY: 0 };
+      await this.loadAiSideSource(s, slot, side);
+    },
+
+    // 核心演算法：方向梯度互相關 (Signed-Gradient ZNCC) 自動對齊原圖與 AI 圖五官座標
+    computeAutoAlignment(beforeCv, aiImg, spec) {
+      if (!beforeCv || !aiImg) return { zoom: 1, shiftX: 0, shiftY: 0 };
+
+      const refW = 96;
+      const refH = Math.max(96, Math.round(refW * (spec.h / spec.w)));
+      const targetRatio = spec.w / spec.h;
+      const imgRatio = aiImg.width / aiImg.height;
+      const relW = imgRatio > targetRatio ? (imgRatio / targetRatio) : 1;
+      const relH = imgRatio > targetRatio ? 1 : (targetRatio / imgRatio);
+
+      const extractGradients = (src, w, h) => {
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(src, 0, 0, w, h);
+        const d = ctx.getImageData(0, 0, w, h).data;
+        const lum = new Float32Array(w * h);
+        for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+          lum[p] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        }
+        const gx = new Float32Array(w * h), gy = new Float32Array(w * h);
+        for (let y = 1; y < h - 1; y++) {
+          const off = y * w;
+          for (let x = 1; x < w - 1; x++) {
+            gx[off + x] = lum[off + x + 1] - lum[off + x - 1];
+            gy[off + x] = lum[off + w + x] - lum[off - w + x];
+          }
+        }
+        return { gx, gy };
+      };
+
+      const refG = extractGradients(beforeCv, refW, refH);
+      const sw = Math.max(84, Math.min(144, Math.round(refW * relW)));
+      const sh = Math.max(84, Math.round(sw / imgRatio));
+      const aiG = extractGradients(aiImg, sw, sh);
+
+      const x0 = Math.round(refW * 0.10), x1 = Math.round(refW * 0.90);
+      const y0 = Math.round(refH * 0.08), y1 = Math.round(refH * 0.88);
+
+      const scoreTransform = (zoom, shiftX, shiftY, stride, bilinear) => {
+        const invW = 1 / (relW * zoom), invH = 1 / (relH * zoom);
+        const offU = 0.5 + shiftX / 100, offV = 0.5 + shiftY / 100;
+        let dot = 0, eRef = 0, eAi = 0, valid = 0, total = 0;
+
+        for (let y = y0; y < y1; y += stride) {
+          const av = ((y + 0.5) / refH - offV) * invH + 0.5;
+          const rOff = y * refW;
+          for (let x = x0; x < x1; x += stride) {
+            total++;
+            if (av <= 0.015 || av >= 0.985) continue;
+            const au = ((x + 0.5) / refW - offU) * invW + 0.5;
+            if (au <= 0.015 || au >= 0.985) continue;
+
+            const rgx = refG.gx[rOff + x], rgy = refG.gy[rOff + x];
+            let agx, agy;
+            if (bilinear) {
+              const ax = au * sw - 0.5, ay = av * sh - 0.5;
+              const ix = ax | 0, iy = ay | 0;
+              const fx = ax - ix, fy = ay - iy, ifx = 1 - fx, ify = 1 - fy;
+              const p00 = iy * sw + ix, p10 = p00 + 1, p01 = p00 + sw, p11 = p01 + 1;
+              const w00 = ifx * ify, w10 = fx * ify, w01 = ifx * fy, w11 = fx * fy;
+              agx = aiG.gx[p00] * w00 + aiG.gx[p10] * w10 + aiG.gx[p01] * w01 + aiG.gx[p11] * w11;
+              agy = aiG.gy[p00] * w00 + aiG.gy[p10] * w10 + aiG.gy[p01] * w01 + aiG.gy[p11] * w11;
+            } else {
+              const p = ((av * sh) | 0) * sw + ((au * sw) | 0);
+              agx = aiG.gx[p]; agy = aiG.gy[p];
+            }
+            dot += rgx * agx + rgy * agy;
+            eRef += rgx * rgx + rgy * rgy;
+            eAi += agx * agx + agy * agy;
+            valid++;
+          }
+        }
+        if (valid < total * 0.72 || eRef < 1 || eAi < 1) return -1;
+        return dot / Math.sqrt(eRef * eAi);
+      };
+
+      const baseScore = scoreTransform(1, 0, 0, 1, true);
+      let best = { zoom: 1, shiftX: 0, shiftY: 0, score: baseScore };
+
+      // 第 1 階段：粗搜尋（涵蓋 AI 縮放 84%～116% 與平移 ±12%）
+      for (let z = 0.84; z <= 1.1601; z += 0.02) {
+        for (let sy = -12; sy <= 12.01; sy += 1.5) {
+          for (let sx = -9; sx <= 9.01; sx += 1.5) {
+            const sc = scoreTransform(z, sx, sy, 3, false);
+            if (sc > best.score) best = { zoom: z, shiftX: sx, shiftY: sy, score: sc };
+          }
+        }
+      }
+
+      // 第 2 階段：雙線性插值中精度搜尋
+      let center = { ...best };
+      for (let z = center.zoom - 0.025; z <= center.zoom + 0.0251; z += 0.005) {
+        if (z < 0.82 || z > 1.18) continue;
+        for (let sy = center.shiftY - 2.0; sy <= center.shiftY + 2.01; sy += 0.4) {
+          for (let sx = center.shiftX - 2.0; sx <= center.shiftX + 2.01; sx += 0.4) {
+            const sc = scoreTransform(z, sx, sy, 2, true);
+            if (sc > best.score) best = { zoom: z, shiftX: sx, shiftY: sy, score: sc };
+          }
+        }
+      }
+
+      // 第 3 階段：亞像素級精修 (0.1% 精度)
+      for (const [dz, ds] of [[0.002, 0.15], [0.001, 0.05]]) {
+        let improved = true;
+        while (improved) {
+          improved = false;
+          for (const sz of [-dz, 0, dz]) {
+            for (const sy of [-ds, 0, ds]) {
+              for (const sx of [-ds, 0, ds]) {
+                if (sz === 0 && sx === 0 && sy === 0) continue;
+                const nz = best.zoom + sz, nx = best.shiftX + sx, ny = best.shiftY + sy;
+                if (nz < 0.82 || nz > 1.18 || Math.abs(nx) > 14 || Math.abs(ny) > 14) continue;
+                const sc = scoreTransform(nz, nx, ny, 1, true);
+                if (sc > best.score + 1e-5) {
+                  best = { zoom: nz, shiftX: nx, shiftY: ny, score: sc };
+                  improved = true;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (best.score < 0.20 || best.score < baseScore + 0.005) {
+        return { zoom: 1, shiftX: 0, shiftY: 0 };
+      }
+      return {
+        zoom: Number(best.zoom.toFixed(3)),
+        shiftX: Number(best.shiftX.toFixed(2)),
+        shiftY: Number(best.shiftY.toFixed(2))
+      };
+    },
+
+    // 將對齊後的 AI 圖片繪製到指定畫布（若極邊緣因 AI 裁切而內縮，自動用原圖柔和羽化補底）
+    drawAlignedAiToCtx(ctx, W, H, beforeCv, aiImg, align) {
+      ctx.clearRect(0, 0, W, H);
+      if (beforeCv) ctx.drawImage(beforeCv, 0, 0, W, H);
+      else { ctx.fillStyle = '#111113'; ctx.fillRect(0, 0, W, H); }
+      if (!aiImg) return;
+
+      const targetRatio = W / H, imgRatio = aiImg.width / aiImg.height;
+      const relW = imgRatio > targetRatio ? (imgRatio / targetRatio) : 1;
+      const relH = imgRatio > targetRatio ? 1 : (targetRatio / imgRatio);
+
+      const zoom = align?.zoom || 1;
+      const dw = W * relW * zoom, dh = H * relH * zoom;
+      const dx = (0.5 + (align?.shiftX || 0) / 100) * W - dw / 2;
+      const dy = (0.5 + (align?.shiftY || 0) / 100) * H - dh / 2;
+
+      const needFeather = beforeCv && (dx > 1 || dy > 1 || (dx + dw) < W - 1 || (dy + dh) < H - 1);
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+
+      if (!needFeather) {
+        ctx.drawImage(aiImg, dx, dy, dw, dh);
+        return;
+      }
+
+      const tmp = this._aiTmpCanvas || (this._aiTmpCanvas = document.createElement('canvas'));
+      tmp.width = W; tmp.height = H;
+      const tCtx = tmp.getContext('2d');
+      tCtx.clearRect(0, 0, W, H);
+      tCtx.imageSmoothingEnabled = true; tCtx.imageSmoothingQuality = 'high';
+      tCtx.drawImage(aiImg, dx, dy, dw, dh);
+
+      const f = Math.max(8, Math.round(W * 0.025));
+      tCtx.globalCompositeOperation = 'destination-out';
+      const fadeEdge = (x0, y0, x1, y1, rx, ry, rw, rh) => {
+        const g = tCtx.createLinearGradient(x0, y0, x1, y1);
+        g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+        tCtx.fillStyle = g; tCtx.fillRect(rx, ry, rw, rh);
+      };
+      if (dx > 1) fadeEdge(dx, 0, dx + f, 0, Math.max(0, dx - 2), 0, f + 2, H);
+      if (dx + dw < W - 1) fadeEdge(dx + dw, 0, dx + dw - f, 0, dx + dw - f, 0, f + 2, H);
+      if (dy > 1) fadeEdge(0, dy, 0, dy + f, 0, Math.max(0, dy - 2), W, f + 2);
+      if (dy + dh < H - 1) fadeEdge(0, dy + dh, 0, dy + dh - f, 0, dy + dh - f, W, f + 2);
+      tCtx.globalCompositeOperation = 'source-over';
+
+      ctx.drawImage(tmp, 0, 0);
+    },
+
+    renderAiAfterPreviewCanvas() {
+      const cv = document.getElementById('pcAiAfterCanvas');
+      const s = this.getActiveSeries();
+      if (!cv || !s || !this.aiState.rawAiImg) return;
+      const spec = this.getSeriesRatioSpec(s);
+      const pw = Math.round(spec.preW * 1.6), ph = Math.round(spec.preH * 1.6);
+      if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+      this.drawAlignedAiToCtx(cv.getContext('2d'), pw, ph, this.aiState.beforeCanvas, this.aiState.rawAiImg, this.aiState.align);
+    },
+
+    syncAiAlignSlidersUI() {
+      const { zoom, shiftX, shiftY } = this.aiState.align;
+      const zPct = Number((zoom * 100).toFixed(1));
+      const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = String(v); };
+      const setT = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+      setV('pcAiAlignZoom', zPct);
+      setV('pcAiAlignX', shiftX);
+      setV('pcAiAlignY', shiftY);
+      setT('pcAiAlignZoomVal', `${zPct}%`);
+      setT('pcAiAlignXVal', `${shiftX > 0 ? '+' : ''}${shiftX}%`);
+      setT('pcAiAlignYVal', `${shiftY > 0 ? '+' : ''}${shiftY}%`);
+    },
+
+    onAiAlignInput() {
+      this.aiState.align = {
+        zoom: Number(document.getElementById('pcAiAlignZoom')?.value || 100) / 100,
+        shiftX: Number(document.getElementById('pcAiAlignX')?.value || 0),
+        shiftY: Number(document.getElementById('pcAiAlignY')?.value || 0)
+      };
+      this.syncAiAlignSlidersUI();
+      if (!this._aiPreviewRaf) {
+        this._aiPreviewRaf = requestAnimationFrame(() => {
+          this._aiPreviewRaf = null;
+          this.renderAiAfterPreviewCanvas();
+        });
+      }
+    },
+
+    runAutoAlignCurrentAi() {
+      const s = this.getActiveSeries();
+      if (!s || !this.aiState.rawAiImg) return;
+      this.aiState.align = this.computeAutoAlignment(this.aiState.beforeCanvas, this.aiState.rawAiImg, this.getSeriesRatioSpec(s));
+      this.syncAiAlignSlidersUI();
+      this.renderAiAfterPreviewCanvas();
+      if (typeof window.triggerHaptic === 'function') window.triggerHaptic(12);
+      if (typeof window.showChekiToast === 'function') window.showChekiToast('🎯 已重新執行自動五官像素對齊！', 2400);
+    },
+
+    resetAiAlignment() {
+      this.aiState.align = { zoom: 1, shiftX: 0, shiftY: 0 };
+      this.syncAiAlignSlidersUI();
+      this.renderAiAfterPreviewCanvas();
     },
 
     refreshAiModalPreviewState() {
-      const s = this.getActiveSeries();
-      const slot = s?.slots.find(x => x.idx === this.aiState.slotIdx);
-      if (!slot) return;
-
       const isBack = this.aiState.side === 'back';
-      // 優先傳送未切圓角底圖給 Gemini，避免四角陰影干擾 AI
-      const src = isBack
-        ? (slot.rawRectBackImg || slot.realBackImg || s.backImage)
-        : (slot.rawRectImg || slot.realImg || slot.sampleImg);
-      this.aiState.beforeDataUrl = src || '';
-
       const bF = document.getElementById('pcAiSideFront');
       const bB = document.getElementById('pcAiSideBack');
       if (bF) bF.className = `py-1.5 rounded-xl border-2 border-cheki-dark font-black text-xs ${!isBack ? 'bg-emerald-400 text-zinc-950' : 'bg-zinc-100 text-zinc-500'}`;
       if (bB) bB.className = `py-1.5 rounded-xl border-2 border-cheki-dark font-black text-xs ${isBack ? 'bg-amber-300 text-zinc-950' : 'bg-zinc-100 text-zinc-500'}`;
 
-      const hasAfter = Boolean(this.aiState.afterDataUrl);
+      const hasAfter = Boolean(this.aiState.rawAiImg);
       const beforeImg = document.getElementById('pcAiBeforeImg');
-      const afterImg = document.getElementById('pcAiAfterImg');
-      if (beforeImg) { beforeImg.src = src || ''; beforeImg.style.clipPath = hasAfter ? 'inset(0 50% 0 0)' : 'none'; }
-      if (afterImg) { afterImg.src = this.aiState.afterDataUrl || ''; afterImg.classList.toggle('hidden', !hasAfter); }
+      const afterCv = document.getElementById('pcAiAfterCanvas');
+      const p = this.aiState.splitPct ?? 50;
+
+      if (beforeImg) {
+        beforeImg.src = this.aiState.beforeDataUrl || '';
+        beforeImg.style.clipPath = hasAfter ? `inset(0 ${100 - p}% 0 0)` : 'none';
+      }
+      if (afterCv) {
+        afterCv.classList.toggle('hidden', !hasAfter);
+        if (hasAfter) this.renderAiAfterPreviewCanvas();
+      }
 
       ['pcAiDividerLine', 'pcAiBeforeTag', 'pcAiAfterTag', 'pcAiCompareSliderWrap', 'pcAiResultActions'].forEach(id => {
         document.getElementById(id)?.classList.toggle('hidden', !hasAfter);
       });
       const rng = document.getElementById('pcAiCompareRange');
-      if (rng) rng.value = '50';
+      if (rng) rng.value = String(p);
+      const line = document.getElementById('pcAiDividerLine');
+      if (line) line.style.left = `${p}%`;
+      if (hasAfter) this.syncAiAlignSlidersUI();
     },
 
     updateAiCompareSplit(pct) {
       const p = Math.max(0, Math.min(100, Number(pct) || 50));
+      this.aiState.splitPct = p;
       const beforeImg = document.getElementById('pcAiBeforeImg');
       const line = document.getElementById('pcAiDividerLine');
       if (beforeImg) beforeImg.style.clipPath = `inset(0 ${100 - p}% 0 0)`;
@@ -2909,23 +3227,14 @@ Object.assign(PCApp, {
 
     openGeminiWebApp() { window.open('https://gemini.google.com/app', '_blank', 'noopener'); },
 
-    // 將 AI 輸出同時存為「無損矩形底圖」與「套用當前圓角的顯示圖」，確保日後仍可自由調 0%~15% 圓角
-    async normalizeAiOutputDual(rawSrc, seriesObj, slotObj, side) {
-      const im = await this.loadImgAsync(rawSrc);
-      if (!im) throw new Error('AI 圖片解碼失敗');
+    // 匯出最終對齊好的高清雙層圖檔（無損矩形底圖 ＋ 精確圓角展示圖）
+    buildFinalAlignedAiCanvases(seriesObj, slotObj, side) {
       const spec = this.getSeriesRatioSpec(seriesObj);
       const outW = Math.round(spec.w * 1.5), outH = Math.round(spec.h * 1.5);
 
       const rectCv = document.createElement('canvas');
       rectCv.width = outW; rectCv.height = outH;
-      const rCtx = rectCv.getContext('2d');
-      const targetRatio = outW / outH, imgRatio = im.width / im.height;
-      let sx = 0, sy = 0, sw = im.width, sh = im.height;
-      if (imgRatio > targetRatio) { sw = im.height * targetRatio; sx = (im.width - sw) / 2; }
-      else { sh = im.width / targetRatio; sy = (im.height - sh) / 2; }
-      rCtx.imageSmoothingEnabled = true; rCtx.imageSmoothingQuality = 'high';
-      rCtx.drawImage(im, sx, sy, sw, sh, 0, 0, outW, outH);
-      const rectUrl = rectCv.toDataURL('image/jpeg', 0.90);
+      this.drawAlignedAiToCtx(rectCv.getContext('2d'), outW, outH, this.aiState.beforeCanvas, this.aiState.rawAiImg, this.aiState.align);
 
       const radPct = side === 'back'
         ? (typeof slotObj?.backRadiusPct === 'number' ? slotObj.backRadiusPct : 6)
@@ -2938,11 +3247,15 @@ Object.assign(PCApp, {
       if (rPx > 0.5) { this.pcRoundRectPath(cCtx, 0, 0, outW, outH, rPx); cCtx.clip(); }
       cCtx.drawImage(rectCv, 0, 0);
 
-      let cardUrl = cardCv.toDataURL('image/webp', 0.92);
-      if (!cardUrl.startsWith('data:image/webp')) {
-        cardUrl = rPx > 0.5 ? cardCv.toDataURL('image/png') : cardCv.toDataURL('image/jpeg', 0.92);
-      }
-      return { rectUrl, cardUrl };
+      return { rectCv, cardCv, rPx };
+    },
+
+    async loadAndAutoAlignAiSource(rawSrc, s) {
+      const im = await this.loadImgAsync(rawSrc);
+      if (!im) throw new Error('AI 圖片解碼失敗');
+      this.aiState.rawAiImg = im;
+      this.aiState.align = this.computeAutoAlignment(this.aiState.beforeCanvas, im, this.getSeriesRatioSpec(s));
+      this.refreshAiModalPreviewState();
     },
 
     async importFromGeminiAppFile(e) {
@@ -2950,19 +3263,21 @@ Object.assign(PCApp, {
       e.target.value = '';
       if (!file) return;
       const s = this.getActiveSeries();
-      const slot = s?.slots.find(x => x.idx === this.aiState.slotIdx);
-      if (!s || !slot) return;
+      if (!s) return;
 
       const overlay = document.getElementById('pcAiLoadingOverlay');
+      const msgEl = document.getElementById('pcAiLoadingMsg');
       if (overlay) overlay.classList.remove('hidden');
+      if (msgEl) msgEl.textContent = '🎯 正在自動計算並對齊五官座標...';
+
+      await new Promise(r => setTimeout(r, 25));
       const objUrl = URL.createObjectURL(file);
       try {
-        const { rectUrl, cardUrl } = await this.normalizeAiOutputDual(objUrl, s, slot, this.aiState.side);
-        this.aiState.afterRectDataUrl = rectUrl;
-        this.aiState.afterDataUrl = cardUrl;
-        this.refreshAiModalPreviewState();
+        await this.loadAndAutoAlignAiSource(objUrl, s);
         if (typeof window.triggerHaptic === 'function') window.triggerHaptic(16);
-        if (typeof window.showChekiToast === 'function') window.showChekiToast('✨ 已匯入並對齊！拉動滑桿對比滿意後按「套用」', 3600);
+        if (typeof window.showChekiToast === 'function') {
+          window.showChekiToast('✨ 已匯入並自動對齊五官！可拉動滑桿檢視或微調', 3600);
+        }
       } catch (err) {
         alert('❌ 匯入失敗：' + (err.message || err));
       } finally {
@@ -2974,11 +3289,10 @@ Object.assign(PCApp, {
     async runGeminiPhotocardHD() {
       if (this.aiState.busy) return;
       const s = this.getActiveSeries();
-      const slot = s?.slots.find(x => x.idx === this.aiState.slotIdx);
-      if (!s || !slot || !this.aiState.beforeDataUrl) return;
+      if (!s || !this.aiState.beforeDataUrl) return;
 
       const apiKey = (document.getElementById('pcAiKeyInput')?.value || '').trim() || this.getStoredGeminiKey();
-      if (!apiKey) return alert('請先貼上 AIza 開頭的 Gemini API Key，或直接使用上方「手機版 Gemini App 直連」！');
+      if (!apiKey) return alert('請先貼上 AIza 開頭的 Gemini API Key，或直接使用上方「手機 Gemini App 直連」！');
       localStorage.setItem('pc_gemini_api_key', apiKey);
 
       const overlay = document.getElementById('pcAiLoadingOverlay');
@@ -3021,10 +3335,8 @@ Object.assign(PCApp, {
           }
         }
         if (!rawOut) throw lastErr || new Error('模型未回傳影像');
-        const { rectUrl, cardUrl } = await this.normalizeAiOutputDual(rawOut, s, slot, this.aiState.side);
-        this.aiState.afterRectDataUrl = rectUrl;
-        this.aiState.afterDataUrl = cardUrl;
-        this.refreshAiModalPreviewState();
+        if (msgEl) msgEl.textContent = '🎯 正在自動對齊五官座標...';
+        await this.loadAndAutoAlignAiSource(rawOut, s);
       } catch (err) {
         alert('❌ AI 高清化失敗：\n' + (err.message || err));
       } finally {
@@ -3036,17 +3348,24 @@ Object.assign(PCApp, {
     async applyAiRemasterResult() {
       const s = this.getActiveSeries();
       const slot = s?.slots.find(x => x.idx === this.aiState.slotIdx);
-      if (!s || !slot || !this.aiState.afterDataUrl) return;
+      if (!s || !slot || !this.aiState.rawAiImg) return;
+
+      const { rectCv, cardCv, rPx } = this.buildFinalAlignedAiCanvases(s, slot, this.aiState.side);
+      const rectUrl = rectCv.toDataURL('image/jpeg', 0.90);
+      let cardUrl = cardCv.toDataURL('image/webp', 0.92);
+      if (!cardUrl.startsWith('data:image/webp')) {
+        cardUrl = rPx > 0.5 ? cardCv.toDataURL('image/png') : cardCv.toDataURL('image/jpeg', 0.92);
+      }
 
       if (this.aiState.side === 'back') {
         if (!slot.preAiBackImg && slot.realBackImg) slot.preAiBackImg = slot.realBackImg;
-        slot.realBackImg = this.aiState.afterDataUrl;
-        if (this.aiState.afterRectDataUrl) slot.rawRectBackImg = this.aiState.afterRectDataUrl;
+        slot.realBackImg = cardUrl;
+        slot.rawRectBackImg = rectUrl;
         this.state.autoFlipSlotOnce = slot.idx;
       } else {
         if (!slot.preAiRealImg && slot.realImg) slot.preAiRealImg = slot.realImg;
-        slot.realImg = this.aiState.afterDataUrl;
-        if (this.aiState.afterRectDataUrl) slot.rawRectImg = this.aiState.afterRectDataUrl;
+        slot.realImg = cardUrl;
+        slot.rawRectImg = rectUrl;
         slot.isAiHD = true;
         if ((slot.qty || 0) === 0) { slot.qty = 1; slot.wish = false; this.state.justUnlockedIdx = slot.idx; }
       }
@@ -3054,16 +3373,18 @@ Object.assign(PCApp, {
       document.getElementById('pcAiRemasterModal')?.classList.add('hidden');
       this.onSlotClick(slot.idx);
       this.renderDex();
-      if (typeof window.showChekiToast === 'function') window.showChekiToast('✨ 已套用 AI 超高清真卡（仍支援無損重調圓角）！', 3400);
+      if (typeof window.showChekiToast === 'function') window.showChekiToast('✨ 已套用像素級對齊的 AI 超高清真卡！', 3400);
     },
 
-    async downloadAiPreviewPng() {
-      if (!this.aiState.afterDataUrl) return;
+    downloadAiPreviewPng() {
       const s = this.getActiveSeries();
       const slot = s?.slots.find(x => x.idx === this.aiState.slotIdx);
-      const blob = await this.dataUrlToPngBlob(this.aiState.afterDataUrl);
-      if (!blob) return;
-      this.triggerBlobDownload(blob, `${this.safeFileName(s?.title)}_#${String(slot?.idx || 0).padStart(3, '0')}_AI_HD.png`);
+      if (!s || !this.aiState.rawAiImg) return;
+      const { cardCv } = this.buildFinalAlignedAiCanvases(s, slot, this.aiState.side);
+      cardCv.toBlob((blob) => {
+        if (!blob) return;
+        this.triggerBlobDownload(blob, `${this.safeFileName(s.title)}_#${String(slot?.idx || 0).padStart(3, '0')}_AI_HD.png`);
+      }, 'image/png');
     },
 
     // ------------------------------------------------------------------------
